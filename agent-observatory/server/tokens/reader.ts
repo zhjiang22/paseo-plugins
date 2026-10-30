@@ -1,15 +1,14 @@
 import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { open, type FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { setImmediate as yieldLoop } from "node:timers/promises";
+import { initialParser, dshDayStamp, parseClineDoc, parseDshLedger, parseGrokUsage, parseLine, parseOpendencodeDoc } from "./parser";
+import { isOpendencodeDb } from "./opencode-db";
 import { readKimiMetadata } from "./kimi-parser";
-import { initialParser, parseGrokUsage, parseLine } from "./parser";
 import { tailZcode } from "./zcode-reader";
 import type { CallSink, LogFile, ParserState } from "./types";
 
 const CHUNK = 256 * 1024, MAX_LINE = 16 * 1024 * 1024;
-/** A Grok `usage.json` is a few KB per turn (13 KB at most on a heavy host in October 2026); larger ones are skipped. */
-const MAX_WHOLE_FILE = 4 * 1024 * 1024;
 /** A log path that has become a symlink is not followed (`ELOOP`); the next scan stops tracking it. */
 const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
 
@@ -57,33 +56,43 @@ export async function tailFile(file: LogFile, sink: CallSink, onBytes?: (bytes: 
   let handle;
   try { handle = await open(file.path, OPEN_FLAGS); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ELOOP") return false; throw error; }
-  try { return await (file.source === "grok" ? readWhole(file, handle, sink, onBytes) : tailOpen(file, handle, sink, onBytes, onReset)); }
-  finally { await handle.close(); }
+  try {
+    return await (file.source === "grok" ? readWhole(file, handle, sink, parseGrokUsage, true, MAX_WHOLE_FILE, onBytes)
+      : file.source === "opencode" && !isOpendencodeDb(file) ? readWhole(file, handle, sink, parseOpendencodeDoc, false, MAX_WHOLE_FILE, onBytes)
+      : file.source === "cline" || file.source === "roo" || file.source === "kilo" ? readWhole(file, handle, sink, parseClineDoc, false, MAX_TASK_FILE, onBytes)
+      // The ledger's newest day closes at midnight even when dsh never writes again; re-read across any calendar change.
+      : file.source === "dsh" ? readWhole(file, handle, sink, parseDshLedger, false, MAX_TASK_FILE, onBytes, file.state.day !== dshDayStamp())
+      : tailOpen(file, handle, sink, onBytes, onReset));
+  } finally { await handle.close(); }
 }
 
 /**
- * A document rewritten in place or replaced (Grok's `usage.json`) is read whole whenever its identity, size or
- * modification time changes; `offset` is the size of the version read. Text that does not parse yet (a write in
- * progress) leaves the offset behind, so the next poll reads it again.
+ * A document rewritten in place or replaced (Grok's `usage.json`, an OpenCode legacy message file, a Cline task
+ * transcript) is read whole whenever its identity, size or modification time changes; `offset` is the size of the
+ * version read. Text that does not parse yet (a write in progress) leaves the offset behind, so the next poll reads
+ * it again. `maxBytes` is per source: Grok's usage summaries stay tiny, a Cline task transcript grows with the whole
+ * task (the parser slices to its last 20,000 rows).
  */
-async function readWhole(file: LogFile, handle: Awaited<ReturnType<typeof open>>, sink: CallSink, onBytes?: (bytes: number) => void): Promise<boolean> {
+const MAX_WHOLE_FILE = 4 * 1024 * 1024, MAX_TASK_FILE = 64 * 1024 * 1024;
+async function readWhole(file: LogFile, handle: FileHandle, sink: CallSink, parse: (content: string, file: LogFile, sink: CallSink) => boolean,
+  workingDirectory: boolean, maxBytes: number, onBytes?: (bytes: number) => void, force = false): Promise<boolean> {
   const details = await handle.stat();
   if (!details.isFile()) return false;
   const changed = details.dev !== file.dev || details.ino !== file.ino || details.size !== file.size || details.mtimeMs !== file.mtime;
-  if (!changed && file.offset === details.size) return false;
+  if (!force && !changed && file.offset === details.size) return false;
   file.dev = details.dev; file.ino = details.ino; file.size = details.size; file.mtime = details.mtimeMs; file.partialBytes = 0;
-  if (details.size > MAX_WHOLE_FILE) { file.offset = details.size; return changed; }
+  if (details.size > maxBytes) { file.offset = details.size; return changed; }
   const buffer = Buffer.alloc(details.size);
   let read = 0;
   while (read < buffer.length) { const { bytesRead } = await handle.read(buffer, read, buffer.length - read, read); if (!bytesRead) break; read += bytesRead; }
   onBytes?.(read);
-  if (!file.state.cwd) file.state.cwd = await grokCwd(file.path);
-  const parsed = read === details.size && parseGrokUsage(buffer.subarray(0, read).toString("utf8"), file, sink);
+  if (workingDirectory && !file.state.cwd) file.state.cwd = await grokCwd(file.path);
+  const parsed = read === details.size && parse(buffer.subarray(0, read).toString("utf8"), file, sink);
   if (parsed) file.offset = details.size;
   return changed || parsed;
 }
 
-async function tailOpen(file: LogFile, handle: Awaited<ReturnType<typeof open>>, sink: CallSink, onBytes?: (bytes: number) => void, onReset?: (lost: ParserState) => void): Promise<boolean> {
+async function tailOpen(file: LogFile, handle: FileHandle, sink: CallSink, onBytes?: (bytes: number) => void, onReset?: (lost: ParserState) => void): Promise<boolean> {
   const details = await handle.stat();
   if (!details.isFile()) return false;
   const initialOffset = file.offset;

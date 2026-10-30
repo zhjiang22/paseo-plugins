@@ -8,6 +8,8 @@ import type { TokenCall, TokenCallSource } from "../token-source";
 import type { TokenIngester } from "./ingester";
 import { initialParser } from "./parser";
 import { validStart } from "./values";
+import { isMimoDb, isOpendencodeDb, readOpendencodeDb } from "./opencode-db";
+import { isHermesDb, readHermesStateDb } from "./hermes-db";
 import { tailFile } from "./reader";
 import { zcodeSessionIds } from "./zcode-reader";
 import { safeError, type Candidate, type LogFile, type ParserState } from "./types";
@@ -47,7 +49,7 @@ const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
 /** A byte that would continue an id ([A-Za-z0-9_-]): a marker followed by one is the start of a longer id, not this one. */
 const idByte = (byte: number) => (byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) || byte === 45 || byte === 95;
 /** `counted`: the calls this entry adds to the budget, as of its last touch (its map grows in place while a log is read on). */
-interface CachedFile { file: LogFile; calls: Map<string, Candidate>; counted?: number }
+interface CachedFile { file: LogFile; calls: Map<string, Candidate>; counted?: number; cacheKey?: string; databaseIdentity?: string }
 interface OwnedCandidate { candidate: Candidate; path: string }
 interface FileLinks { ids: string[]; links: string[] }
 
@@ -55,6 +57,7 @@ function freshFile(file: LogFile): LogFile {
   return { ...file, offset: 0, partialBytes: 0, imported: false, state: initialParser(file.path, file.parentSession, file.source) };
 }
 function copy(candidate: Candidate): Candidate { return { forked: candidate.forked, call: { ...candidate.call } }; }
+const databaseReader = (file: LogFile) => isOpendencodeDb(file) || isMimoDb(file) ? readOpendencodeDb : isHermesDb(file) ? readHermesStateDb : null;
 function merge(previous: Candidate, next: Candidate, contiguous = false): Candidate {
   if (next.call.source === "kimi") return copy(next); // A corrected usage.record replaces the same request sample.
   if (previous.forked !== next.forked) return copy(previous.forked ? next : previous);
@@ -236,7 +239,8 @@ export class LocalTokenCallSource implements TokenCallSource {
   }
 
   private related(files: LogFile[], source: TokenSource, sessionIds: readonly string[], discovered: Map<string, ParserState>): LogFile[] {
-    const connected = new Set(sessionIds), candidates = files.filter(file => file.source === source).map(file => ({ file, ...this.links(file, discovered) }));
+    // A shared database's indexed session ids are not links between otherwise unrelated sessions.
+    const connected = new Set(sessionIds), candidates = files.filter(file => file.source === source && !databaseReader(file)).map(file => ({ file, ...this.links(file, discovered) }));
     let changed = true;
     while (changed) {
       changed = false;
@@ -251,10 +255,11 @@ export class LocalTokenCallSource implements TokenCallSource {
 
   /** Makes a log the most recently used. Eviction waits for the end of the request (`trim`). */
   private touch(entry: CachedFile): void {
-    this.drop(entry.file.path);
+    const key = entry.cacheKey ?? entry.file.path;
+    this.drop(key);
     if (entry.calls.size > this.budget.calls) return;
     entry.counted = entry.calls.size;
-    this.cache.set(entry.file.path, entry); this.cachedCalls += entry.counted;
+    this.cache.set(key, entry); this.cachedCalls += entry.counted;
   }
   private drop(path: string): void {
     const entry = this.cache.get(path);
@@ -268,7 +273,7 @@ export class LocalTokenCallSource implements TokenCallSource {
     const within = () => this.cache.size <= this.budget.files && this.cachedCalls <= this.budget.calls;
     for (const path of [...this.cache.keys()]) {
       if (within()) return;
-      if (!pinned.has(path)) this.drop(path);
+      if (!pinned.has(this.cache.get(path)!.file.path)) this.drop(path);
     }
     for (const path of [...this.cache.keys()].reverse()) {
       if (within()) return;
@@ -276,7 +281,38 @@ export class LocalTokenCallSource implements TokenCallSource {
     }
   }
 
-  private async read(file: LogFile): Promise<CachedFile | null> {
+  /** Shared databases are cached per requested session set; WAL-only commits invalidate their snapshots too. */
+  private async readDatabase(file: LogFile, sessions: ReadonlySet<string>): Promise<CachedFile | null> {
+    const ids = [...sessions].sort(), key = JSON.stringify([file.path, ids]), previous = this.cache.get(key);
+    try {
+      const details = await lstat(file.path, { bigint: true });
+      if (!details.isFile()) { this.drop(key); return null; }
+      const wal = await lstat(file.path + "-wal", { bigint: true }).catch(error => {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw error;
+      });
+      if (wal && !wal.isFile()) throw new Error("Database WAL is not a regular file");
+      const identity = JSON.stringify([details, wal].map(info => info ? [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs].map(String) : null));
+      if (previous?.databaseIdentity === identity) { this.diagnostics.reused++; this.touch(previous); return previous; }
+      // Counters can be rewritten inside a database without growing it. Re-read just these sessions from the start.
+      const current: CachedFile = { file: freshFile(file), calls: new Map(), cacheKey: key, databaseIdentity: identity };
+      current.file.dev = Number(details.dev); current.file.ino = Number(details.ino);
+      await databaseReader(file)!(current.file, candidate => {
+        if (sessions.has(candidate.call.sessionId)) current.calls.set(candidate.call.key, copy(candidate));
+      }, bytes => { this.diagnostics.bytesRead += bytes; }, ids);
+      this.touch(current);
+      return current;
+    } catch (error) {
+      const root = this.ingester.roots[file.root];
+      if (root) root.error = safeError(error);
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") { this.drop(key); return null; }
+      // This entry belongs only to this session set, including when a transient read failure uses the last snapshot.
+      return previous ?? null;
+    }
+  }
+
+  private async read(file: LogFile, sessions: ReadonlySet<string>): Promise<CachedFile | null> {
+    if (databaseReader(file)) return this.readDatabase(file, sessions);
     let entry = this.cache.get(file.path);
     try {
       const details = await stat(file.path);
@@ -312,41 +348,49 @@ export class LocalTokenCallSource implements TokenCallSource {
   private async readSessions(sessionIds: readonly string[]): Promise<{ source: TokenSource; calls: TokenCall[]; version: string } | null> {
     if (!sessionIds.length) return null;
     const files = [...this.ingester.files.values()].filter(file => this.sources.has(file.source)), discovered = new Map<string, ParserState>();
-    let source: TokenSource | undefined;
-    // TokenCallSource has one source. Mixed-provider requests use the first requested known provider session.
-    for (const id of sessionIds) {
-      const known = files.find(file => { const links = this.links(file, discovered); return links.ids.includes(id) || links.links.includes(id); });
-      if (known) { source = known.source; break; }
-    }
-    if (!source || source === "zcode") for (const file of files) {
-      if (file.source !== "zcode") continue;
-      const indexed = this.links(file, discovered).ids;
-      const missing = sessionIds.filter(id => !indexed.includes(id));
-      if (!missing.length) continue;
+    const databases = files.filter(file => databaseReader(file));
+    const discoverZcode = async (file: LogFile, ids: readonly string[]): Promise<boolean> => {
+      const indexed = this.links(file, discovered).ids, missing = ids.filter(id => !indexed.includes(id));
+      if (!missing.length) return false;
       try {
         const matched = await zcodeSessionIds(file, missing);
-        if (!matched.length) continue;
-        discovered.set(file.path, { ...file.state, sessions: [...file.state.sessions, ...matched] });
-        source = "zcode";
+        if (!matched.length) return false;
+        const state = discovered.get(file.path) ?? file.state;
+        discovered.set(file.path, { ...state, sessions: [...state.sessions, ...matched] });
+        return true;
       } catch (error) {
         const root = this.ingester.roots[file.root];
         if (root) root.error = safeError(error);
+        return false;
       }
+    };
+    let source: TokenSource | undefined;
+    // TokenCallSource has one source. Mixed-provider requests use the first requested known provider session.
+    for (const id of sessionIds) {
+      const known = files.find(file => { if (databaseReader(file)) return false; const links = this.links(file, discovered); return links.ids.includes(id) || links.links.includes(id); });
+      if (known) { source = known.source; break; }
+      // Resolve every database's bounded-index miss before moving to the next requested id, preserving provider order.
+      for (const file of files) {
+        if (databaseReader(file) ? (await this.readDatabase(file, new Set([id])))?.calls.size
+          : file.source === "zcode" && await discoverZcode(file, [id])) { source = file.source; break; }
+      }
+      if (source) break;
     }
-    if (!source) return null;
+    if (!source) { this.trim(new Set()); return null; }
+    if (source === "zcode") for (const file of files) if (file.source === "zcode") await discoverZcode(file, sessionIds);
     const merged = new Map<string, OwnedCandidate>(), read = new Set<string>(), identity: unknown[] = [source];
     let found = false;
     // Touch every cached log of this session group first: reading the first ones must not evict the later ones.
     for (const file of this.related(files, source, sessionIds, discovered)) { const entry = this.cache.get(file.path); if (entry) this.touch(entry); }
     while (true) {
-      const selected = this.related(files, source, sessionIds, discovered).filter(file => !read.has(file.path));
+      const selected = [...this.related(files, source, sessionIds, discovered), ...databases.filter(file => file.source === source)].filter(file => !read.has(file.path));
       if (!selected.length) break;
       for (const file of selected) {
         read.add(file.path);
-        const entry = await this.read(file);
+        const entry = await this.read(file, new Set(sessionIds));
         if (!entry) continue;
         found = true; discovered.set(file.path, entry.file.state);
-        identity.push([file.path, entry.file.dev, entry.file.ino, entry.file.size, entry.file.mtime, entry.file.offset, entry.file.state.zcode, entry.calls.size]);
+        identity.push([file.path, entry.file.dev, entry.file.ino, entry.file.size, entry.file.mtime, entry.file.offset, entry.file.state.zcode, entry.calls.size, entry.databaseIdentity]);
         for (const candidate of entry.calls.values()) {
           // SQLite contains every ZCode session, not just the requested agent.
           if (source === "zcode" && !sessionIds.includes(candidate.call.sessionId)) continue;

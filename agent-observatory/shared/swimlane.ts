@@ -9,19 +9,27 @@ export interface Swimlanes { lanes: SwimLane[]; peak: number; peakAt: number | n
 const ends: Partial<Record<TelemetryEvent["type"], SwimKind>> = { turn_completed: "completed", turn_failed: "failed", turn_canceled: "canceled" };
 
 /**
+ * The directory's current name first: events bake in the capture-time title, and interactive Agents get theirs only
+ * after creation, so the stored fallback (「未命名 Agent」) would otherwise stick forever.
+ */
+export function eventAgentTitle(event: Pick<TelemetryEvent, "agentId" | "agentTitle">, titles?: ReadonlyMap<string, string>): string {
+  return titles?.get(event.agentId) || event.agentTitle;
+}
+
+/**
  * Builds lanes for the window ending at `now`. A finished turn spans from its start event, or from its end minus the
  * reported duration when the start fell out of the bounded event log. Turns and approvals still open extend to `now`
  * only while the Agent is live in that state, so a lost end event never draws an endless bar.
  */
-export function buildSwimlanes(events: readonly TelemetryEvent[], live: ReadonlyMap<string, "running" | "waiting">, now: number, windowMs: number, limit: number): Swimlanes {
+export function buildSwimlanes(events: readonly TelemetryEvent[], live: ReadonlyMap<string, "running" | "waiting">, now: number, windowMs: number, limit: number, titles?: ReadonlyMap<string, string>): Swimlanes {
   const from = now - windowMs;
   const byAgent = new Map<string, { title: string; spans: SwimSpan[]; turn?: number; approval?: number }>();
   const sorted = [...events].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   for (const event of sorted) {
     const at = Date.parse(event.at);
     if (!Number.isFinite(at)) continue;
-    const state = byAgent.get(event.agentId) ?? { title: event.agentTitle, spans: [] };
-    if (event.agentTitle) state.title = event.agentTitle;
+    const state = byAgent.get(event.agentId) ?? { title: eventAgentTitle(event, titles), spans: [] };
+    state.title = eventAgentTitle(event, titles);
     byAgent.set(event.agentId, state);
     const kind = ends[event.type];
     if (event.type === "turn_started") state.turn = at;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TelemetryEvent } from "../shared/telemetry";
-import { buildSwimlanes, swimTicks } from "../shared/swimlane";
+import { buildSwimlanes, eventAgentTitle, swimTicks } from "../shared/swimlane";
 
 const now = Date.parse("2026-09-23T12:00:00.000Z");
 const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
@@ -9,6 +9,23 @@ let sequence = 0;
 const event = (agentId: string, type: TelemetryEvent["type"], minutesAgo: number, durationMs?: number): TelemetryEvent =>
   ({ id: `e${++sequence}`, agentId, agentTitle: `任务 ${agentId}`, at: at(minutesAgo), type, label: type, ...(durationMs === undefined ? {} : { durationMs }) });
 const noneLive = new Map<string, "running" | "waiting">();
+
+test("lane titles prefer the directory's current name over the capture-time fallback", () => {
+  // Interactive Agents record events before the host names them, so the stored title is the fallback text.
+  const unnamed = (agentId: string, type: TelemetryEvent["type"], minutesAgo: number): TelemetryEvent =>
+    ({ id: `u${++sequence}`, agentId, agentTitle: "未命名 Agent", at: at(minutesAgo), type, label: type });
+  const events = [unnamed("a", "turn_started", 20), unnamed("a", "turn_completed", 10), unnamed("b", "turn_started", 5), unnamed("b", "turn_completed", 2)];
+  // Without a directory map the stored title wins (historical behavior, and Agents no longer listed).
+  assert.equal(buildSwimlanes(events, noneLive, now, 3_600_000, 10).lanes.find(lane => lane.agentId === "a")!.title, "未命名 Agent");
+  // With it, the current directory name overrides the baked-in fallback, retroactively.
+  const titles = new Map([["a", "better-paseo"], ["b", "待命的任务"]]);
+  const { lanes } = buildSwimlanes(events, noneLive, now, 3_600_000, 10, titles);
+  assert.equal(lanes.find(lane => lane.agentId === "a")!.title, "better-paseo");
+  assert.equal(lanes.find(lane => lane.agentId === "b")!.title, "待命的任务");
+  // An Agent missing from the directory keeps its stored title.
+  assert.equal(eventAgentTitle(unnamed("c", "turn_started", 1), titles), "未命名 Agent");
+  assert.equal(eventAgentTitle(unnamed("a", "turn_started", 1), titles), "better-paseo");
+});
 
 test("finished turns span start to end, falling back to the reported duration when the start was trimmed", () => {
   const { lanes, turns } = buildSwimlanes([

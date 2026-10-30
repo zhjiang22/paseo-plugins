@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { TelemetryStore, type TelemetryObservation } from "../server/telemetry";
-import { eventLabel, mergeTelemetry, telemetryResponseSchema, telemetrySnapshotSchema } from "../shared/telemetry";
+import { eventLabel, hiddenEventCount, mergeTelemetry, telemetryResponseSchema, telemetrySnapshotSchema, type TelemetryEvent } from "../shared/telemetry";
 
 const epoch = Date.parse("2026-09-16T12:00:00.000Z");
 const agent = { id: "agent-1", title: "Ship dashboard" };
@@ -676,4 +676,35 @@ test("storage notices are whole Chinese sentences: saving failed, or what was sa
     assert.match(snapshot.persistenceError ?? "", /统计数据无法读取.*会话事件历史保留不变/);
     assert.equal(snapshot.agents.length, 1);
   } finally { await store.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test("hiddenEventCount only counts events inside the window and never goes negative", () => {
+  const event = (id: string, at: string): TelemetryEvent =>
+    ({ id, agentId: "a", agentTitle: "x", at, type: "turn_started", label: "开始一轮", localized: true });
+  const since = Date.parse("2026-09-16T10:00:00.000Z");
+  const available = new Set(["a"]);
+  const retained = [
+    event("in-1", "2026-09-16T10:30:00.000Z"), event("in-2", "2026-09-16T11:00:00.000Z"),
+    event("out-1", "2026-09-16T08:00:00.000Z"),
+  ];
+  // Nothing shown: both in-window events count; the out-of-window one does not.
+  assert.equal(hiddenEventCount(retained, [], since, available), 2);
+  // Shown events subtract only within the window.
+  assert.equal(hiddenEventCount(retained, [retained[0]!], since, available), 1);
+  assert.equal(hiddenEventCount(retained, [retained[0]!, retained[1]!], since, available), 0);
+  // A stray shown event outside the retained set clamps at zero instead of lying.
+  assert.equal(hiddenEventCount(retained, [retained[0]!, retained[1]!, event("extra", "2026-09-16T11:30:00.000Z")], since, available), 0);
+});
+
+test("hidden event hints exclude records that clearing optional filters cannot reveal", () => {
+  const event = (agentId: string, at = "2026-09-16T11:00:00.000Z"): TelemetryEvent =>
+    ({ id: agentId, agentId, agentTitle: agentId, at, type: "turn_started", label: "开始一轮" });
+  const visible = event("visible"), filteredProject = event("other-project"), filteredProvider = event("other-provider");
+  const retained = [visible, filteredProject, filteredProvider, event("archived"), event("deleted"), event("outside-workspace"), event("old", "2026-09-15T11:00:00.000Z")];
+  const available = new Set(["visible", "other-project", "other-provider", "old"]);
+  const since = Date.parse("2026-09-16T10:00:00.000Z");
+  assert.equal(hiddenEventCount(retained, [visible], since, available), 2, "optional project/provider filters can be cleared");
+  assert.equal(hiddenEventCount(retained, [visible, filteredProject, filteredProvider], since, available), 0, "no misleading banner remains after clearing");
+  assert.equal(hiddenEventCount(retained, [], since, new Set()), 0, "retained events from missing Agents cannot be recovered by clearing filters");
+  assert.equal(hiddenEventCount(retained, [event("unrelated")], since, available), 3, "unrelated shown ids do not hide recoverable events");
 });

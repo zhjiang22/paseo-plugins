@@ -22,6 +22,8 @@ export interface ParserState {
    * that spawned it; null when it is not a subagent. Undefined in states saved before 2.13 (see TokenIngester.probeThreads).
    */
   threadId?: string; parentThread?: string | null;
+  /** dsh: the local+UTC day stamp this ledger state last parsed (`dshDayStamp`); a calendar change forces the rollover re-read. */
+  day?: string;
   /** ZCode SQLite part cursor and database/WAL identity; no message content. */
   zcode?: { row: number; signature: string; anchor?: string };
 }

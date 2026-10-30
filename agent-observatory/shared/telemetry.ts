@@ -109,6 +109,12 @@ export function eventLabel(event: Pick<TelemetryEvent, "type" | "label" | "local
   }
 }
 
+/** Count only events clearing optional filters can reveal, within the current page and time range. */
+export function hiddenEventCount(retained: readonly TelemetryEvent[], shown: readonly TelemetryEvent[], sinceMs: number, availableAgentIds: ReadonlySet<string>): number {
+  const visible = new Set(shown.map(event => event.id));
+  return retained.filter(event => availableAgentIds.has(event.agentId) && Date.parse(event.at) >= sinceMs && !visible.has(event.id)).length;
+}
+
 /** Client cache update: deltas replace changed summaries and prepend new events, trimmed to the server's retained count. */
 export function mergeTelemetry(previous: TelemetryState | undefined, response: TelemetryResponse | TelemetrySnapshot): TelemetryState {
   if (!("mode" in response)) return response;

@@ -3,9 +3,11 @@ import { lstat, readdir } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { setImmediate as yieldLoop } from "node:timers/promises";
 import { GROK_USAGE_FILE, initialParser, subagentParent } from "./parser";
+import { HERMES_DB_FILE, isHermesDb, readHermesStateDb } from "./hermes-db";
+import { isMimoDb, isOpendencodeDb, MIMO_DB_FILE, OPENCODE_DB_FILE, readOpendencodeDb } from "./opencode-db";
 import { readFirstLine, tailFile } from "./reader";
 import { defaultRoots, isInsightDirectory, MAX_ROOTS } from "./roots";
-import { DAY, safeError, type Backfill, type Candidate, type LedgerCall, type LogFile, type LogRoot, type ParserState } from "./types";
+import { DAY, safeError, type Backfill, type CallSink, type Candidate, type LedgerCall, type LogFile, type LogRoot, type ParserState } from "./types";
 import { TOKEN_IMPORT_LIMITS, type TokenImportLimits } from "../../shared/tokens";
 /** Work and memory budgets (TOKEN_IMPORT_LIMITS): logs tracked, their total bytes, dedupe keys and directory entries per scan. */
 export type IngesterLimits = TokenImportLimits;
@@ -28,13 +30,20 @@ const SEEN_DAYS = 60;
 /** Session ids whose lost logs are remembered (`noteLoss`); past it the oldest go, and what they covered can no longer be vouched for. */
 const MAX_LOSSES = 20_000;
 
+/** A Cline / Roo / Kilo task transcript: `ui_messages.json` inside the task's directory. */
+const isTaskMessages = (source: LogRoot["source"], name: string): boolean =>
+  (source === "cline" || source === "roo" || source === "kilo") && name === "ui_messages.json";
 /**
  * Which files of a root are logs: Claude Code and Pi write one `.jsonl` per session, Codex `rollout-*.jsonl`. Grok
- * keeps a directory per session and is walked apart (`scanGrok`).
+ * keeps a directory per session and is walked apart (`scanGrok`). Cline / Roo / Kilo write one `ui_messages.json`
+ * per task, walked normally.
  */
-const isLog = (source: LogRoot["source"], name: string): boolean => source === "zcode" ? name === "db.sqlite" : source === "kimi" ? name === "wire.jsonl" : name.endsWith(".jsonl") && (source !== "codex" || name.startsWith("rollout-"));
-/** A Claude Code subagent's log (`<session>/subagents/<agent>.jsonl`): its parent session's, never the place a prompt is logged. */
-const subagentLog = (source: LogRoot["source"], path: string): boolean => source === "claude" && basename(dirname(path)) === "subagents";
+const isLog = (source: LogRoot["source"], name: string): boolean =>
+  source === "zcode" ? name === "db.sqlite" : source === "kimi" ? name === "wire.jsonl"
+  : name.endsWith(".jsonl") && (source !== "codex" || name.startsWith("rollout-")) || isTaskMessages(source, name)
+  || (source === "dsh" && name === "ledger.json");
+/** A sub-agent's log (`<session>/subagents/<agent>.jsonl`): its parent session's, never the place a prompt is logged. */
+const subagentLog = (source: LogRoot["source"], path: string): boolean => (source === "claude" || source === "codebuddy") && basename(dirname(path)) === "subagents";
 /** A Grok session group's working directory, from its URL-encoded name; null when the name is not one (a long cwd's slug). */
 function grokGroupCwd(name: string): string | null {
   try { const cwd = decodeURIComponent(name); return isAbsolute(cwd) ? cwd : null; } catch { return null; }
@@ -210,7 +219,43 @@ export class TokenIngester {
           }
         }
       };
-      await (root.source === "grok" ? scanGrok() : walk(root.path, 0));
+      // OpenCode: the database (`opencode.db`, ≥ 1.2) holds every session; the legacy `storage/message/<session>/<message>.json`
+      // tree (before 1.2, and what a migration can leave behind) is read beside it. The message ids both carry deduplicate them.
+      const scanOpenCode = async (): Promise<void> => {
+        const database = join(root.path, OPENCODE_DB_FILE);
+        let details: Stats | null = null;
+        try { details = await lstat(database); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") root.error = safeError(error); }
+        if (details?.isFile()) { if (!visit()) return; await note(database, details); }
+        const legacy = join(root.path, "storage", "message");
+        for (const session of await list(legacy) ?? []) {
+          if (!visit() || !session.isDirectory()) continue;
+          for (const message of await list(join(legacy, session.name)) ?? []) {
+            if (!visit()) return;
+            if (!message.name.endsWith(".json")) continue;
+            const path = join(legacy, session.name, message.name);
+            let stats: Stats | null = null;
+            try { stats = await lstat(path); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") root.error = safeError(error); }
+            if (stats?.isFile()) await note(path, stats);
+            await pause();
+          }
+          await pause();
+        }
+      };
+      // MiMoCode: just its OpenCode-shaped database (no legacy tree).
+      const scanMimo = async (): Promise<void> => {
+        const database = join(root.path, MIMO_DB_FILE);
+        let details: Stats | null = null;
+        try { details = await lstat(database); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") root.error = safeError(error); }
+        if (details?.isFile()) { if (!visit()) return; await note(database, details); }
+      };
+      // Hermes: just its state database (the rest of its home is tools and caches).
+      const scanHermes = async (): Promise<void> => {
+        const database = join(root.path, HERMES_DB_FILE);
+        let details: Stats | null = null;
+        try { details = await lstat(database); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") root.error = safeError(error); }
+        if (details?.isFile()) { if (!visit()) return; await note(database, details); }
+      };
+      await (root.source === "grok" ? scanGrok() : root.source === "opencode" ? scanOpenCode() : root.source === "mimo" ? scanMimo() : root.source === "hermes" ? scanHermes() : walk(root.path, 0));
       // A late root listed for the first time: the logs it holds now are its history (marked fresh below), later ones are new.
       if (listed) { this.lateRoots.delete(rootIndex); this.listedRoots.add(rootIndex); }
       else if (this.listedRoots.has(rootIndex)) this.rootLosses.set(root.source, this.now());
@@ -258,13 +303,25 @@ export class TokenIngester {
   }
   private async read(file: LogFile, phase: "original" | "fork" | "all", progress = false): Promise<void> {
     const oldState = file.state, fresh = !file.imported && this.freshFiles.has(file.path);
+    const sink: CallSink = (call, previous, _file, settled) => this.consume(call, previous, phase, settled, fresh);
+    const onBytes = (bytes: number) => {
+      this.diagnostics.bytesRead += bytes;
+      if (progress) this.backfill.bytesDone = Math.min(this.backfill.bytes, this.backfill.bytesDone + bytes);
+    };
     try {
+      // OpenCode's and MiMoCode's databases are not read as bytes: their rows are queried read-only (opencode-db).
+      if (isOpendencodeDb(file) || isMimoDb(file)) {
+        if (await readOpendencodeDb(file, sink, onBytes)) this.changed();
+        return;
+      }
+      // Hermes's state database is queried read-only per closed session (hermes-db).
+      if (isHermesDb(file)) {
+        if (await readHermesStateDb(file, sink, onBytes)) this.changed();
+        return;
+      }
       // Read again from the start (replaced, cut short, rewritten): what was read of it before is gone, noted before the index takes
       // in the new file, so a marker read while this read goes never vouches for it (codex-obs-resume-recheck6-F1).
-      if (await tailFile(file, (call, previous, _file, settled) => this.consume(call, previous, phase, settled, fresh), bytes => {
-        this.diagnostics.bytesRead += bytes;
-        if (progress) this.backfill.bytesDone = Math.min(this.backfill.bytes, this.backfill.bytesDone + bytes);
-      }, lost => this.noteLoss(file, lost))) this.changed();
+      if (await tailFile(file, sink, onBytes, lost => this.noteLoss(file, lost))) this.changed();
     } catch (error) { const root = this.roots[file.root]; if (root) root.error = safeError(error); this.changed(); }
     finally {
       if (file.state !== oldState && oldState.open?.accepted) this.options.onSettle?.(oldState.open.call);
@@ -335,7 +392,7 @@ export class TokenIngester {
     for (const file of files) {
       if (this.closed) return;
       if (file.imported) continue;
-      if (file.state.hasForks && (file.source === "claude" || file.source === "pi")) {
+      if (file.state.hasForks && (file.source === "claude" || file.source === "pi" || file.source === "omp")) {
         const second: LogFile = { ...file, offset: 0, state: initialParser(file.path, file.parentSession, file.source) };
         await this.read(second, "fork");
         if (second.state.open?.accepted) file.state.open = second.state.open;

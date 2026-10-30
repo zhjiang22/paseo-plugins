@@ -1,6 +1,6 @@
 import { t } from "../../shared/text";
 import { basename } from "node:path";
-import { emptyTokenCounts, type TokenCounts, type TokenSource } from "../../shared/tokens";
+import { emptyTokenCounts, WHOLE_TURN_SOURCES, type TokenCounts, type TokenSource } from "../../shared/tokens";
 import { DAY, dayOf, hourOf, type LedgerCall } from "./types";
 
 interface SettledBounds { settledFirstAt?: number; settledLastAt?: number }
@@ -75,11 +75,12 @@ const sortRecords = (items: CallRecord[], kind: "fastest" | "biggest"): CallReco
   (kind === "fastest" ? b.tps - a.tps : b.output - a.output) || a.at - b.at).slice(0, RECORD_DEPTH);
 /**
  * A call's place in the hour's records. 最快的一次 needs a timed response of some length. 最长的一次输出 is one model call's output:
- * a record standing for several calls is not one, nor is a Grok record at all (usage.json sums each turn per model; r3-F5).
+ * a record standing for several calls is not one, nor is a whole-turn record at all (a Grok turn's usage.json sums each turn per
+ * model, a CodeBuddy step is logged when it ends; r3-F5).
  */
 function callRecord(call: LedgerCall, kind: "fastest" | "biggest"): CallRecord | null {
   const ms = call.start === null ? 0 : call.at - call.start;
-  if (kind === "fastest" ? ms < 1000 || call.output < 100 : modelCalls(call) > 1 || call.source === "grok") return null;
+  if (kind === "fastest" ? ms < 1000 || call.output < 100 : modelCalls(call) > 1 || WHOLE_TURN_SOURCES[call.source]) return null;
   return { key: call.key, at: call.at, model: call.model, output: call.output, tps: ms ? call.output / ms * 1000 : 0 };
 }
 function record(data: TokenData, call: LedgerCall, sign: number): void {

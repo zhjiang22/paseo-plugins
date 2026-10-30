@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+- Shared database execution reviews isolate requested sessions, follow WAL updates, and find sessions beyond the checkpoint index. Gemini reads native message rows and includes thinking/tool-use tokens; Hermes aggregates every billing route and task with complete pagination; modern OpenCode/MiMo reasoning contributes to output totals.
+
+**The event stream names Agents from the directory**
+- The 并行泳道 and the event list now show each Agent's current directory name instead of the title frozen into the recorded event. Interactive Agents record their first events before the host has generated their title, so those events kept the 「未命名 Agent」 placeholder forever even after the name existed; the swimlane lanes, the feed rows and their accessibility labels resolve the name from the Agent directory first and fall back to the stored title, which also renames past events retroactively. Agents no longer in the directory keep their stored title.
+
+**The event page says what the filters hide**
+- The event stream inherits the session list's scope filters, and when they hid events the page simply looked empty — indistinguishable from a broken capture. When the current filters hide retained events inside the selected time range, the page now shows a count ("当前筛选隐藏了 N 条事件") with a one-tap 清除筛选 that resets all optional scope filters, including provider, project and checkout. Events outside the current page's Agent directory are not counted as hidden by filters.
+
+**dsh: the ledger's last day is no longer skipped**
+- The cost ledger's newest day was treated as still in progress by position, so with intermittent use — no day after it ever arriving — its usage was skipped forever: the unchanged file never re-parsed. A day now counts unless it is today by the local or the UTC calendar, and a calendar rollover re-reads the unchanged ledger once (deduplicated by the seen index as before). Found in review by Chengxin-Xu; the v4 session-log enhancement spec this review also laid out is recorded in `docs/harness-token-source-research.md` §9.
+
+**The Token page counts eighteen harness sources**
+
+**oh-my-pi (omp) in the Token page**
+- Token statistics now count oh-my-pi's session logs as a fifth source, shown as "oh-my-pi" and coloured sky in the source rows, beside Claude Code, Codex, Grok CLI and Pi. The log shape is Pi's, so every assistant reply, a tool result carrying the usage of the LLM work it did, compaction and branch summaries count as before; oh-my-pi's `model_usage` entries (calls outside the transcript, say a generated title) count too, under the model they name. The 256-byte title slot at the head of each log is never read as a call.
+- Where the logs are: the same variables as Pi's, under oh-my-pi's own home — `$PI_CODING_AGENT_SESSION_DIR`, else `$PI_CODING_AGENT_DIR/sessions`, else `$PI_CONFIG_DIR/agent/sessions`, by default `~/.omp/agent/sessions`. Named profiles (`omp --profile …`) keep their own agent directory, which none of these variables move; those sessions are not counted. A `PI_CODING_AGENT_SESSION_DIR` or `PI_CODING_AGENT_DIR` set for Pi names the directory oh-my-pi writes to as well; it counts once, as Pi, never twice.
+- Custom providers built on `omp` (a provider id or `extends: "omp"`, or an ACP provider whose command runs the `omp` CLI) are recognised like the other bases, and the directories their environment names are watched the same way.
+- A saved ledger never changes shape: readers older than this release quarantine it once it holds omp entries and import their logs again, so the ledger version stays 2.
+
+**OpenCode in the Token page**
+- Token statistics now count OpenCode too, shown as "OpenCode" and coloured cyan. Since 1.2 OpenCode keeps every session in one database (`opencode.db` under its data directory); it is opened read-only and read incrementally by row, so a message still streaming is counted once it completes. Each assistant message's `tokens` (fresh input, cache read and write, reasoning as its own counter), model, working directory and response time count per message, keyed by the message id; OpenCode's own per-message cost estimate is not shown, the page counts tokens.
+- The pre-1.2 storage tree (`storage/message/<session>/<message>.json`) is read beside the database, and what a migration left behind counts once: both backends carry the same message ids, and the ledger deduplicates by them.
+- Sub-agents are recognised from the session's parent (`session.parent_id`), and a replaced database (a reinstall) is read from its first row again, still without counting anything twice.
+- Where the data lives: `$XDG_DATA_HOME/opencode`, by default `~/.local/share/opencode`. OpenCode has no dedicated data-directory variable (the `OPENCODE_DATA_DIR` some tools read is not OpenCode's), and a provider id or `extends: "opencode"` is recognised like the other bases.
+- A saved ledger never changes shape: readers older than this release quarantine it once it holds OpenCode entries and import their logs again, so the ledger version stays 2.
+
+**CodeBuddy Code and Qoder in the Token page**
+- Token statistics now count CodeBuddy Code ("CodeBuddy", blue) and Qoder ("Qoder", green) as well. Each session is one `.jsonl` under their projects directory (`$CODEBUDDY_CONFIG_DIR/projects`, by default `~/.codebuddy/projects`; `$QODER_CONFIG_DIR/projects`, by default `~/.qoder/projects`), and a provider id or `extends` of either is recognised like the other bases.
+- CodeBuddy counts one call per `function_call` row: its `providerData` carries the usage of the model response the step belongs to, as a summary with the input cache-inclusive (the cached part comes out of `inputTokensDetails`), or, when that is missing, the provider's raw OpenAI-shaped usage; the model is `requestModelId`. Rows of one step — parallel tool calls of one response — share the usage and count once. Sub-agent transcripts under the session's directory count for that session; the aggregate rows (`credit-usage`, `model-usage`) and the reasoning drafts are never calls. A row carries only its end time, so these calls have no response time and stay out of the live speed and the fastest list, like Grok's turns.
+- Qoder's transcript is Claude Code's shape one source over: one call per assistant row with the usage on it, the model from the session's `runtime-config` row, `isSidechain` rows as a sub-agent's, and gateway refusal rows (no usage) not counted.
+- Watching ten sources needs more roots than the sixteen a ledger could name: the cap is now sixty-four, and readers older than this release quarantine a ledger past their cap and import their logs again.
+- Both log only what they show above; Qoder's own accounting is Credits and OpenCode's an estimate, and the page counts tokens, never money.
+
+**Gemini CLI and Qwen Code in the Token page**
+- Token statistics now count Gemini CLI ("Gemini CLI", fuchsia) and Qwen Code ("Qwen Code", lime).
+- Gemini CLI: the JSONL chat records of the windowed generation (`$GEMINI_CLI_HOME/tmp/<project>/chats/session-*.jsonl`, by default `~/.gemini/tmp/…`). Each `gemini` message counts the tokens its response used — the cached part comes out of the prompt, `thoughts` are their own counter — and the message id deduplicates the windows that re-emit it. A message has no response time, so these calls stay out of the live speed and the fastest list. The older single-JSON records carry no per-message tokens and are not counted; project directories (a readable slug or a SHA-256 hash) are not traced back to a working directory, so Gemini sessions show no project for now.
+- Qwen Code: one call per assistant row of its Claude-shaped transcripts (`$QWEN_RUNTIME_DIR/projects`, by default `~/.qwen/projects`), the cached part out of `promptTokenCount`, thoughts their own counter, the model on the row, the user row before it as the request start.
+- A saved ledger never changes shape: readers older than this release quarantine it once it holds these entries and import their logs again, so the ledger version stays 2. The root cap is now sixty-four.
+
+**Hermes, MiMoCode and dsh in the Token page**
+- Three more sources: Hermes ("Hermes", indigo) from `~/.hermes/state.db`, MiMoCode ("MiMoCode", teal) from `~/.local/share/mimocode/mimocode.db`, and DeepSeek Harness ("DeepSeek Harness", violet) from `~/.dsh/storages/cost-meter/ledger.json` — all opened read-only.
+- Hermes: one call per ended session per model — the five token counters, the call count, and the session's working directory; a sub-agent session (one with a parent) is the sub-agent's call. Sessions still running wait for their end. A provider id or `extends` of `hermes` is recognised like the other bases.
+- MiMoCode: OpenCode's database layout one directory over — every assistant message counts its tokens (cache out of the prompt, reasoning as its own counter) with the response time, keyed by the message id; `<synthetic>` zero rows are not calls. A provider id or `extends: "mimo"` is recognised.
+- dsh: one call per session per provider-model of every closed day in the cost ledger — the five counters plus reasoning and the call count; the running day waits for midnight. No per-call timestamps and no working directory, so these calls stay out of the live speed, and sessions show no project.
+- A saved ledger never changes shape: readers older than this release quarantine it once it holds these entries and import their logs again, so the ledger version stays 2. The root cap is now sixty-four.
+
+**Cline, Roo Code and Kilo Code in the Token page**
+- Token statistics now count the VS Code extensions Cline ("Cline", amber), Roo Code ("Roo Code", red) and Kilo Code ("Kilo Code", gray): one call per `api_req_started` row of a task's `ui_messages.json` — `tokensIn` is the fresh prompt (the cache rides beside it as `cacheWrites`/`cacheReads`), `tokensOut` the output. Rows of one step are keyed by their timestamp, so an atomically rewritten file counts once. `subagent_usage` rows are a sub-agent's aggregated batch. The model id is not persisted per request, so these calls show no model. No response time either: whole-task records stay out of the live speed and the fastest list.
+- Where the tasks live: every VS Code family host's globalStorage — Code, Code - Insiders, VSCodium, Cursor, Windsurf and the remote `~/.vscode-server(-insiders)` — under the extension ids `saoudrizwan.claude-dev`, `rooveterinaryinc.roo-cline` and `kilocode.kilo-code`. The Cline CLI's own session store (`~/.cline/data/sessions`) is a different, younger format and is not counted yet.
+- A saved ledger never changes shape: readers older than this release quarantine it once it holds these entries and import their logs again, so the ledger version stays 2.
+
+**Kimi Code and ZCode in the Token page**
 - Token board and execution review: add Kimi Code wire logs (including subagents) and read-only ZCode SQLite/WAL completed-step usage, with cache normalization, incremental cursors and ACP session attribution. Provider history is never modified; unavailable sources report coverage errors.
 - ZCode session lookup also covers custom provider definitions and sessions beyond the checkpoint index; an identity check detects reused SQLite rowids after history deletion. The standalone UI build preserves Hermes compatibility and has reproducibility and mobile-compiler checks.
 

@@ -7,6 +7,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { FlatList } from "@getpaseo/plugin/client/react-native";
 import type { AgentRecord } from "../shared/model";
 import { eventLabel, type TelemetryEvent, type TelemetrySnapshot } from "../shared/telemetry";
+import { eventAgentTitle } from "../shared/swimlane";
 import { EmptyState, MetaLine, Row, fontSize, hairline, hue, relativeTime, space } from "./kit";
 import { InfoButton, shortDuration } from "./ui";
 import { EventGlyph } from "./status";
@@ -32,13 +33,13 @@ function Pulse({ theme, events, now, telemetry }: { theme: PluginTheme; events: 
 }
 
 /** Events that arrive while the feed is open slide in at the top. */
-const EventRow = memo(function EventRow({ event, theme, time, selected, fresh, onSelect }: { event: TelemetryEvent; theme: PluginTheme; time: string; selected: boolean; fresh: boolean; onSelect: (agentId: string) => void }) {
+const EventRow = memo(function EventRow({ event, theme, time, selected, fresh, onSelect, titles }: { event: TelemetryEvent; theme: PluginTheme; time: string; selected: boolean; fresh: boolean; onSelect: (agentId: string) => void; titles: ReadonlyMap<string, string> }) {
   // Events stored before 2.13 carry English labels; the type names them (gemini-F9).
   const label = eventLabel(event);
-  return <Enter active={fresh}><Row theme={theme} title={label} titleLines={1} selected={selected} onPress={() => onSelect(event.agentId)} accessibilityLabel={t("coreActivityFeed.view", { value1: event.agentTitle || t("coreActivityFeed.untitledAgent"), value2: label })}
+  return <Enter active={fresh}><Row theme={theme} title={label} titleLines={1} selected={selected} onPress={() => onSelect(event.agentId)} accessibilityLabel={t("coreActivityFeed.view", { value1: eventAgentTitle(event, titles) || t("coreActivityFeed.untitledAgent"), value2: label })}
     leading={<EventGlyph theme={theme} type={event.type} />}
     trailing={<Text style={{ color: theme.colors.foregroundMuted, fontSize: fontSize.meta, fontVariant: ["tabular-nums"] }}>{time}</Text>}
-    subtitle={<MetaLine theme={theme} parts={[event.agentTitle || event.agentId, event.durationMs !== undefined ? t("coreActivityFeed.took", { value1: shortDuration(event.durationMs) }) : null]} />} /></Enter>;
+    subtitle={<MetaLine theme={theme} parts={[eventAgentTitle(event, titles) || event.agentId, event.durationMs !== undefined ? t("coreActivityFeed.took", { value1: shortDuration(event.durationMs) }) : null]} />} /></Enter>;
 });
 
 /** On phones the swimlane scrolls with the feed; wide layouts show it above the split view instead (`swimlane` false). */
@@ -47,6 +48,7 @@ export function ActivityFeed({ events, theme, telemetry, onSelect, now, selected
   const known = useRef<Set<string> | null>(null);
   if (known.current === null && events.length) known.current = new Set(events.map(event => event.id));
   useEffect(() => { if (known.current) for (const event of events) known.current.add(event.id); }, [events]);
+  const titles = useMemo(() => new Map(agents.map(agent => [agent.id, agent.title] as const)), [agents]);
   return <FlatList style={{ flex: 1, minHeight: 0 }} data={events} keyExtractor={event => event.id} contentContainerStyle={{ paddingHorizontal: space.xs, paddingBottom: space.xl }}
     initialNumToRender={20} windowSize={7} extraData={`${now}:${selectedId}`}
     ListHeaderComponent={<View style={{ marginHorizontal: -space.xs }}>
@@ -54,5 +56,5 @@ export function ActivityFeed({ events, theme, telemetry, onSelect, now, selected
       <Pulse theme={theme} events={events} now={now} telemetry={telemetry} />
     </View>}
     ListEmptyComponent={<EmptyState theme={theme} icon="Activity" title={t("coreActivityFeed.noExecutionEventsYet")} message={t("coreActivityFeed.taskStartsCompletionsFailuresAndApprovalsAppear")} />}
-    renderItem={({ item }) => <EventRow event={item} theme={theme} time={relativeTime(item.at, now)} selected={item.agentId === selectedId} fresh={!!known.current && !known.current.has(item.id)} onSelect={onSelect} />} />;
+    renderItem={({ item }) => <EventRow event={item} theme={theme} time={relativeTime(item.at, now)} selected={item.agentId === selectedId} fresh={!!known.current && !known.current.has(item.id)} onSelect={onSelect} titles={titles} />} />;
 }

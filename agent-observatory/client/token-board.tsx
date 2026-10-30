@@ -34,8 +34,8 @@ export const tokenInfo = () => [
   t("secondaryTokenBoard.onlyCountsModelsWorkingDirectoriesAnd"),
   ...quotaInfo,
 ];
-/** Each log source's colour in the source rows: the vendor family it mostly runs (Claude orange, Codex teal, Grok violet), Pi pink. */
-const sourceHues: Record<TokenSource, Hue> = { claude: "orange", codex: "teal", grok: "violet", pi: "pink", kimi: "violet", zcode: "orange" };
+/** Each log source's colour in the source rows: the vendor family it mostly runs (Claude orange, Codex teal, Grok violet), Pi pink, oh-my-pi sky, OpenCode cyan, CodeBuddy blue, Qoder green, Gemini CLI fuchsia, Qwen Code lime. */
+const sourceHues: Record<TokenSource, Hue> = { claude: "orange", codex: "teal", grok: "violet", pi: "pink", omp: "sky", opencode: "cyan", codebuddy: "blue", qoder: "green", gemini: "fuchsia", qwen: "lime", cline: "amber", roo: "red", kilo: "gray", hermes: "indigo", mimo: "teal", dsh: "violet", kimi: "violet", zcode: "orange" };
 const isTokenSource = (key: string): key is TokenSource => (TOKEN_SOURCES as readonly string[]).includes(key);
 
 function Hero({ theme, snapshot, live, narrow }: { theme: PluginTheme; snapshot: TokenSnapshot; live?: TokenLive; narrow: boolean }) {
@@ -75,7 +75,7 @@ function tiles(snapshot: TokenSnapshot): Tile[] {
   const hit = cacheHitRate(totals), speed = outputSpeed(totals), read = tokenInput(totals);
   return [
     { key: "total", label: t("secondaryTokenBoard.totalTokens"), icon: "Coins", colors: ["amber", "orange"], value: bigNumber(tokenTotal(totals)), sub: t("secondaryTokenBoard.dailyAverage2", { value1: bigNumber(tokenTotal(totals) / n) }), current: tokenTotal(totals), previous: tokenTotal(p), spark: spark(tokenTotal) },
-    { key: "output", label: t("secondaryTokenBoard.output"), icon: "PenLine", colors: ["pink", "fuchsia"], value: bigNumber(totals.output), sub: totals.reasoning ? t("secondaryTokenBoard.includingReasoning", { value1: bigNumber(totals.reasoning) }) : totals.calls ? t("secondaryTokenBoard.perCall", { value1: bigNumber(totals.output / totals.calls) }) : undefined, current: totals.output, previous: p.output, spark: spark(day => day.output) },
+    { key: "output", label: t("secondaryTokenBoard.output"), icon: "PenLine", colors: ["pink", "fuchsia"], value: bigNumber(totals.output), sub: totals.reasoning && totals.reasoning <= totals.output ? t("secondaryTokenBoard.includingReasoning", { value1: bigNumber(totals.reasoning) }) : totals.calls ? t("secondaryTokenBoard.perCall", { value1: bigNumber(totals.output / totals.calls) }) : undefined, current: totals.output, previous: p.output, spark: spark(day => day.output) },
     { key: "cacheRead", label: t("secondaryTokenBoard.cacheRead"), icon: "DatabaseZap", colors: ["green", "teal"], value: bigNumber(totals.cacheRead), sub: read ? t("secondaryTokenBoard.ofInput", { value1: percent(totals.cacheRead / read, 1) }) : undefined, current: totals.cacheRead, previous: p.cacheRead, spark: spark(day => day.cacheRead) },
     { key: "cacheWrite", label: t("secondaryTokenBoard.cacheWrite"), icon: "DatabaseBackup", colors: ["sky", "blue"], value: bigNumber(totals.cacheWrite), sub: t("secondaryTokenBoard.newlyWrittenToPromptCache"), current: totals.cacheWrite, previous: p.cacheWrite, spark: spark(day => day.cacheWrite) },
     { key: "input", label: t("secondaryTokenBoard.newInput"), icon: "ArrowDownToLine", colors: ["violet", "indigo"], value: bigNumber(totals.input), sub: t("secondaryTokenBoard.inputWithoutCache"), current: totals.input, previous: p.input, spark: spark(day => day.input) },

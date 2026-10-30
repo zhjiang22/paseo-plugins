@@ -6,10 +6,10 @@ import { MAX_TOKEN_ROOTS, type TokenSource } from "../../shared/tokens";
 import type { LogRoot } from "./types";
 
 /**
- * Where provider session logs live. The defaults cover Claude Code, Codex, Grok CLI and Pi as installed; custom Paseo
- * providers built on them (`extends: "claude" | "codex" | "pi"`, or `extends: "acp"` running the `grok` CLI) can move
+ * Where provider session logs live. The defaults cover Claude Code, Codex, Grok CLI, Pi and oh-my-pi as installed; custom Paseo
+ * providers built on them (`extends: "claude" | "codex" | "pi" | "omp"`, or `extends: "acp"` running the `grok` CLI) can move
  * their logs with `CLAUDE_CONFIG_DIR` / `CODEX_HOME` / `GROK_HOME` / `PI_CODING_AGENT_SESSION_DIR` /
- * `PI_CODING_AGENT_DIR`, set in the provider's `env`, on its command line or in its launcher script. All are read here
+ * `PI_CODING_AGENT_DIR` / `PI_CONFIG_DIR`, set in the provider's `env`, on its command line or in its launcher script. All are read here
  * without running anything, in the order the provider's process gets them (codex-obs-roots-F1): the daemon's own
  * environment, the provider's `env` over it (the spawn's starting environment), then `env NAME=…` or an inline script on
  * the command line, then the launcher's assignments, each replacing what came before. Values count only as literal paths;
@@ -31,6 +31,24 @@ const CONFIG_ENV: Record<TokenSource, ReadonlyArray<{ name: string; folders: rea
   kimi: [{ name: "KIMI_CODE_HOME", folders: ["sessions"], standard: home => join(home, ".kimi-code") }],
   zcode: [{ name: "ZCODE_HOME", folders: ["cli/db"], standard: home => join(home, ".zcode") }],
   pi: [{ name: "PI_CODING_AGENT_SESSION_DIR", folders: [""], standard: null }, { name: "PI_CODING_AGENT_DIR", folders: ["sessions"], standard: home => join(home, ".pi", "agent") }],
+  // oh-my-pi honours Pi's variables; PI_CONFIG_DIR (its home, `.omp` unless set) moves the default roots in
+  // `defaultRoots` only — providerRoots reads the first two entries, the session directory and the agent directory, as for Pi.
+  omp: [{ name: "PI_CODING_AGENT_SESSION_DIR", folders: [""], standard: null }, { name: "PI_CODING_AGENT_DIR", folders: ["sessions"], standard: home => join(home, ".omp", "agent") }],
+  // OpenCode moves with XDG_DATA_HOME (there is no dedicated variable in OpenCode itself).
+  opencode: [{ name: "XDG_DATA_HOME", folders: ["opencode"], standard: home => join(home, ".local", "share", "opencode") }],
+  codebuddy: [{ name: "CODEBUDDY_CONFIG_DIR", folders: ["projects"], standard: home => join(home, ".codebuddy") }],
+  qoder: [{ name: "QODER_CONFIG_DIR", folders: ["projects"], standard: home => join(home, ".qoder") }],
+  gemini: [{ name: "GEMINI_CLI_HOME", folders: ["tmp"], standard: home => join(home, ".gemini") }],
+  qwen: [{ name: "QWEN_RUNTIME_DIR", folders: ["projects"], standard: home => join(home, ".qwen") }],
+  // Cline / Roo / Kilo live in VS Code family globalStorage directories, which no variable moves; the platform
+  // host directories are standard roots (defaultRoots), and provider discovery has nothing to add for them.
+  cline: [],
+  roo: [],
+  kilo: [],
+  // Hermes / MiMoCode / dsh keep their databases at fixed paths with no moving variable.
+  hermes: [],
+  mimo: [],
+  dsh: [],
 };
 /** Directories one variable may name when the text cannot tell which assignment wins (the latest ones are kept). */
 const MAX_CANDIDATES = 3;
@@ -57,6 +75,30 @@ export interface RootContext {
 
 const piAgentDir = (home: string, env: RootContext["env"]): string => env.PI_CODING_AGENT_DIR || join(home, ".pi", "agent");
 
+/** VS Code family hosts whose globalStorage may hold task transcripts, in the usual install names. */
+const VSCODE_HOSTS = ["Code", "Code - Insiders", "VSCodium", "Cursor", "Windsurf"] as const;
+/** The Cline / Roo / Kilo extension ids under those hosts' globalStorage. */
+const CLINE_FAMILY_EXT_IDS = ["saoudrizwan.claude-dev", "rooveterinaryinc.roo-cline", "kilocode.kilo-code"] as const;
+const CLINE_FAMILY_SOURCES = ["cline", "roo", "kilo"] as const;
+/** globalStorage bases for the running platform: the desktop hosts, plus the remote servers on Linux. */
+function vscodeGlobalStorageBases(home: string): string[] {
+  if (process.platform === "darwin") return VSCODE_HOSTS.map(host => join(home, "Library", "Application Support", host, "User", "globalStorage"));
+  if (process.platform === "win32") return VSCODE_HOSTS.map(host => join(home, "AppData", "Roaming", host, "User", "globalStorage"));
+  const desktop = VSCODE_HOSTS.map(host => join(home, ".config", host, "User", "globalStorage"));
+  return [...desktop, join(home, ".vscode-server", "data", "User", "globalStorage"), join(home, ".vscode-server-insiders", "data", "User", "globalStorage")];
+}
+/** One root per Cline family extension per globalStorage base. */
+function clineFamilyRoots(home: string): LogRoot[] {
+  const roots: LogRoot[] = [];
+  for (const [index, extId] of CLINE_FAMILY_EXT_IDS.entries()) {
+    for (const base of vscodeGlobalStorageBases(home)) {
+      roots.push({ source: CLINE_FAMILY_SOURCES[index], path: join(base, extId, "tasks") });
+    }
+  }
+  return roots;
+}
+const ompAgentDir = (home: string, env: RootContext["env"]): string => env.PI_CODING_AGENT_DIR || join(home, env.PI_CONFIG_DIR || ".omp", "agent");
+
 /** The roots checked on every host: the daemon's own environment, then the standard locations. */
 export function defaultRoots(context: Pick<RootContext, "home" | "env"> = { home: homedir(), env: process.env }): LogRoot[] {
   const { home, env } = context;
@@ -70,6 +112,31 @@ export function defaultRoots(context: Pick<RootContext, "home" | "env"> = { home
     { source: "grok", path: join(home, ".grok", "sessions") },
     { source: "pi", path: env.PI_CODING_AGENT_SESSION_DIR || join(piAgentDir(home, env), "sessions") },
     { source: "pi", path: join(home, ".pi", "agent", "sessions") },
+    // 2.18: oh-my-pi. A PI_CODING_AGENT_DIR or PI_CODING_AGENT_SESSION_DIR set for Pi is where it writes too: the
+    // duplicates above are dropped, and those sessions count once, as Pi.
+    { source: "omp", path: env.PI_CODING_AGENT_SESSION_DIR || join(ompAgentDir(home, env), "sessions") },
+    { source: "omp", path: join(home, ".omp", "agent", "sessions") },
+    // 2.18: OpenCode. Its data directory holds the database and the legacy storage tree beside each other.
+    { source: "opencode", path: join(env.XDG_DATA_HOME || join(home, ".local", "share"), "opencode") },
+    { source: "opencode", path: join(home, ".local", "share", "opencode") },
+    // 2.18: CodeBuddy Code and Qoder keep one `.jsonl` per session under their projects directory.
+    { source: "codebuddy", path: join(env.CODEBUDDY_CONFIG_DIR || join(home, ".codebuddy"), "projects") },
+    { source: "codebuddy", path: join(home, ".codebuddy", "projects") },
+    { source: "qoder", path: join(env.QODER_CONFIG_DIR || join(home, ".qoder"), "projects") },
+    { source: "qoder", path: join(home, ".qoder", "projects") },
+    // The Chinese edition keeps its own home when no variable moves it.
+    { source: "qoder", path: join(home, ".qoder-cn", "projects") },
+    // 2.18: Gemini CLI's chat records and Qwen Code's transcripts.
+    { source: "gemini", path: join(env.GEMINI_CLI_HOME || join(home, ".gemini"), "tmp") },
+    { source: "gemini", path: join(home, ".gemini", "tmp") },
+    { source: "qwen", path: join(env.QWEN_RUNTIME_DIR || join(home, ".qwen"), "projects") },
+    { source: "qwen", path: join(home, ".qwen", "projects") },
+    // 2.18: Cline / Roo Code / Kilo Code task transcripts in every VS Code family host's globalStorage.
+    ...clineFamilyRoots(home),
+    // 2.18: Hermes's state database, MiMoCode's OpenCode-shaped database, dsh's cost ledger.
+    { source: "hermes", path: join(home, ".hermes") },
+    { source: "mimo", path: join(home, ".local", "share", "mimocode") },
+    { source: "dsh", path: join(home, ".dsh", "storages", "cost-meter") },
     { source: "kimi", path: join(env.KIMI_CODE_HOME || join(home, ".kimi-code"), "sessions") },
     { source: "kimi", path: join(home, ".kimi-code", "sessions") },
     { source: "zcode", path: join(env.ZCODE_HOME || join(home, ".zcode"), "cli", "db") },
@@ -174,15 +241,15 @@ function commandPrograms(command: unknown): string[] {
   return words.filter((word): word is string => !!word);
 }
 /** An ACP provider's CLI by its command's name: `grok`, `grok-cli`, a renamed `grok-…` binary or script. */
-const ACP_COMMANDS: ReadonlyArray<[RegExp, TokenSource]> = [[/^kimi(?:$|[-_.])/i, "kimi"], [/^zcode(?:$|[-_.])/i, "zcode"], [/^grok(?:$|[-_.])/i, "grok"], [/^pi(?:$|[-_.])/, "pi"]];
+const ACP_COMMANDS: ReadonlyArray<[RegExp, TokenSource]> = [[/^kimi(?:$|[-_.])/i, "kimi"], [/^zcode(?:$|[-_.])/i, "zcode"], [/^grok(?:$|[-_.])/i, "grok"], [/^pi(?:$|[-_.])/, "pi"], [/^omp(?:$|[-_.])/, "omp"]];
 /**
- * The log format a provider writes: its own id or the built-in it extends (`claude`, `codex`, `pi`); for an ACP provider
- * (`extends: "acp"`) the CLI its command runs (2.14), past `env`, assignments and interpreters (`commandPrograms`). Null for
- * the others (their logs are not read).
+ * The log format a provider writes: its own id or the built-in it extends (`claude`, `codex`, `pi`, `omp`); for an ACP
+ * provider (`extends: "acp"`) the CLI its command runs (2.14), past `env`, assignments and interpreters (`commandPrograms`).
+ * Null for the others (their logs are not read).
  */
 export function providerSource(id: string, entry: { extends?: unknown; command?: unknown }): TokenSource | null {
   const base = typeof entry.extends === "string" && entry.extends.trim() ? entry.extends.trim() : id;
-  if (base === "claude" || base === "codex" || base === "pi" || base === "kimi" || base === "zcode") return base;
+  if (base === "claude" || base === "codex" || base === "pi" || base === "omp" || base === "opencode" || base === "codebuddy" || base === "qoder" || base === "gemini" || base === "qwen" || base === "cline" || base === "roo" || base === "kilo" || base === "hermes" || base === "mimo" || base === "dsh" || base === "kimi" || base === "zcode") return base;
   if (base !== "acp") return null;
   for (const word of commandPrograms(entry.command)) {
     const name = basename(word), source = ACP_COMMANDS.find(([pattern]) => pattern.test(name))?.[1];
@@ -462,6 +529,7 @@ export async function providerRoots(providers: Readonly<Record<string, unknown>>
     if (!source) continue;
     const add = (path: string, via: DiscoveredRoot["via"]) => { if (!found.some(root => root.provider === id && root.path === path)) found.push({ source, path, provider: id, via }); };
     const [first, agent] = CONFIG_ENV[source], unset: Candidate[] = [];
+    if (!first) continue;
     for (const value of (await candidates(entry, first!.name, context, read)).reverse()) {
       const directory = value.path ?? first!.standard?.(context.home) ?? null;
       if (!directory) unset.push(value);

@@ -29,8 +29,9 @@ export const Swimlane = memo(function Swimlane({ theme, events, agents, now, com
   const [range, setRange] = useState<Window>("1h");
   const [width, setWidth] = useState(0);
   const live = useMemo(() => { const result = new Map<string, "running" | "waiting">(); for (const agent of agents) if (agent.status === "running" || agent.status === "waiting") result.set(agent.id, agent.status); return result; }, [agents]);
+  const titles = useMemo(() => new Map(agents.map(agent => [agent.id, agent.title] as const)), [agents]);
   const windowMs = windows[range];
-  const { lanes, peak, peakAt, turns, hidden } = useMemo(() => buildSwimlanes(events, live, now, windowMs, compact ? 6 : 8), [events, live, now, windowMs, compact]);
+  const { lanes, peak, peakAt, turns, hidden } = useMemo(() => buildSwimlanes(events, live, now, windowMs, compact ? 6 : 8, titles), [events, live, now, windowMs, compact, titles]);
   const labelWidth = compact ? 88 : 150, track = Math.max(0, width - labelWidth - space.sm), from = now - windowMs;
   const x = (at: number) => (at - from) / windowMs * track;
   const ticks = swimTicks(now, windowMs, -new Date(now).getTimezoneOffset());

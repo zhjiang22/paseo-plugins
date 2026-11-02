@@ -104,8 +104,10 @@ export function buildTokenSnapshot(data: TokenData, input: { range: StatsRange; 
     const root = rootSession(data, bucket.source, bucket.sessionId), child = root !== bucket.sessionId;
     const id = sessionKey(bucket.source, root), project = projectFor(bucket.cwd, cwdAgents), agent = agents.get(root);
     models.get(bucket.model ?? "unknown")?.ids.add(id); sources.get(bucket.source)?.ids.add(id); projects.get(project.key)?.ids.add(id);
-    // No agent: the provider whose own log directory the session came from, if one does (gemini-B9).
-    const owner = agent?.provider ?? owners.get(id) ?? owners.get(sessionKey(bucket.source, bucket.sessionId)) ?? null;
+    // No agent: the provider whose own log directory the session came from, if one does (gemini-B9). Otherwise the
+    // session's own source — a terminal run of a configured harness burns that harness's quota, so it lands in the
+    // harness's row (omp, claude, …); only a bucket without a source at all stays unmatched.
+    const owner = agent?.provider ?? owners.get(id) ?? owners.get(sessionKey(bucket.source, bucket.sessionId)) ?? bucket.source ?? null;
     const provider = getRow(providers, owner ?? TOKEN_UNMATCHED, owner ?? t("serverTokensSnapshot.m004"), null);
     addTokenCounts(provider, bucket); provider.lastAt = Math.max(provider.lastAt, bucket.lastAt); provider.ids.add(id);
     if (owner) { const mix = providerModels.get(owner) ?? new Map<string | null, number>(); mix.set(bucket.model, (mix.get(bucket.model) ?? 0) + bucket.calls); providerModels.set(owner, mix); }

@@ -163,7 +163,8 @@ function TokenRows({ theme, rows, kind, total, limit = 8, hues, ranked = true, e
 
 /**
  * Provider 用量 (2.13): sessions matched to Paseo agents, by the agent's provider, so custom providers sharing one log
- * directory are told apart; the sessions nothing matches stand apart as 未关联会话.
+ * directory are told apart; sessions nothing matches fall back to a row named by their log source, and only sessions
+ * beyond the session-detail window keep the 未关联会话 row.
  */
 function ProviderCard({ theme, snapshot, total }: { theme: PluginTheme; snapshot: TokenSnapshot; total: number }) {
   const rows = snapshot.providers;

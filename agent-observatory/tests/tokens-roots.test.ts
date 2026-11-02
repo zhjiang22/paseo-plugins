@@ -7,7 +7,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import type { PaseoApi } from "@getpaseo/client";
 import { defaultRoots, inlineScript, launcherAssignment, launcherCandidates, literalPath, providerRoots, providerSource, readLauncherText, shellCommands, shellWord } from "../server/tokens/roots";
-import { MAX_TOKEN_ROOTS, TOKEN_SOURCES, TOKEN_UNMATCHED } from "../shared/tokens";
+import { MAX_TOKEN_ROOTS, TOKEN_SOURCES } from "../shared/tokens";
 import { StatsDirectory } from "../server/stats-directory";
 import { TokenIngester } from "../server/tokens/ingester";
 import { TokenStore } from "../server/tokens/store";
@@ -378,7 +378,7 @@ test("Grok and Pi providers that move their logs add roots: GROK_HOME, Pi's sess
   assert.ok(reads.every(path => !/auth|credential/i.test(path)), "no credentials are ever opened");
 });
 
-test("a root only one custom provider uses counts its unmatched sessions for that provider; shared and standard roots do not", async () => {
+test("a root only one custom provider uses counts its sessions for that provider; shared and standard roots fall back to their source", async () => {
   const root = await mkdtemp(join(tmpdir(), "observatory-roots-owner-"));
   const standard = join(root, "standard"), team = join(root, "team"), shared = join(root, "shared");
   for (const [dir, id] of [[standard, "terminal"], [join(team, "projects", "-home-me-app"), "team-terminal"], [join(team, "projects", "-home-me-app"), "team-paseo"], [join(shared, "projects", "-home-me-app"), "shared-terminal"]] as const) {
@@ -407,12 +407,12 @@ test("a root only one custom provider uses counts its unmatched sessions for tha
     await store.discover(paseo); await store.poll(true);
     assert.deepEqual(store.ingester.roots.map(item => [item.path, item.provider ?? null]), [[standard, null], [join(root, "standard-config", "projects"), null],
       [join(team, "projects"), "claude-team"], [join(shared, "projects"), null]]);
-    assert.deepEqual(await rows(), { "claude-team": [2, 2], [TOKEN_UNMATCHED]: [2, 2] }, "the team root's terminal session counts for claude-team; the shared and standard ones stay unmatched");
-    // The provider gives its directory up: the terminal session is unmatched again, the Paseo one still the agent's.
+    assert.deepEqual(await rows(), { "claude-team": [2, 2], claude: [2, 2] }, "the team root's terminal session counts for claude-team; the shared and standard ones fall back to their source's row");
+    // The provider gives its directory up: the terminal sessions fall back to their source's row, the Paseo one stays the agent's.
     providers = { "claude-a": providers["claude-a"]!, "claude-b": providers["claude-b"]! };
     now += 6 * 60_000; await store.discover(paseo);
     assert.equal(store.ingester.roots[2]!.provider, undefined);
-    assert.deepEqual(await rows(), { "claude-team": [1, 1], [TOKEN_UNMATCHED]: [3, 3] });
+    assert.deepEqual(await rows(), { "claude-team": [1, 1], claude: [3, 3] });
   } finally { await store.close(); await rm(root, { recursive: true, force: true }); }
 });
 

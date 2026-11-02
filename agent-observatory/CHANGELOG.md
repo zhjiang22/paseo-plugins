@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+**Provider 用量 falls back to the session's own harness**
+- A session the observatory cannot link to an Agent — run directly in a terminal, its Agent since deleted — used to land in the one 未关联会话 row, however clearly its log named the tool. Unmatched sessions now fall back to a provider row named by their log source (omp, claude, codex, …), so a configured harness's whole consumption shows in its own row; every source names its own row, and only sessions beyond the 5,000-session detail window keep the unmatched row; an Agent link or a provider root's own claim still wins over the fallback. On a machine where oh-my-pi is the daily driver this moves about two thirds of the recorded tokens from 未关联 into the omp row.
+
+**Token accounting refinements (Kimi/ZCode reconciliation)**
 - Shared database execution reviews isolate requested sessions, follow WAL updates, and find sessions beyond the checkpoint index. Gemini reads native message rows and includes thinking/tool-use tokens; Hermes aggregates every billing route and task with complete pagination; modern OpenCode/MiMo reasoning contributes to output totals.
 
 **The event stream names Agents from the directory**

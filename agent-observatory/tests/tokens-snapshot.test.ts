@@ -133,11 +133,11 @@ test("90-day snapshot keeps worst-case Unicode metadata below 60 KB without losi
   assert.equal(result.coverage.roots.length, MAX_TOKEN_ROOTS, "the payload budget must not hide monitored roots");
   assert.equal(result.sources.length, TOKEN_SOURCES.length, "every harness remains represented");
   assert.ok(result.sessions.every(row => row.agentId === null || directory.agents.some(entry => entry.id === row.agentId)));
-  assert.equal(result.providers!.at(-1)!.key, TOKEN_UNMATCHED);
+  assert.ok(result.providers!.every(row => row.key !== TOKEN_UNMATCHED), "every session's source names its provider, so nothing stays unmatched");
   for (const rows of [result.models, result.projects, result.sources, result.providers!]) assert.equal(rows.reduce((sum, row) => sum + tokenTotal(row), 0), tokenTotal(result.totals));
 });
 
-test("Provider 用量 ranks sessions by their agent's provider, tells providers sharing one log folder apart and keeps unmatched sessions apart", () => {
+test("Provider 用量 ranks sessions by their agent's provider, tells providers sharing one log folder apart and folds terminal runs into their harness's row", () => {
   const data = emptyData(), directory = new StatsDirectory(); directory.loaded = true;
   directory.agents = [agent("team", { provider: "claude-team", sessionId: "s-team" }), agent("relay", { provider: "claude-relay", sessionId: "s-relay" }),
     agent("gateway", { provider: "codex-gateway", sessionId: "s-codex" }), agent("idle", { provider: "claude-idle", sessionId: "never-logged" })];
@@ -146,15 +146,28 @@ test("Provider 用量 ranks sessions by their agent's provider, tells providers 
   addCall(data, call("t2", now - 2000, { sessionId: "s-team", model: "claude-sonnet", output: 100 }), null, now);
   addCall(data, call("r1", now - 3000, { sessionId: "s-relay", model: "claude-opus", output: 5000 }), null, now);
   addCall(data, call("c1", now - 4000, { source: "codex", sessionId: "s-codex", model: "gpt-5.5", output: 900 }), null, now);
+  // A terminal run with no Agent behind it lands in the row its own source names.
   addCall(data, call("x1", now - 5000, { sessionId: "terminal-run", output: 300 }), null, now);
   const result = tokenSnapshotSchema.parse(buildTokenSnapshot(data, { range: "7d", utcOffsetMinutes: 0 }, now, directory, coverage));
   assert.equal(result.sources.length, 2, "by log source the two Claude providers are one row");
   assert.deepEqual(result.providers!.map(row => [row.key, row.label, row.vendor, row.calls, row.sessions]), [
-    ["claude-relay", "claude-relay", "anthropic", 1, 1], ["codex-gateway", "codex-gateway", "openai", 1, 1], ["claude-team", "claude-team", "anthropic", 2, 1],
-    [TOKEN_UNMATCHED, "未关联会话", null, 1, 1]]);
+    ["claude-relay", "claude-relay", "anthropic", 1, 1], ["codex-gateway", "codex-gateway", "openai", 1, 1], ["claude", "claude", "anthropic", 1, 1],
+    ["claude-team", "claude-team", "anthropic", 2, 1]]);
   assert.equal(result.providers!.reduce((sum, row) => sum + tokenTotal(row), 0), tokenTotal(result.totals));
   // Until the agent directory has been read every session would look unmatched: no rows at all.
   assert.equal(buildTokenSnapshot(data, { range: "7d", utcOffsetMinutes: 0 }, now, new StatsDirectory(), coverage).providers, undefined);
+});
+
+test("a terminal run of a configured harness falls back to the provider named by its source, behind any owner claim", () => {
+  const data = emptyData(), directory = new StatsDirectory(); directory.loaded = true;
+  // An omp session run directly in a terminal: no Agent, no provider root — the source is still the harness's name.
+  addCall(data, call("omp-terminal", now - 1000, { source: "omp", sessionId: "terminal-omp", model: "glm-5.3-flash", output: 44_000 }), null, now);
+  // A custom provider root's own claim outranks the source fallback (the root recorded the session as its own).
+  addCall(data, call("relay", now - 2000, { source: "omp", sessionId: "relayed", model: "glm-5.3-flash", output: 500 }), null, now);
+  const owners = new Map([["omp:relayed", "my-relay"]]);
+  const result = tokenSnapshotSchema.parse(buildTokenSnapshot(data, { range: "7d", utcOffsetMinutes: 0 }, now, directory, coverage, owners));
+  assert.deepEqual(result.providers!.map(row => [row.key, row.label, row.vendor, row.calls]), [
+    ["omp", "omp", "zhipu", 1], ["my-relay", "my-relay", "zhipu", 1]]);
 });
 
 test("Codex subagent threads count for the session that spawned them, through any depth and without loops", () => {
@@ -171,7 +184,7 @@ test("Codex subagent threads count for the session that spawned them, through an
   assert.equal(root.agentId, "parent-agent"); assert.equal(root.calls, 3); assert.equal(root.subagentCalls, 2); assert.equal(root.output, 600);
   assert.ok(!result.sessions.some(session => session.sessionId === "child-thread" || session.sessionId === "grandchild-thread"));
   assert.equal(result.models.find(row => row.key === "gpt-5.5")!.sessions, 2, "a parent and its threads are one session (the loop is another)");
-  assert.deepEqual(result.providers!.map(row => [row.key, row.calls]), [["codex-gateway", 3], [TOKEN_UNMATCHED, 1]]);
+  assert.deepEqual(result.providers!.map(row => [row.key, row.calls]), [["codex-gateway", 3], ["codex", 1]]);
   assert.equal(rootSession(data, "codex", "loop-a"), "loop-b"); assert.equal(rootSession(data, "claude", "child-thread"), "child-thread", "Claude subagents already log under their parent");
   assert.equal(noteThread(data, "x", "x"), false);
 });
@@ -185,4 +198,16 @@ test("sessions run in fresh temporary directories are one 临时目录 project, 
   const result = tokenSnapshotSchema.parse(buildTokenSnapshot(data, { range: "7d", utcOffsetMinutes: 0 }, now, directory, coverage));
   assert.deepEqual(result.projects.map(row => [row.key, row.label, row.sessions]).sort(), [["/home/me/app", "app", 1], ["__temporary__", "临时目录", 3], ["scratch-key", "临时实验", 1]]);
   assert.equal(result.sessions.find(row => row.sessionId === "s0")?.project, "临时目录");
+});
+
+test("sessions beyond the session-detail window keep the unmatched row for their remainder", () => {
+  const data = emptyData(), directory = new StatsDirectory(); directory.loaded = true;
+  addCall(data, call("gone", now - 3000, { source: "omp", sessionId: "dropped-session", model: "glm-5.3-flash", output: 700 }), null, now);
+  addCall(data, call("kept", now - 1000, { source: "omp", sessionId: "kept-session", model: "glm-5.3-flash", output: 100 }), null, now);
+  // The retention window drops the session from the directory: its per-session buckets are pruned while its totals stay.
+  data.sessions.delete("omp:dropped-session");
+  pruneData(data, now);
+  const result = tokenSnapshotSchema.parse(buildTokenSnapshot(data, { range: "90d", utcOffsetMinutes: 0 }, now, directory, coverage));
+  assert.deepEqual(result.providers!.map(row => [row.key, row.calls]), [["omp", 1], [TOKEN_UNMATCHED, 1]]);
+  assert.equal(result.providers!.reduce((sum, row) => sum + tokenTotal(row), 0), tokenTotal(result.totals), "the remainder row keeps the totals conserved");
 });

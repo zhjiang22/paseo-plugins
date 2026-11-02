@@ -2111,6 +2111,11 @@
       "one": "{count} model",
       "other": "{count} models"
     },
+    "sourceUsage": "Harness usage",
+    "sources": {
+      "one": "{count} source",
+      "other": "{count} sources"
+    },
     "projectUsage": "Project usage",
     "aboutTokenStatistics": "About token statistics",
     "tokensChart": "Tokens",

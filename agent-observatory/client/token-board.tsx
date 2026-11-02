@@ -275,7 +275,13 @@ export function TokenBoard({ theme, compact, range, onRange, onRefresh, tokens, 
       {/* Providers sit above projects: together they balance the taller model list on wide screens. */}
       {pair(<Card theme={theme} title={t("secondaryTokenBoard.modelUsage")} icon="Cpu" color="cyan" trailing={<Text style={{ color: theme.colors.foregroundMuted, fontSize: fontSize.meta }}>{t("secondaryTokenBoard.models", { count: tokens.models.filter(row => row.key !== "__other__").length })}</Text>}>
         <TokenRows theme={theme} rows={tokens.models} kind="models" total={total} />
-        {tokens.sources.length > 1 ? <View style={{ borderTopWidth: hairline, borderTopColor: theme.colors.border, paddingTop: space.sm }}><TokenRows theme={theme} rows={tokens.sources} kind="sources" total={total} /></View> : null}
+        {tokens.sources.length > 1 ? <View style={{ borderTopWidth: hairline, borderTopColor: theme.colors.border, paddingTop: space.sm, gap: space.xs }}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Text style={{ flexGrow: 1, color: theme.colors.foregroundMuted, fontSize: fontSize.meta, fontWeight: "600" }}>{t("secondaryTokenBoard.sourceUsage")}</Text>
+            <Text style={{ color: theme.colors.foregroundMuted, fontSize: fontSize.meta }}>{t("secondaryTokenBoard.sources", { count: tokens.sources.length })}</Text>
+          </View>
+          <TokenRows theme={theme} rows={tokens.sources} kind="sources" total={total} />
+        </View> : null}
       </Card>, <View style={{ gap: space.lg }}>
         <ProviderCard theme={theme} snapshot={tokens} total={total} />
         <Card theme={theme} title={t("secondaryTokenBoard.projectUsage")} icon="FolderGit2" color="blue"><TokenRows theme={theme} rows={tokens.projects} kind="projects" total={total} limit={6} /></Card>

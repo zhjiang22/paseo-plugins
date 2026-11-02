@@ -1907,6 +1907,8 @@
     "tokenStatisticsSyncFailedShowingThe": "Token 统计同步失败，显示的是上次结果：{value1}",
     "modelUsage": "模型用量",
     "models": "{count} 个模型",
+    "sourceUsage": "Harness 用量",
+    "sources": "{count} 个来源",
     "projectUsage": "项目用量",
     "aboutTokenStatistics": "关于 Token 统计",
     "tokensChart": "Token",

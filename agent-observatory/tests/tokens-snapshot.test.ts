@@ -151,7 +151,7 @@ test("Provider 用量 ranks sessions by their agent's provider, tells providers 
   const result = tokenSnapshotSchema.parse(buildTokenSnapshot(data, { range: "7d", utcOffsetMinutes: 0 }, now, directory, coverage));
   assert.equal(result.sources.length, 2, "by log source the two Claude providers are one row");
   assert.deepEqual(result.providers!.map(row => [row.key, row.label, row.vendor, row.calls, row.sessions]), [
-    ["claude-relay", "claude-relay", "anthropic", 1, 1], ["codex-gateway", "codex-gateway", "openai", 1, 1], ["claude", "claude", "anthropic", 1, 1],
+    ["claude-relay", "claude-relay", "anthropic", 1, 1], ["codex-gateway", "codex-gateway", "openai", 1, 1], ["claude", "Claude Code", "anthropic", 1, 1],
     ["claude-team", "claude-team", "anthropic", 2, 1]]);
   assert.equal(result.providers!.reduce((sum, row) => sum + tokenTotal(row), 0), tokenTotal(result.totals));
   // Until the agent directory has been read every session would look unmatched: no rows at all.
@@ -166,8 +166,25 @@ test("a terminal run of a configured harness falls back to the provider named by
   addCall(data, call("relay", now - 2000, { source: "omp", sessionId: "relayed", model: "glm-5.3-flash", output: 500 }), null, now);
   const owners = new Map([["omp:relayed", "my-relay"]]);
   const result = tokenSnapshotSchema.parse(buildTokenSnapshot(data, { range: "7d", utcOffsetMinutes: 0 }, now, directory, coverage, owners));
+  // The pure-fallback row carries the harness's own display name; the owner-claimed row keeps its provider id.
   assert.deepEqual(result.providers!.map(row => [row.key, row.label, row.vendor, row.calls]), [
-    ["omp", "omp", "zhipu", 1], ["my-relay", "my-relay", "zhipu", 1]]);
+    ["omp", "oh-my-pi", "zhipu", 1], ["my-relay", "my-relay", "zhipu", 1]]);
+});
+
+test("an owners claim or an agent attribution shields a provider row from the source-name relabel", () => {
+  const data = emptyData(), directory = new StatsDirectory(); directory.loaded = true;
+  // Agents whose provider id IS a source id: their rows must keep the provider id even when source fallback feeds them too.
+  directory.agents = [agent("claude-agent", { provider: "claude", sessionId: "claude-agent-session" }), agent("omp-agent", { provider: "omp", sessionId: "omp-agent-session" })];
+  addCall(data, call("ca", now - 3000, { sessionId: "claude-agent-session", output: 100 }), null, now);
+  addCall(data, call("cf", now - 2000, { sessionId: "claude-terminal", output: 50 }), null, now);
+  addCall(data, call("oa", now - 2500, { source: "omp", sessionId: "omp-agent-session", output: 200 }), null, now);
+  addCall(data, call("of", now - 1500, { source: "omp", sessionId: "omp-terminal", output: 60 }), null, now);
+  // A custom provider whose id equals a source id claims its own session: the claim is not a source fallback.
+  addCall(data, call("cr", now - 1000, { source: "codex", sessionId: "codex-relayed", output: 40 }), null, now);
+  const owners = new Map([["codex:codex-relayed", "codex"]]);
+  const result = tokenSnapshotSchema.parse(buildTokenSnapshot(data, { range: "7d", utcOffsetMinutes: 0 }, now, directory, coverage, owners));
+  assert.deepEqual(result.providers!.map(row => [row.key, row.label, row.calls]), [
+    ["omp", "omp", 2], ["claude", "claude", 2], ["codex", "codex", 1]]);
 });
 
 test("Codex subagent threads count for the session that spawned them, through any depth and without loops", () => {

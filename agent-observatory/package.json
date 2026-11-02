@@ -4,6 +4,7 @@
   "version": "2.18.1",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "build:client-chunks": "node scripts/build-client-chunks.mjs",
     "test": "tsx --import ./tests/i18n-setup.ts --test tests/*.test.ts",
     "preview:build": "node scripts/build-preview.mjs",
     "test:ui": "playwright test --config tests/playwright.config.mjs"

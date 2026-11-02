@@ -29,21 +29,24 @@ export const isMimoDb = (file: LogFile): boolean => file.source === "mimo" && ba
  * the message ids deduplicate what both versions counted. Opens read-only: the database is OpenCode's, never written;
  * a failed open or a vanished file throws (the root shows it). Orphan rows whose session is gone count as top-level.
  */
-export async function readOpendencodeDb(file: LogFile, sink: CallSink, onBytes?: (bytes: number) => void): Promise<boolean> {
+export async function readOpendencodeDb(file: LogFile, sink: CallSink, onBytes?: (bytes: number) => void, sessionIds?: readonly string[]): Promise<boolean> {
+  if (sessionIds && !sessionIds.length) return false;
   // The database's own times keep it in the hot poll; a vanished file throws and the root shows it.
   const details = await stat(file.path);
   file.size = details.size; file.mtime = details.mtimeMs;
   const start = file.offset;
   const db = new DatabaseSync(file.path, { readOnly: true });
   try {
-    const top = (db.prepare("SELECT max(rowid) AS top FROM message").get() as { top: number | null }).top ?? 0;
+    // On-demand recaps read only their sessions, never every message in this shared database.
+    const filter = sessionIds ? ` AND m.session_id IN (${sessionIds.map(() => "?").join(",")})` : "";
+    const top = (db.prepare("SELECT max(m.rowid) AS top FROM message m WHERE 1=1" + filter).get(...(sessionIds ?? [])) as { top: number | null }).top ?? 0;
     if (top < file.offset) file.offset = 0;
     const read = db.prepare(
-      "SELECT m.rowid AS rowid, m.id AS id, m.session_id AS sessionId, m.data AS data, s.parent_id AS parent FROM message m LEFT JOIN session s ON s.id = m.session_id WHERE m.rowid > ? ORDER BY m.rowid LIMIT " + OPENCODE_DB_BATCH,
+      "SELECT m.rowid AS rowid, m.id AS id, m.session_id AS sessionId, m.data AS data, s.parent_id AS parent FROM message m LEFT JOIN session s ON s.id = m.session_id WHERE m.rowid > ?" + filter + " ORDER BY m.rowid LIMIT " + OPENCODE_DB_BATCH,
     );
     let cursor = Math.max(0, file.offset - OPENCODE_DB_WINDOW);
     for (;;) {
-      const batch = read.all(cursor) as Array<Record<string, unknown>>;
+      const batch = read.all(cursor, ...(sessionIds ?? [])) as Array<Record<string, unknown>>;
       for (const row of batch) {
         cursor = Math.max(cursor, Number(row.rowid));
         let message: unknown;

@@ -39,7 +39,8 @@ const isTaskMessages = (source: LogRoot["source"], name: string): boolean =>
  * per task, walked normally.
  */
 const isLog = (source: LogRoot["source"], name: string): boolean =>
-  name.endsWith(".jsonl") && (source !== "codex" || name.startsWith("rollout-")) || isTaskMessages(source, name)
+  source === "zcode" ? name === "db.sqlite" : source === "kimi" ? name === "wire.jsonl"
+  : name.endsWith(".jsonl") && (source !== "codex" || name.startsWith("rollout-")) || isTaskMessages(source, name)
   || (source === "dsh" && name === "ledger.json");
 /** A sub-agent's log (`<session>/subagents/<agent>.jsonl`): its parent session's, never the place a prompt is logged. */
 const subagentLog = (source: LogRoot["source"], path: string): boolean => (source === "claude" || source === "codebuddy") && basename(dirname(path)) === "subagents";
@@ -136,7 +137,8 @@ export class TokenIngester {
     if ((phase === "original" && candidate.forked) || (phase === "fork" && !candidate.forked)) return;
     if (previous?.accepted && previous.call.key === call.key) {
       candidate.accepted = true;
-      if (call.at === previous.call.at && call.start === previous.call.start && call.output === previous.call.output && call.reasoning === previous.call.reasoning) { this.diagnostics.duplicates++; return; }
+      if (call.at === previous.call.at && call.start === previous.call.start && call.output === previous.call.output && call.reasoning === previous.call.reasoning &&
+          call.input === previous.call.input && call.cacheRead === previous.call.cacheRead && call.cacheWrite === previous.call.cacheWrite && call.model === previous.call.model) { this.diagnostics.duplicates++; return; }
       this.seen.set(call.key, call.at); this.diagnostics.corrections++;
       this.options.onCall(call, previous.call); this.changed(); return;
     }
@@ -265,7 +267,7 @@ export class TokenIngester {
     // every one has that name: one deleted and another session's written over the same inode is a new file (r3-F3).
     if (!stopped) {
       const gone = new Map<string, LogFile>();
-      for (const [path, file] of this.files) if (!found.has(path) && file.source !== "grok") gone.set(`${file.source}:${file.dev}:${file.ino}:${basename(path)}`, file);
+      for (const [path, file] of this.files) if (!found.has(path) && file.source !== "grok" && file.source !== "kimi" && file.source !== "zcode") gone.set(`${file.source}:${file.dev}:${file.ino}:${basename(path)}`, file);
       if (gone.size) candidates = candidates.filter(({ path, root, source, details }) => {
         const key = `${source}:${details.dev}:${details.ino}:${basename(path)}`, file = gone.get(key);
         if (!file) return true;
@@ -422,7 +424,7 @@ export class TokenIngester {
       for (const file of this.files.values()) {
         if (this.closed) break;
         // The 30s rescan also stats cold files so a resumed old session becomes hot.
-        if (!newPaths.has(file.path) && (rescan || file.mtime >= this.now() - 900_000)) await this.read(file, "all");
+        if (!newPaths.has(file.path) && (rescan || file.source === "zcode" || file.mtime >= this.now() - 900_000)) await this.read(file, "all");
       }
       if (rescan) {
         const cutoff = this.now() - SEEN_DAYS * DAY;

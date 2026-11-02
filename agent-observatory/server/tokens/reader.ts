@@ -4,6 +4,8 @@ import { basename, dirname, isAbsolute, join } from "node:path";
 import { setImmediate as yieldLoop } from "node:timers/promises";
 import { initialParser, dshDayStamp, parseClineDoc, parseDshLedger, parseGrokUsage, parseLine, parseOpendencodeDoc } from "./parser";
 import { isOpendencodeDb } from "./opencode-db";
+import { readKimiMetadata } from "./kimi-parser";
+import { tailZcode } from "./zcode-reader";
 import type { CallSink, LogFile, ParserState } from "./types";
 
 const CHUNK = 256 * 1024, MAX_LINE = 16 * 1024 * 1024;
@@ -50,6 +52,7 @@ export async function grokCwd(path: string): Promise<string> {
  * again from the start (replaced, cut short, rewritten), told with the state read of it so far before `file` takes in the new one.
  */
 export async function tailFile(file: LogFile, sink: CallSink, onBytes?: (bytes: number) => void, onReset?: (lost: ParserState) => void): Promise<boolean> {
+  if (file.source === "zcode") return tailZcode(file, sink, onBytes, onReset);
   let handle;
   try { handle = await open(file.path, OPEN_FLAGS); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ELOOP") return false; throw error; }
@@ -102,6 +105,7 @@ async function tailOpen(file: LogFile, handle: FileHandle, sink: CallSink, onByt
   // The unchanged partial suffix remains on disk. Retrying it cannot complete a line and must not dirty the ledger.
   if (!changed && file.partialBytes > 0 && file.offset + file.partialBytes === details.size) return false;
   file.dev = details.dev; file.ino = details.ino; file.size = details.size; file.mtime = details.mtimeMs;
+  if (file.source === "kimi" && !file.state.metaSeen) await readKimiMetadata(file);
   if (file.offset >= details.size) return changed;
   let position = file.offset, committed = file.offset, carry = Buffer.alloc(0), skipping = false, yieldedAt = performance.now();
   const buffer = Buffer.allocUnsafe(CHUNK);

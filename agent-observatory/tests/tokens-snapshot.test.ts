@@ -129,7 +129,9 @@ test("90-day snapshot keeps worst-case Unicode metadata below 60 KB without losi
   const roots: TokenSnapshot["coverage"]["roots"] = Array.from({ length: MAX_TOKEN_ROOTS }, (_, index) => ({ source: TOKEN_SOURCES[index % TOKEN_SOURCES.length]!, path: "/" + "路".repeat(1023), files: 5000, error: "错".repeat(240) }));
   const result = tokenSnapshotSchema.parse(buildTokenSnapshot(data, { range: "90d", utcOffsetMinutes: 480 }, now, directory, { ...coverage, roots }));
   const bytes = Buffer.byteLength(JSON.stringify(result)); context.diagnostic(`Worst-case token snapshot: ${bytes} bytes, ${result.sessions.length} sessions, ${result.models.length} model rows.`);
-  assert.ok(bytes < 72_000); assert.equal(result.daily.length, 90); assert.ok(result.sessions.length <= 20); assert.ok(result.sessions.length >= 5);
+  assert.ok(bytes < 60_000); assert.equal(result.daily.length, 90); assert.ok(result.sessions.length <= 20); assert.ok(result.sessions.length >= 5);
+  assert.equal(result.coverage.roots.length, MAX_TOKEN_ROOTS, "the payload budget must not hide monitored roots");
+  assert.equal(result.sources.length, TOKEN_SOURCES.length, "every harness remains represented");
   assert.ok(result.sessions.every(row => row.agentId === null || directory.agents.some(entry => entry.id === row.agentId)));
   assert.equal(result.providers!.at(-1)!.key, TOKEN_UNMATCHED);
   for (const rows of [result.models, result.projects, result.sources, result.providers!]) assert.equal(rows.reduce((sum, row) => sum + tokenTotal(row), 0), tokenTotal(result.totals));

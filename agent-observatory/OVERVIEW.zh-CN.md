@@ -1,4 +1,4 @@
-Agent 观测台是一台主机上所有 Paseo Agent 和子 Agent 的看板。每个会话打开后显示它的结果、时间线、子任务、诊断和执行复盘。它还提供：侧栏上「需要处理」的数量，每个 Agent 附一句原因；就地审批和快捷回复；未读队列；用量统计；来自本机 Claude Code、Codex、Grok CLI 和 Pi 日志的 Token 统计；每一次定时运行；以及可选的智能分析和每轮小结。可选的提醒：提示音、标出需要处理的工作区标签、提示缓存倒计时和定时发送。
+Agent 观测台是一台主机上所有 Paseo Agent 和子 Agent 的看板。每个会话打开后显示它的结果、时间线、子任务、诊断和执行复盘。它还提供：侧栏上「需要处理」的数量，每个 Agent 附一句原因；就地审批和快捷回复；未读队列；用量统计；来自本机 Claude Code、Codex、Grok CLI、Pi、Kimi Code 和 ZCode 日志的 Token 统计；每一次定时运行；以及可选的智能分析和每轮小结。可选的提醒：提示音、标出需要处理的工作区标签、提示缓存倒计时和定时发送。
 
 它增加了侧栏页面「Agent 观测台」「已归档会话」「定时运行」、工作区面板和 Agent 面板、「命令中心」条目，以及 `/observe`。App 连接时只拿到一小段桩代码；其余部分在第一次打开时才加载。
 
@@ -13,8 +13,8 @@ Agent 观测台是一台主机上所有 Paseo Agent 和子 Agent 的看板。每
 ## 读取的数据
 
 - 从 daemon 读取：Agent 事件、提醒通知、Agent 列表（含已归档的）、你打开的 Agent 待审批的权限请求、Profile 和 Provider、额度窗口（`providers.listUsage()`，只在显示时读取），以及你打开的会话的时间线。在后台只读取已加载的 Agent。
-- Token 日志：`$CLAUDE_CONFIG_DIR/projects`（默认 `~/.claude/projects`）、`~/.config/claude/projects`、`$CODEX_HOME/sessions` 和 `archived_sessions`（默认 `~/.codex`）、每个 Grok CLI 会话的 `usage.json`（只读这一个文件），以及 Pi 的会话（默认 `~/.pi/agent/sessions`），不跟随符号链接。只保存计数、模型名、工作目录和会话 ID，从不保存提示词或输出。
-- 基于它们的自定义 Provider：Provider 的 `env`、命令行或启动脚本（按文本读取，最多 64 KB，从不执行）里字面写出的 `CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`GROK_HOME`、`PI_CODING_AGENT_SESSION_DIR` 或 `PI_CODING_AGENT_DIR`，以及 Pi 的 `sessionDir` 设置。
+- Token 日志：`$CLAUDE_CONFIG_DIR/projects`（默认 `~/.claude/projects`）、`~/.config/claude/projects`、`$CODEX_HOME/sessions` 和 `archived_sessions`（默认 `~/.codex`）、每个 Grok CLI 会话的 `usage.json`（只读这一个文件），以及 Pi 的会话（默认 `~/.pi/agent/sessions`）；Kimi Code 的 `$KIMI_CODE_HOME/sessions`（默认 `~/.kimi-code/sessions`）及 ZCode 的 `$ZCODE_HOME/cli/db`（默认 `~/.zcode/cli/db`，只读 SQLite 和 WAL）。不跟随符号链接；用 `v2/acp-lazy-sessions.json` 关联 ZCode 的 ACP 会话。只保存计数、模型名、工作目录和会话 ID，从不保存提示词或输出。
+- 基于它们的自定义 Provider：Provider 的 `env`、命令行或启动脚本（按文本读取，最多 64 KB，从不执行）里字面写出的 `CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`GROK_HOME`、`KIMI_CODE_HOME`、`ZCODE_HOME`、`PI_CODING_AGENT_SESSION_DIR` 或 `PI_CODING_AGENT_DIR`，以及 Pi 的 `sessionDir` 设置。
 - 为确认续跑，会在这个 Agent 自己的 Claude Code、Codex 或 Pi 会话日志里查找这次运行的编号（只比对，不保存）。缓存倒计时从基于 Claude 的会话自己的日志里读取最后一次缓存写入和 TTL。
 - 定时运行：`$PASEO_HOME/schedules/*.json`、`projects/workspaces.json`，以及 daemon 不再列出的 Agent 的记录。从不写入这些文件。
 - daemon 配置里的 Provider 列表，用来判断哪些 Provider 能在一轮进行中接收消息、哪些共用同一份额度。

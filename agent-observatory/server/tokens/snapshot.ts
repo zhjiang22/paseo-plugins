@@ -145,13 +145,17 @@ export function buildTokenSnapshot(data: TokenData, input: { range: StatsRange; 
   }
   const peakDay = daily.reduce<TokenSnapshot["records"]["peakDay"]>((peak, row) => tokenTotal(row) > (peak?.total ?? 0) ? { day: row.day, total: tokenTotal(row) } : peak, null);
   const modelRows = sortedRows(models), projectBreakdown = sortedRows(projects);
+  const roots = coverage.roots.slice(0, MAX_TOKEN_ROOTS);
+  // More harnesses add diagnostic roots, not more RPC payload allowance. Share the path-text budget across roots;
+  // retain every source, file count and error, without reducing the actual directories the ingester watches.
+  const rootPathBytes = Math.min(512, Math.floor(8192 / Math.max(1, roots.length)));
   const result: TokenSnapshot = { generatedAt: iso(now), range: input.range, utcOffsetMinutes: input.utcOffsetMinutes, timeZone: zone.name,
     from: statsDayText(from), to: statsDayText(today), totals, previous, allTime, daily, hours,
     models: projectRows(modelRows, 24), sources: projectRows(sortedRows(sources), TOKEN_SOURCES.length), projects: projectRows(projectBreakdown, 24), sessions: sessionRows,
     records: { peakDay, fastest: fastest ? { tps: fastest.tps, model: nullableText(fastest.model), at: iso(fastest.at), output: fastest.output } : null,
       biggest: biggest ? { output: biggest.output, model: nullableText(biggest.model), at: iso(biggest.at) } : null },
     speed: { p50: percentile(speeds, 0.5), p90: percentile(speeds, 0.9) }, paseoShare: tokenTotal(totals) ? Math.min(1, paseoTokens / tokenTotal(totals)) : null,
-    coverage: { ...coverage, backfill: { ...coverage.backfill }, roots: coverage.roots.slice(0, MAX_TOKEN_ROOTS).map(root => ({ source: root.source, path: text(root.path, 512), files: root.files, error: root.error === null ? null : text(root.error, 160) })) } };
+    coverage: { ...coverage, backfill: { ...coverage.backfill }, roots: roots.map(root => ({ source: root.source, path: text(root.path, rootPathBytes), files: root.files, error: root.error === null ? null : text(root.error, 160) })) } };
   const providerList = providerRows(24); if (providerList) result.providers = providerList;
   // Large valid identifiers cannot be shortened without breaking navigation. Reduce low-ranked rows only if needed.
   let modelLimit = 24, projectLimit = 24, providerLimit = 24;

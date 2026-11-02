@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { TokenIngester } from "../server/tokens/ingester";
-import { tokenSourceNames } from "../shared/tokens";
+import { tokenSourceNames, tokenTotal } from "../shared/tokens";
 import { type LedgerCall, type LogRoot } from "../server/tokens/types";
 
 // Fictional logs in the shapes Gemini CLI's JSONL chat records and Qwen Code write
@@ -27,9 +27,9 @@ test("Gemini CLI: a gemini message's tokens count once per message id; $set re-e
   await mkdir(join(root, "clare-workspace", "chats"), { recursive: true });
   await writeFile(join(root, "clare-workspace", "chats", "session-2026-10-11T10-00-1a2d9c48.jsonl"), session([
     metadata,
-    { $set: { messages: [geminiMessage("gm1", NOW - 40_000, { input: 1_000, output: 200, cached: 300, thoughts: 50, tool: 0, total: 1_550 }), { id: "u1", timestamp: iso(NOW - 50_000), type: "user", content: [{ text: "PRIVATE_PROMPT" }] }] } },
+    { $set: { messages: [geminiMessage("gm1", NOW - 40_000, { input: 1_000, output: 200, cached: 300, thoughts: 50, tool: 0, total: 1_250 }), { id: "u1", timestamp: iso(NOW - 50_000), type: "user", content: [{ text: "PRIVATE_PROMPT" }] }] } },
     // A later window re-emits the finished message with the same tokens (a duplicate) and adds a new one.
-    { $set: { messages: [geminiMessage("gm1", NOW - 40_000, { input: 1_000, output: 200, cached: 300, thoughts: 50, tool: 0, total: 1_550 }), geminiMessage("gm2", NOW - 20_000, { input: 500, output: 80, cached: 0, thoughts: 10, tool: 0, total: 590 })] } },
+    { $set: { messages: [geminiMessage("gm1", NOW - 40_000, { input: 1_000, output: 200, cached: 300, thoughts: 50, tool: 0, total: 1_250 }), geminiMessage("gm2", NOW - 20_000, { input: 500, output: 80, cached: 0, thoughts: 10, tool: 0, total: 590 })] } },
   ]));
   // An old-generation chat record (a single JSON document, no tokens per message) is never a JSONL log.
   await mkdir(join(root, "oldest", "chats"), { recursive: true });
@@ -37,10 +37,40 @@ test("Gemini CLI: a gemini message's tokens count once per message id; $set re-e
   await ingester.backfillAll();
   const rows = [...calls.values()].sort((a, b) => a.at - b.at);
   assert.deepEqual(rows.map(call => [call.source, call.sessionId, call.cwd, call.model, call.input, call.cacheRead, call.cacheWrite, call.output, call.reasoning, call.at, call.start, call.subagent]), [
-    ["gemini", "g1111111-0000-4000-8000-00000000000a", "", "gemini-test-model", 700, 300, 0, 200, 50, NOW - 40_000, null, false],
-    ["gemini", "g1111111-0000-4000-8000-00000000000a", "", "gemini-test-model", 500, 0, 0, 80, 10, NOW - 20_000, null, false],
-  ], "the cached part comes out of the prompt; thoughts are their own counter; there is no response time");
+    ["gemini", "g1111111-0000-4000-8000-00000000000a", "", "gemini-test-model", 700, 300, 0, 250, 50, NOW - 40_000, null, false],
+    ["gemini", "g1111111-0000-4000-8000-00000000000a", "", "gemini-test-model", 500, 0, 0, 90, 10, NOW - 20_000, null, false],
+  ], "the cached part comes out of the prompt; output includes thoughts as its reasoning subset; there is no response time");
   assert.equal(tokenSourceNames.gemini, "Gemini CLI");
+  assert.ok(!JSON.stringify([...ingester.files.values()]).includes("PRIVATE_"));
+}));
+
+test("Gemini CLI: native message rows import usage updates once, including thoughts and tool-use prompt tokens", () => ingest(root => [{ source: "gemini", path: root }], async (root, ingester, calls) => {
+  // v0.65.0 ChatRecordingService.pushMessage appends the message itself, including when recordMessageTokens updates it.
+  const path = join(root, "session-native.jsonl");
+  const message = { id: "native-1", type: "gemini", timestamp: iso(NOW - 30_000), model: "gemini-test-model", content: [{ text: "PRIVATE_OUTPUT" }] };
+  const tokens = { input: 100, output: 20, cached: 20, thoughts: 200, tool: 7, total: 327 };
+  await writeFile(path, [
+    { sessionId: "before-resume", projectHash: "a".repeat(64), startTime: iso(NOW - 60_000) },
+    { $set: { sessionId: "native-session" } },
+    { id: "user-1", type: "user", timestamp: iso(NOW - 40_000), content: [{ text: "PRIVATE_PROMPT" }] },
+    message, // the text is persisted before usage arrives
+    { ...message, tokens },
+  ].map(line).join(""));
+  await ingester.backfillAll();
+  assert.deepEqual([...calls.values()].map(call => [call.sessionId, call.input, call.cacheRead, call.output, call.reasoning, tokenTotal(call)]), [
+    ["native-session", 87, 20, 220, 200, tokens.total],
+  ]);
+  assert.equal(ingester.roots[0]!.error, null);
+  await appendFile(path, line({ ...message, tokens }));
+  await ingester.poll(true);
+  assert.equal(calls.size, 1, "re-appending the same message does not count it twice");
+  await appendFile(path, line({ ...message, tokens: { ...tokens, output: 30, total: 337 } }));
+  await ingester.poll(true);
+  assert.equal(calls.size, 1, "a later usage value corrects the latest message");
+  assert.equal([...calls.values()][0]!.output, 230);
+  await appendFile(path, line({ ...message, id: "native-2", timestamp: iso(NOW - 10_000), tokens: { input: 0, output: 0, cached: 0, thoughts: 50, tool: 0, total: 50 } }));
+  await ingester.poll(true);
+  assert.deepEqual([...calls.values()].map(call => [call.output, call.reasoning]), [[230, 200], [50, 50]], "reasoning-only usage is not mistaken for an all-zero call");
   assert.ok(!JSON.stringify([...ingester.files.values()]).includes("PRIVATE_"));
 }));
 

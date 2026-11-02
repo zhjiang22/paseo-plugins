@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { TokenIngester } from "../server/tokens/ingester";
-import { validStart } from "../server/tokens/parser";
+import { validStart } from "../server/tokens/values";
 import { iso, type LedgerCall } from "../server/tokens/types";
 
 const NOW = Date.parse("2026-09-23T12:00:00Z");

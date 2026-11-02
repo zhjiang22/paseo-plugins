@@ -53,13 +53,13 @@ test("OpenCode: completed assistant messages of opencode.db, with their cache sp
   await ingester.backfillAll();
   const rows = [...calls.values()].sort((a, b) => a.at - b.at);
   assert.deepEqual(rows.map(call => [call.source, call.sessionId, call.cwd, call.model, call.input, call.cacheRead, call.cacheWrite, call.output, call.reasoning, call.at, call.start, call.subagent]), [
-    ["opencode", "ses_own", "/home/me/app", "oc-test-model", 3_587, 50_096, 120, 256, 733, NOW - 8_000, NOW - 9_000, false],
-    ["opencode", "ses_sub", "/home/me/app", "oc-test-model", 3_587, 50_096, 120, 256, 733, NOW - 6_000, NOW - 7_000, true],
+    ["opencode", "ses_own", "/home/me/app", "oc-test-model", 3_587, 50_096, 120, 989, 733, NOW - 8_000, NOW - 9_000, false],
+    ["opencode", "ses_sub", "/home/me/app", "oc-test-model", 3_587, 50_096, 120, 989, 733, NOW - 6_000, NOW - 7_000, true],
   ], "a message of a session with a parent is a sub-agent's");
   // The digest (复盘) reads the same database through the call source.
   const history = await new LocalTokenCallSource(ingester).callsForSessions(["ses_own"]);
   assert.equal(history?.source, "opencode");
-  assert.deepEqual(history?.calls.map(call => call.output), [256], "a database session's calls reach 复盘, not an all-zero block");
+  assert.deepEqual(history?.calls.map(call => call.output), [989], "a database session's calls reach 复盘, not an all-zero block");
   assert.equal(tokenSourceNames.opencode, "OpenCode");
   const data = emptyData(); for (const call of rows) addCall(data, call, null, NOW);
   const snapshot = tokenSnapshotSchema.parse(buildTokenSnapshot(data, { range: "7d", utcOffsetMinutes: 0 }, NOW, new StatsDirectory(), coverage));
@@ -82,7 +82,7 @@ test("OpenCode: a message completed after the first read is counted once when th
   insertMessage(db, "msg_2", "ses_own", messageData({ id: "msg_2", session: "ses_own", tokens: full, created: NOW - 3_000, completed: NOW - 2_000 }));
   db.close();
   await ingester.poll(true);
-  assert.deepEqual([...calls.values()].map(call => call.output).sort((a, b) => a - b), [256, 256, 256], "the late completion and the new row count, the re-read first row does not count again");
+  assert.deepEqual([...calls.values()].map(call => call.output).sort((a, b) => a - b), [989, 989, 989], "the late completion and the new row count, the re-read first row does not count again");
   // A database replaced whole (a reinstall) is read from its first row again; its calls are deduplicated by message id.
   db = new DatabaseSync(path);
   db.exec("DELETE FROM message");
@@ -90,7 +90,7 @@ test("OpenCode: a message completed after the first read is counted once when th
   db.close();
   await ingester.poll(true);
   assert.deepEqual([...calls.values()].map(call => call.sessionId).sort().length, 4, "the old calls stand and the replaced database's first row is one more");
-  assert.equal([...calls.values()].reduce((sum, call) => sum + call.output, 0), 256 * 4);
+  assert.equal([...calls.values()].reduce((sum, call) => sum + call.output, 0), 989 * 4);
 }));
 
 test("OpenCode: the legacy storage tree counts a message file per session id, and files that appear later join in", () => ingest(root => [{ source: "opencode", path: root }], async (root, ingester, calls) => {

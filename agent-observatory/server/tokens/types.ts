@@ -24,6 +24,8 @@ export interface ParserState {
   threadId?: string; parentThread?: string | null;
   /** dsh: the local+UTC day stamp this ledger state last parsed (`dshDayStamp`); a calendar change forces the rollover re-read. */
   day?: string;
+  /** ZCode SQLite part cursor and database/WAL identity; no message content. */
+  zcode?: { row: number; signature: string; anchor?: string };
 }
 export interface LogRoot {
   source: TokenSource; path: string;

@@ -7,7 +7,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import type { PaseoApi } from "@getpaseo/client";
 import { defaultRoots, inlineScript, launcherAssignment, launcherCandidates, literalPath, providerRoots, providerSource, readLauncherText, shellCommands, shellWord } from "../server/tokens/roots";
-import { TOKEN_UNMATCHED } from "../shared/tokens";
+import { MAX_TOKEN_ROOTS, TOKEN_SOURCES, TOKEN_UNMATCHED } from "../shared/tokens";
 import { StatsDirectory } from "../server/stats-directory";
 import { TokenIngester } from "../server/tokens/ingester";
 import { TokenStore } from "../server/tokens/store";
@@ -50,7 +50,8 @@ test("default roots follow the daemon's environment, then the standard locations
     { source: "kilo", path: "/home/user/.vscode-server/data/User/globalStorage/kilocode.kilo-code/tasks" },
     { source: "kilo", path: "/home/user/.vscode-server-insiders/data/User/globalStorage/kilocode.kilo-code/tasks" },
     { source: "hermes", path: "/home/user/.hermes" }, { source: "mimo", path: "/home/user/.local/share/mimocode" },
-    { source: "dsh", path: "/home/user/.dsh/storages/cost-meter" }]);
+    { source: "dsh", path: "/home/user/.dsh/storages/cost-meter" },
+    { source: "kimi", path: "/home/user/.kimi-code/sessions" }, { source: "zcode", path: "/home/user/.zcode/cli/db" }]);
   assert.deepEqual(defaultRoots({ home: HOME, env: { CLAUDE_CONFIG_DIR: "/srv/claude", CODEX_HOME: "/srv/codex", GROK_HOME: "/srv/grok", PI_CODING_AGENT_DIR: "/srv/pi" } }).map(root => root.path),
     ["/srv/claude/projects", "/home/user/.claude/projects", "/home/user/.config/claude/projects", "/srv/codex/sessions", "/srv/codex/archived_sessions",
       "/srv/grok/sessions", "/home/user/.grok/sessions", "/srv/pi/sessions", "/home/user/.pi/agent/sessions", "/home/user/.omp/agent/sessions",
@@ -77,7 +78,7 @@ test("default roots follow the daemon's environment, then the standard locations
       "/home/user/.config/Windsurf/User/globalStorage/kilocode.kilo-code/tasks",
       "/home/user/.vscode-server/data/User/globalStorage/kilocode.kilo-code/tasks",
       "/home/user/.vscode-server-insiders/data/User/globalStorage/kilocode.kilo-code/tasks",
-      "/home/user/.hermes", "/home/user/.local/share/mimocode", "/home/user/.dsh/storages/cost-meter"],
+      "/home/user/.hermes", "/home/user/.local/share/mimocode", "/home/user/.dsh/storages/cost-meter", "/home/user/.kimi-code/sessions", "/home/user/.zcode/cli/db"],
     "a PI_CODING_AGENT_DIR set for Pi is where oh-my-pi writes too: one root, counted as Pi");
   // Pi's session directory can be named itself; it wins over the agent directory.
   assert.deepEqual(defaultRoots({ home: HOME, env: { PI_CODING_AGENT_DIR: "/srv/pi", PI_CODING_AGENT_SESSION_DIR: "/srv/pi-sessions" } }).filter(root => root.source === "pi").map(root => root.path),
@@ -105,6 +106,20 @@ test("only literal absolute paths are accepted; ~ and $HOME expand at the start"
   for (const value of ["relative/dir", "$XDG_CONFIG_HOME/claude", "/opt/$USER/claude", "`pwd`/x", "", "\"\""]) assert.equal(literalPath(value, HOME), null, value);
 });
 
+test("all token sources and their environment roots fit the root budget with room for custom providers", () => {
+  const roots = defaultRoots({ home: HOME, env: {
+    CLAUDE_CONFIG_DIR: "/srv/claude", CODEX_HOME: "/srv/codex", GROK_HOME: "/srv/grok",
+    PI_CODING_AGENT_SESSION_DIR: "/srv/pi-sessions", PI_CONFIG_DIR: ".omp-work", XDG_DATA_HOME: "/srv/xdg",
+    CODEBUDDY_CONFIG_DIR: "/srv/codebuddy", QODER_CONFIG_DIR: "/srv/qoder", GEMINI_CLI_HOME: "/srv/gemini",
+    QWEN_RUNTIME_DIR: "/srv/qwen", KIMI_CODE_HOME: "/srv/kimi", ZCODE_HOME: "/srv/zcode",
+  } });
+  assert.deepEqual(new Set(roots.map(root => root.source)), new Set(TOKEN_SOURCES));
+  assert.equal(new Set(roots.map(root => root.path)).size, roots.length);
+  assert.ok(roots.length <= 50, `the largest standard discovery has ${roots.length} roots`);
+  assert.equal(MAX_TOKEN_ROOTS, 64);
+  assert.ok(MAX_TOKEN_ROOTS - roots.length >= 14, "custom providers retain discovery capacity");
+});
+
 test("a provider writes Claude Code, Codex, Pi or Grok CLI logs when it is one of them, extends one or (over ACP) runs one", () => {
   assert.equal(providerSource("claude", {}), "claude");
   assert.equal(providerSource("codex", { enabled: false } as never), "codex");
@@ -125,7 +140,7 @@ test("a provider writes Claude Code, Codex, Pi or Grok CLI logs when it is one o
   assert.equal(providerSource("my-grok", { extends: "acp", command: ["/opt/bin/grok", "agent", "stdio"] }), "grok");
   assert.equal(providerSource("grok-team", { extends: "acp", command: ["grok-cli", "agent", "stdio"] }), "grok");
   assert.equal(providerSource("xai", { extends: "acp", command: ["/home/me/bin/grok-wrapper", "agent", "stdio"] }), "grok");
-  assert.equal(providerSource("kimi", { extends: "acp", command: ["kimi", "acp"] }), null);
+  assert.equal(providerSource("kimi", { extends: "acp", command: ["kimi", "acp"] }), "kimi");
   assert.equal(providerSource("pipx-tool", { extends: "acp", command: ["pipx", "run", "x"] }), null, "a command merely starting with pi is not Pi");
   assert.equal(providerSource("grok", { extends: "acp" }), null, "an ACP provider is known by its command, not its id");
 });
@@ -359,7 +374,7 @@ test("Grok and Pi providers that move their logs add roots: GROK_HOME, Pi's sess
     { source: "gemini", path: "/home/user/.gemini/tmp", provider: "gem-unset", via: "env" },
     { source: "qwen", path: "/srv/qw-rt/projects", provider: "qw-team", via: "env" },
   ]);
-  assert.ok(!reads.some(path => path.includes("kimi")), "a provider whose logs are not read is not looked into");
+  assert.ok(!reads.some(path => path.includes("kimi")), "a bare Kimi command does not cause arbitrary metadata reads");
   assert.ok(reads.every(path => !/auth|credential/i.test(path)), "no credentials are ever opened");
 });
 
@@ -408,7 +423,7 @@ test("an ACP provider is known by the CLI it runs past env, assignments, interpr
   assert.equal(providerSource("grok-login", { extends: "acp", command: ["/usr/bin/env", "bash", "-l", "/home/me/bin/grok-acp.sh"] }), "grok");
   assert.equal(providerSource("grok-inline", { extends: "acp", command: ["bash", "-c", "export GROK_HOME=/home/me/.grok-x; cd /home/me && exec \"grok\" --acp"] }), "grok");
   assert.equal(providerSource("pi-env", { extends: "acp", command: ["env", "-i", "PI_CODING_AGENT_DIR=/home/me/.pi-x", "pi", "--mode", "acp"] }), "pi");
-  for (const command of [["env", "FOO=1", "kimi", "acp"], ["bash", "/home/me/bin/agent.sh"], ["env", "pipx", "run", "x"], ["env", "GROK_HOME=/x"], ["bash", "-c", "echo grok; exec kimi acp"]]) {
+  for (const command of [["env", "FOO=1", "unsupported-agent", "acp"], ["bash", "/home/me/bin/agent.sh"], ["env", "pipx", "run", "x"], ["env", "GROK_HOME=/x"], ["bash", "-c", "echo grok; exec unsupported-agent acp"]]) {
     assert.equal(providerSource("other", { extends: "acp", command }), null, command.join(" "));
   }
   const texts: Record<string, string> = { "/home/me/bin/grok-acp.sh": "#!/bin/sh\nexport GROK_HOME=/home/me/.grok-alt\nexec grok --acp \"$@\"\n" };

@@ -226,9 +226,9 @@ export function DashboardView({ theme, layout, host, navigation, workspaceId, in
   const scopeIds = useMemo(() => new Set(scoped.filter(agent => matchesAgentStatus(agent, status) && (readFilter === "all" || completionReadState(agent) === readFilter) && (focus === "all" || attentionOf(agent))).map(a => a.id)), [scoped, status, readFilter, focus, attentionOf]);
   const eventSince = range === "all" ? -Infinity : filterNow - (range === "24h" ? 1 : range === "7d" ? 7 : 30) * 86400_000;
   const events = useMemo(() => (telemetry?.events ?? []).filter(event => scopeIds.has(event.agentId) && Date.parse(event.at) >= eventSince), [telemetry, scopeIds, eventSince]);
-  // The event page shows what the scope filters let through; the hint names what they hide (opus-?, the 未命名 trap).
-  const hiddenEvents = useMemo(() => hiddenEventCount(telemetry?.events ?? [], events, eventSince), [telemetry, events, eventSince]);
-  const clearScope = useCallback(() => { setStatus("all"); setReadFilter("all"); setFocus("all"); setSessionScope("all"); }, []);
+  // Clearing filters cannot reveal deleted/archived Agents or leave a workspace-scoped page and its time range.
+  const availableEventAgents = useMemo(() => new Set(ranged.filter(agent => !workspaceId || agent.workspaceId === workspaceId).map(agent => agent.id)), [ranged, workspaceId]);
+  const hiddenEvents = useMemo(() => hiddenEventCount(telemetry?.events ?? [], events, eventSince, availableEventAgents), [telemetry, events, eventSince, availableEventAgents]);
   const signals = useMemo(() => { const labels = new Map<string, string>(); for (const signal of decisionSignals(agents, telemetry?.events ?? [], now)) { if (signal.kind === "quiet") labels.set(signal.agentId, t("coreDashboard.noRecentUpdates")); else if (signal.kind === "repeated_failure") labels.set(signal.agentId, t("coreDashboard.failedTimes", { value1: signal.count })); } return labels; }, [agents, telemetry, now]);
   // A live directory observation is current by definition; polling-only syncs are stale after missing a cycle.
   const stale = !data.live && !!data.lastSyncedAt && now - new Date(data.lastSyncedAt).getTime() > 25000;
@@ -432,7 +432,7 @@ export function DashboardView({ theme, layout, host, navigation, workspaceId, in
       {sessionsTab ? <SplitView theme={theme} compact={compact} showDetail={false} list={sessionList} detail={detail} />
         : tab === "activity" ? <>
           {hiddenEvents ? <View style={{ paddingHorizontal: space.md, paddingTop: space.md }}><Banner theme={theme} tone="neutral" icon="Filter"
-            message={t("coreDashboard.hiddenByFilters", { value1: hiddenEvents })} action={{ label: t("coreDashboard.clearFilters"), onPress: clearScope }} /></View> : null}
+            message={t("coreDashboard.hiddenByFilters", { value1: hiddenEvents })} action={{ label: t("coreDashboard.clearFilters"), onPress: resetFilters }} /></View> : null}
           {!compact && events.length ? <Swimlane theme={theme} events={events} agents={agents} now={now} compact={false} onSelect={selectAgent} inset={space.lg} /> : null}
           <SplitView theme={theme} compact={compact} showDetail={false} list={<ActivityFeed events={events} theme={theme} telemetry={telemetry} onSelect={selectAgent} now={now} selectedId={selectedId} agents={agents} swimlane={compact} />} detail={detail} />
         </>

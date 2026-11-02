@@ -22,9 +22,11 @@ const callSchema = z.object({ key: hash, source, sessionId: id, cwd, at: time, s
   calls: count.optional() });
 const candidate = z.object({ call: callSchema, forked: z.boolean(), accepted: z.boolean().optional() });
 const parser = z.object({ sessionId: id, cwd, model, inputAt: time.nullable(), lastTotal: z.string().max(512).nullable(),
-  open: candidate.nullable(), openInputAt: time.nullable(), sessions: z.array(id).max(256), links: z.array(id).max(256), hasForks: z.boolean(),
+  open: candidate.nullable(), openInputAt: time.nullable(), sessions: z.array(id).max(5000), links: z.array(id).max(256), hasForks: z.boolean(),
   metaSeen: z.boolean(), pendingRecord: z.boolean(), legacySessionId: id,
   // 2.13: a Codex rollout's own thread and the parent thread of a subagent rollout (null: not a subagent; absent: saved before 2.13).
+  zcode: z.object({ row: count, signature: z.string().max(512), anchor: hash.optional() }).optional(),
+  day: z.string().max(32).optional(),
   threadId: id.optional(), parentThread: id.nullable().optional() });
 const fileSchema = z.object({ path: z.string().max(8192), root: count, source, parentSession: id.nullable(), dev: count, ino: count,
   size: count, mtime: time, offset: count, partialBytes: count, state: parser, imported: z.boolean() });

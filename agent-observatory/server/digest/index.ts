@@ -7,6 +7,7 @@ import { getDigest, type Digest, type DigestResponse } from "../../shared/digest
 import type { TelemetrySnapshot } from "../../shared/telemetry";
 import type { TelemetryStore } from "../telemetry";
 import type { TokenCallSource } from "../token-source";
+import { TokenSessions } from "../token-session";
 import { buildDigest } from "./build";
 import { fetchHistory, type History } from "./reader";
 
@@ -15,6 +16,7 @@ interface Dependencies {
   telemetry: { snapshot(agentId?: string): Promise<Pick<TelemetrySnapshot, "events">> };
   now?: () => number;
   timeoutMs?: number;
+  sessions?: TokenSessions;
 }
 interface Cached extends History { revision: string; digest: Digest }
 interface Full { digest: Digest; revision: string }
@@ -29,7 +31,10 @@ export class DigestService {
   private readonly cancellations = new Set<(error: Error) => void>();
   private closed = false;
   private readonly now: () => number;
-  constructor(private readonly deps: Dependencies) { this.now = deps.now ?? Date.now; }
+  private readonly sessions: TokenSessions;
+  constructor(private readonly deps: Dependencies) {
+    this.now = deps.now ?? Date.now; this.sessions = deps.sessions ?? new TokenSessions({ now: this.now });
+  }
 
   private async build(paseo: PaseoApi, agentId: string, signal: { aborted: boolean }): Promise<Full> {
     const handle = paseo.agents.ref(agentId);
@@ -43,14 +48,18 @@ export class DigestService {
     }
     if (this.closed || signal.aborted) throw new Error(t("serverDigestIndex.m003"));
     if (!snapshot?.agent) { this.cache.delete(agentId); throw new Error(t("serverDigestIndex.m004")); }
-    const agent = snapshot.agent, previous = this.cache.get(agentId), sessionId = agent.persistence?.sessionId;
-    const [history, tokenHistory, telemetry] = await Promise.all([
+    const agent = snapshot.agent, previous = this.cache.get(agentId);
+    const session = this.sessions.resolve(agent.provider, agent.persistence, paseo);
+    const [history, tokenHistory, telemetry, sessionId] = await Promise.all([
       fetchHistory(options => {
         if (this.closed || signal.aborted) throw new Error(t("serverDigestIndex.m005"));
         return handle.timeline.refetch(options);
       }, agentId, agent.cwd, previous),
-      sessionId ? this.deps.tokens.callsForSessions([sessionId]) : Promise.resolve(null),
-      this.deps.telemetry.snapshot(agentId),
+      session.then(sessionId => {
+        if (this.closed || signal.aborted) throw new Error(t("serverDigestIndex.m005"));
+        return sessionId ? this.deps.tokens.callsForSessions([sessionId]) : null;
+      }),
+      this.deps.telemetry.snapshot(agentId), session,
     ]);
     if (this.closed || signal.aborted) throw new Error(t("serverDigestIndex.m006"));
     const now = this.now(), active = agent.status === "running" || agent.status === "initializing" || !!agent.activeTurn;

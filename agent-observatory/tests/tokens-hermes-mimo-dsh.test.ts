@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { TokenIngester } from "../server/tokens/ingester";
+import { readHermesStateDb } from "../server/tokens/hermes-db";
 import { dshDayStamp, dshToday } from "../server/tokens/parser";
 import { tokenSourceNames } from "../shared/tokens";
 import { type LedgerCall, type LogRoot } from "../server/tokens/types";
@@ -44,6 +45,58 @@ test("Hermes: closed sessions emit their per-model aggregates; open sessions and
   assert.equal(tokenSourceNames.hermes, "Hermes");
 }));
 
+test("Hermes: every billing route and auxiliary task contributes to the session/model aggregate", () => ingest(root => [{ source: "hermes", path: root }], async (root, ingester, calls) => {
+  const db = new DatabaseSync(join(root, "state.db"));
+  db.exec("CREATE TABLE sessions (id text PRIMARY KEY, parent_session_id text, cwd text, ended_at real)");
+  // Hermes's real composite key: a session/model can have several independent counters.
+  db.exec("CREATE TABLE session_model_usage (session_id text, model text, billing_provider text, billing_base_url text, billing_mode text, task text, api_call_count integer, input_tokens integer, output_tokens integer, cache_read_tokens integer, cache_write_tokens integer, reasoning_tokens integer, PRIMARY KEY (session_id, model, billing_provider, billing_base_url, billing_mode, task))");
+  db.prepare("INSERT INTO sessions VALUES ('routes', NULL, '/home/me/app', ?)").run((NOW - 60_000) / 1000);
+  const write = db.prepare("INSERT INTO session_model_usage VALUES ('routes', 'model-a', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+  const routes = [["provider-a", "url-a", "api", ""], ["provider-b", "url-a", "api", ""], ["provider-a", "url-b", "api", ""], ["provider-a", "url-a", "subscription", ""], ["provider-a", "url-a", "api", "voice_chat"]];
+  for (const [index, route] of routes.entries()) { const n = index + 1; write.run(...route, n, n * 100, n * 10, n * 1_000, n, n * 2); }
+  db.close();
+  await ingester.backfillAll();
+  assert.deepEqual([...calls.values()].map(call => [call.sessionId, call.model, call.calls, call.input, call.output, call.cacheRead, call.cacheWrite, call.reasoning]), [
+    ["routes", "model-a", 15, 1_500, 150, 15_000, 15, 30],
+  ]);
+  const key = [...calls.keys()][0];
+  await ingester.poll(true);
+  assert.equal(calls.size, 1);
+  assert.equal([...calls.keys()][0], key, "re-reading the aggregate preserves its identity");
+  assert.equal(ingester.diagnostics.calls, 1);
+  assert.equal(await readHermesStateDb(ingester.files.get(join(root, "state.db"))!, () => {}), false, "an unchanged look-back poll does not dirty the checkpoint");
+  assert.equal(ingester.roots[0]!.error, null);
+}));
+
+test("Hermes: models sharing a session end time survive the 512-row page boundary and filtered reads", () => ingest(root => [{ source: "hermes", path: root }], async (root, ingester, calls) => {
+  const path = join(root, "state.db"), db = new DatabaseSync(path);
+  db.exec("CREATE TABLE sessions (id text PRIMARY KEY, parent_session_id text, cwd text, ended_at real)");
+  db.exec("CREATE TABLE session_model_usage (session_id text, model text, api_call_count integer, input_tokens integer, output_tokens integer, cache_read_tokens integer, cache_write_tokens integer, reasoning_tokens integer)");
+  const session = db.prepare("INSERT INTO sessions VALUES (?, NULL, '/home/me/app', ?)");
+  const usage = db.prepare("INSERT INTO session_model_usage VALUES (?, ?, 1, 100, 10, 0, 0, 0)");
+  for (let index = 0; index < 512; index++) {
+    const id = `session-${index}`;
+    session.run(id, (NOW - 1_000_000 + index * 1_000) / 1000); usage.run(id, "model-a");
+  }
+  usage.run("session-511", "model-b"); // row 513 has the exact same ended_at as row 512
+  db.close();
+  await ingester.backfillAll();
+  assert.equal(calls.size, 513);
+  assert.deepEqual([...calls.values()].filter(call => call.sessionId === "session-511").map(call => call.model), ["model-a", "model-b"]);
+  const checkpoint = ingester.files.get(path)!;
+  const watermark = checkpoint.offset;
+  await ingester.poll(true);
+  assert.equal(calls.size, 513);
+  assert.equal(ingester.diagnostics.calls, 513, "the look-back reread counts no aggregate twice");
+  assert.equal(checkpoint.offset, watermark, "the persisted watermark keeps its existing seconds-only format");
+  const selected: LedgerCall[] = [];
+  await readHermesStateDb({ ...checkpoint, offset: 0 }, candidate => selected.push(candidate.call), undefined, ["session-511"]);
+  assert.deepEqual(selected.map(call => [call.sessionId, call.model]), [["session-511", "model-a"], ["session-511", "model-b"]]);
+  await readHermesStateDb({ ...checkpoint, offset: 0 }, candidate => selected.push(candidate.call), undefined, []);
+  assert.equal(selected.length, 2, "an empty session filter never returns the whole database");
+  assert.equal(ingester.roots[0]!.error, null);
+}));
+
 test("MiMoCode: assistant messages of mimocode.db count like OpenCode's, minus synthetic and zero rows", () => ingest(root => [{ source: "mimo", path: root }], async (root, ingester, calls) => {
   const db = new DatabaseSync(join(root, "mimocode.db"));
   db.exec("CREATE TABLE message (id text PRIMARY KEY, session_id text NOT NULL, agent_id text, time_created integer, time_updated integer, data text NOT NULL)");
@@ -55,7 +108,7 @@ test("MiMoCode: assistant messages of mimocode.db count like OpenCode's, minus s
   db.close();
   await ingester.backfillAll();
   assert.deepEqual([...calls.values()].map(call => [call.source, call.sessionId, call.cwd, call.model, call.input, call.cacheRead, call.cacheWrite, call.output, call.reasoning, call.at, call.start, call.subagent]), [
-    ["mimo", "ses_m1", "/home/me/app", "mimo-test-model", 4_000, 6_000, 90, 300, 25, NOW - 29_000, NOW - 30_000, false],
+    ["mimo", "ses_m1", "/home/me/app", "mimo-test-model", 4_000, 6_000, 90, 325, 25, NOW - 29_000, NOW - 30_000, false],
   ], "the synthetic zero row is not a call");
   assert.equal(tokenSourceNames.mimo, "MiMoCode");
 }));

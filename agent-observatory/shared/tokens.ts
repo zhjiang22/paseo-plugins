@@ -24,6 +24,8 @@ import { STATS_RANGES, statsTimeZoneSchema } from "./stats";
  * - Pi (2.14): `$PI_CODING_AGENT_SESSION_DIR`, else `$PI_CODING_AGENT_DIR/sessions` (`~/.pi/agent/sessions`),
  *   `--<cwd>--/<time>_<session>.jsonl`, counted as Pi totals a session: assistant messages, tool results that carry
  *   usage, and compaction / branch summaries; deduplicated by response id (a `/fork` or `/clone` copies messages).
+ * - Kimi Code: `$KIMI_CODE_HOME/sessions/<cwd>/<session>/agents/<agent>/wire.jsonl` (default `~/.kimi-code`).
+ * - ZCode: `$ZCODE_HOME/cli/db/db.sqlite`, read-only completed steps including WAL (default `~/.zcode`).
  * The directories are the standard ones plus any a custom provider sets in its config or launcher (server/tokens/roots).
  * Everything on the host is counted (not only Paseo-started sessions); sessions are matched to Paseo agents through
  * `persistence.sessionId`. Only counters, model names, working directories and session ids are retained — never
@@ -44,19 +46,19 @@ const iso = z.iso.datetime();
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const rate = z.number().nonnegative().finite();
 
-export const TOKEN_SOURCES = ["claude", "codex", "grok", "pi", "omp", "opencode", "codebuddy", "qoder", "gemini", "qwen", "cline", "roo", "kilo", "hermes", "mimo", "dsh"] as const;
+export const TOKEN_SOURCES = ["claude", "codex", "grok", "pi", "omp", "opencode", "codebuddy", "qoder", "gemini", "qwen", "cline", "roo", "kilo", "hermes", "mimo", "dsh", "kimi", "zcode"] as const;
 export type TokenSource = typeof TOKEN_SOURCES[number];
-export const tokenSourceNames: Record<TokenSource, string> = { claude: "Claude Code", codex: "Codex", grok: "Grok CLI", pi: "Pi", omp: "oh-my-pi", opencode: "OpenCode", codebuddy: "CodeBuddy", qoder: "Qoder", gemini: "Gemini CLI", qwen: "Qwen Code", cline: "Cline", roo: "Roo Code", kilo: "Kilo Code", hermes: "Hermes", mimo: "MiMoCode", dsh: "DeepSeek Harness" };
+export const tokenSourceNames: Record<TokenSource, string> = { claude: "Claude Code", codex: "Codex", grok: "Grok CLI", pi: "Pi", omp: "oh-my-pi", opencode: "OpenCode", codebuddy: "CodeBuddy", qoder: "Qoder", gemini: "Gemini CLI", qwen: "Qwen Code", cline: "Cline", roo: "Roo Code", kilo: "Kilo Code", hermes: "Hermes", mimo: "MiMoCode", dsh: "DeepSeek Harness", kimi: "Kimi Code", zcode: "ZCode" };
 /** Provider breakdown row of the sessions no Paseo agent matches (run in a terminal, or the agent was deleted). */
 export const TOKEN_UNMATCHED = "__unmatched__";
 /** Sources whose records are written once when the work ends, with no response time: they count in totals but stay out
  * of the live speed and the fastest list. Every source must appear, so adding one forces the decision. */
-export const WHOLE_TURN_SOURCES: Readonly<Record<TokenSource, boolean>> = { claude: false, codex: false, grok: true, pi: false, omp: false, opencode: false, codebuddy: true, qoder: false, gemini: true, qwen: false, cline: true, roo: true, kilo: true, hermes: true, mimo: false, dsh: true };
+export const WHOLE_TURN_SOURCES: Readonly<Record<TokenSource, boolean>> = { claude: false, codex: false, grok: true, pi: false, omp: false, opencode: false, codebuddy: true, qoder: false, gemini: true, qwen: false, cline: true, roo: true, kilo: true, hermes: true, mimo: false, dsh: true, kimi: false, zcode: false };
 /** Log roots watched at once: the standard ones plus custom providers' config directories (server/tokens/roots). With
- * sixteen sources the defaults reach 44 (platform host directories included), and the cap must stay above that (a
+ * eighteen sources the defaults can reach 50 (platform host directories included), and the cap must stay above that (a
  * reader capped lower quarantines such a ledger and imports its logs again; a Provider whose discovered roots do not
  * fit is skipped without a notice). */
-export const MAX_TOKEN_ROOTS = 48;
+export const MAX_TOKEN_ROOTS = 64;
 /** Codex's folder of archived sessions (a rollout moves there when its session is archived); shown apart in the coverage line. */
 export const isArchivedLogRoot = (path: string): boolean => /[\\/]archived_sessions[\\/]?$/.test(path);
 

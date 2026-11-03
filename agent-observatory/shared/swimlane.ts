@@ -37,6 +37,9 @@ export function buildSwimlanes(events: readonly TelemetryEvent[], live: Readonly
     else if (event.type === "permission_requested") state.approval ??= at;
     else if (event.type === "permission_resolved" && state.approval !== undefined) { state.spans.push({ start: state.approval, end: at, kind: "approval", open: false }); state.approval = undefined; }
   }
+  for (const agentId of subs?.keys() ?? []) {
+    if (!byAgent.has(agentId) && live.get(agentId) === "running") byAgent.set(agentId, { title: titles?.get(agentId) || agentId, spans: [] });
+  }
   const lanes: SwimLane[] = [];
   for (const [agentId, state] of byAgent) {
     const status = live.get(agentId);
@@ -55,7 +58,16 @@ export function buildSwimlanes(events: readonly TelemetryEvent[], live: Readonly
     if (spans.length) lanes.push({ agentId, title: state.title || agentId, spans, lastAt: Math.max(...spans.map(span => span.end)) });
   }
   // Peak concurrency over turn spans (approvals overlap their own turn and are not extra work).
-  const edges = lanes.flatMap(lane => lane.spans.filter(span => span.kind !== "approval").flatMap(span => [[span.start, 1], [span.end, -1]] as const)).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const edges = lanes.flatMap(lane => {
+    const active = lane.spans.filter(span => span.kind !== "approval" && span.end > span.start).sort((one, other) => one.start - other.start);
+    const merged: Array<{ start: number; end: number }> = [];
+    for (const span of active) {
+      const previous = merged.at(-1);
+      if (previous && span.start <= previous.end) previous.end = Math.max(previous.end, span.end);
+      else merged.push({ start: span.start, end: span.end });
+    }
+    return merged.flatMap(span => [[span.start, 1], [span.end, -1]] as const);
+  }).sort((one, other) => one[0] - other[0] || one[1] - other[1]);
   let current = 0, peak = 0, peakAt: number | null = null;
   for (const [at, change] of edges) { current += change; if (current > peak) { peak = current; peakAt = at; } }
   const turns = lanes.reduce((sum, lane) => sum + lane.spans.filter(span => span.kind !== "approval" && !span.subs).length, 0);

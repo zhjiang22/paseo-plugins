@@ -4,6 +4,7 @@
 
 **Provider 用量 falls back to the session's own harness**
 - A session the observatory cannot link to an Agent — run directly in a terminal, its Agent since deleted — used to land in the one 未关联会话 row, however clearly its log named the tool. Unmatched sessions now fall back to a provider row named by their log source (omp, claude, codex, …), so a configured harness's whole consumption shows in its own row; every source names its own row, and only sessions beyond the 5,000-session detail window keep the unmatched row; an Agent link or a provider root's own claim still wins over the fallback. On a machine where oh-my-pi is the daily driver this moves about two thirds of the recorded tokens from 未关联 into the omp row.
+- An explicit provider-root owner keeps its Provider ID as the row label even when source-fallback sessions also feed the same row, regardless of ingestion order.
 
 **Token accounting refinements (Kimi/ZCode reconciliation)**
 - Shared database execution reviews isolate requested sessions, follow WAL updates, and find sessions beyond the checkpoint index. Gemini reads native message rows and includes thinking/tool-use tokens; Hermes aggregates every billing route and task with complete pagination; modern OpenCode/MiMo reasoning contributes to output totals.
@@ -11,6 +12,7 @@
 **The event stream names Agents from the directory**
 - The 并行泳道 and the event list now show each Agent's current directory name instead of the title frozen into the recorded event. Interactive Agents record their first events before the host has generated their title, so those events kept the 「未命名 Agent」 placeholder forever even after the name existed; the swimlane lanes, the feed rows and their accessibility labels resolve the name from the Agent directory first and fall back to the stored title, which also renames past events retroactively. Agents no longer in the directory keep their stored title.
 - The 并行泳道 also shows provider subagents that keep working after the Agent's own turn ended: while the directory counts the Agent as running with "N working", the lane draws a running bar from the earliest observed subagent start, so a parent waiting on background subtasks no longer disappears from the lanes the moment its turn completes. The bar is work in parallel — it moves the concurrency peak but is not counted as a turn.
+- Background-only lanes remain visible on desktop and mobile without retained lifecycle events and obey the event page's scope filters. Overlapping work in one Agent's lane counts once toward peak concurrency, while its own conversation turns are still counted separately.
 
 **The event page says what the filters hide**
 - The event stream inherits the session list's scope filters, and when they hid events the page simply looked empty — indistinguishable from a broken capture. When the current filters hide retained events inside the selected time range, the page now shows a count ("当前筛选隐藏了 N 条事件") with a one-tap 清除筛选 that resets all optional scope filters, including provider, project and checkout. Events outside the current page's Agent directory are not counted as hidden by filters.

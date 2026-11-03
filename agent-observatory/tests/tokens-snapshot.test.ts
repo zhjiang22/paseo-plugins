@@ -187,6 +187,19 @@ test("an owners claim or an agent attribution shields a provider row from the so
     ["omp", "omp", 2], ["claude", "claude", 2], ["codex", "codex", 1]]);
 });
 
+test("an owner-claimed provider keeps its id when the same row also receives source fallback, in either order", () => {
+  for (const claimedFirst of [false, true]) {
+    const data = emptyData(), directory = new StatsDirectory(); directory.loaded = true;
+    for (const sessionId of claimedFirst ? ["claimed", "terminal"] : ["terminal", "claimed"]) {
+      addCall(data, call(sessionId, now - 1000, { source: "omp", sessionId, model: "glm-5.3-flash" }), null, now);
+    }
+    const owners = new Map([["omp:claimed", "omp"]]);
+    const result = tokenSnapshotSchema.parse(buildTokenSnapshot(data, { range: "7d", utcOffsetMinutes: 0 }, now, directory, coverage, owners));
+    assert.deepEqual(result.providers!.map(row => [row.key, row.label, row.calls]), [["omp", "omp", 2]]);
+    assert.equal(result.providers!.reduce((sum, row) => sum + tokenTotal(row), 0), tokenTotal(result.totals));
+  }
+});
+
 test("Codex subagent threads count for the session that spawned them, through any depth and without loops", () => {
   const data = emptyData(), directory = new StatsDirectory(); directory.loaded = true;
   directory.agents = [agent("parent-agent", { provider: "codex-gateway", sessionId: "root-thread", title: "派出子 Agent 的会话" })];

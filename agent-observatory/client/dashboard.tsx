@@ -223,7 +223,8 @@ export function DashboardView({ theme, layout, host, navigation, workspaceId, in
   }, [rows, sort, archiveMode, attentionOf, snoozedAt]);
   useEffect(() => { if (pendingScroll.current === null || !items.length) return; const offset = pendingScroll.current; pendingScroll.current = null; scrollOffset.current = offset; if (offset > 0) setTimeout(() => list.current?.scrollToOffset({ offset, animated: false }), 0); }, [items.length]);
   const selected = selectedId ? agents.find(agent => agent.id === selectedId) : undefined;
-  const scopeIds = useMemo(() => new Set(scoped.filter(agent => matchesAgentStatus(agent, status) && (readFilter === "all" || completionReadState(agent) === readFilter) && (focus === "all" || attentionOf(agent))).map(a => a.id)), [scoped, status, readFilter, focus, attentionOf]);
+  const eventAgents = useMemo(() => scoped.filter(agent => matchesAgentStatus(agent, status) && (readFilter === "all" || completionReadState(agent) === readFilter) && (focus === "all" || attentionOf(agent))), [scoped, status, readFilter, focus, attentionOf]);
+  const scopeIds = useMemo(() => new Set(eventAgents.map(agent => agent.id)), [eventAgents]);
   const eventSince = range === "all" ? -Infinity : filterNow - (range === "24h" ? 1 : range === "7d" ? 7 : 30) * 86400_000;
   const events = useMemo(() => (telemetry?.events ?? []).filter(event => scopeIds.has(event.agentId) && Date.parse(event.at) >= eventSince), [telemetry, scopeIds, eventSince]);
   // Clearing filters cannot reveal deleted/archived Agents or leave a workspace-scoped page and its time range.
@@ -433,8 +434,8 @@ export function DashboardView({ theme, layout, host, navigation, workspaceId, in
         : tab === "activity" ? <>
           {hiddenEvents ? <View style={{ paddingHorizontal: space.md, paddingTop: space.md }}><Banner theme={theme} tone="neutral" icon="Filter"
             message={t("coreDashboard.hiddenByFilters", { value1: hiddenEvents })} action={{ label: t("coreDashboard.clearFilters"), onPress: resetFilters }} /></View> : null}
-          {!compact && events.length ? <Swimlane theme={theme} events={events} agents={agents} now={now} compact={false} onSelect={selectAgent} inset={space.lg} /> : null}
-          <SplitView theme={theme} compact={compact} showDetail={false} list={<ActivityFeed events={events} theme={theme} telemetry={telemetry} onSelect={selectAgent} now={now} selectedId={selectedId} agents={agents} swimlane={compact} />} detail={detail} />
+          {!compact ? <Swimlane theme={theme} events={events} agents={eventAgents} now={now} compact={false} onSelect={selectAgent} inset={space.lg} /> : null}
+          <SplitView theme={theme} compact={compact} showDetail={false} list={<ActivityFeed events={events} theme={theme} telemetry={telemetry} onSelect={selectAgent} now={now} selectedId={selectedId} agents={eventAgents} swimlane={compact} />} detail={detail} />
         </>
         : tab === "board" ? <StatsBoard {...statsProps} live={known ? boardCounts : undefined} quota={<QuotaChip theme={theme} quota={quota.data} onPress={() => setTab("tokens")} />} onOpenScope={showScope} onOpenAgent={openFromView} onOpenBreakdown={() => { setDimension("models"); setTab("analytics"); }}
           tokens={tokens.data?.daily.length ? { today: tokenTotal(tokens.data.daily.at(-1)!), onOpen: () => setTab("tokens") } : undefined} />

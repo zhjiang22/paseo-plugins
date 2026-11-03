@@ -98,7 +98,7 @@ export function buildTokenSnapshot(data: TokenData, input: { range: StatsRange; 
     addTokenCounts(row, bucket); row.lastAt = Math.max(row.lastAt, bucket.lastAt);
   }
   const sessions = new Map<string, Session>(), providers = new Map<string, Breakdown>(), providerModels = new Map<string, Map<string | null, number>>();
-  const fallbackRows = new Set<string>(), agentRows = new Set<string>();
+  const fallbackRows = new Set<string>(), attributedRows = new Set<string>();
   for (const bucket of data.sessionHours.values()) {
     if (!inRange(bucket.at)) continue;
     // A Codex subagent thread is part of its parent session: all of its calls are subagent calls (2.13).
@@ -110,7 +110,8 @@ export function buildTokenSnapshot(data: TokenData, input: { range: StatsRange; 
     // harness's row (omp, claude, …); only a bucket without a source at all stays unmatched.
     const claimed = owners.get(id) ?? owners.get(sessionKey(bucket.source, bucket.sessionId));
     const owner = agent?.provider ?? claimed ?? bucket.source ?? null;
-    if (agent?.provider) agentRows.add(agent.provider); else if (owner !== null && claimed === undefined) fallbackRows.add(owner);
+    if (owner !== null && (agent?.provider || claimed !== undefined)) attributedRows.add(owner);
+    else if (owner !== null) fallbackRows.add(owner);
     const provider = getRow(providers, owner ?? TOKEN_UNMATCHED, owner ?? t("serverTokensSnapshot.m004"), null);
     addTokenCounts(provider, bucket); provider.lastAt = Math.max(provider.lastAt, bucket.lastAt); provider.ids.add(id);
     if (owner) { const mix = providerModels.get(owner) ?? new Map<string | null, number>(); mix.set(bucket.model, (mix.get(bucket.model) ?? 0) + bucket.calls); providerModels.set(owner, mix); }
@@ -131,7 +132,7 @@ export function buildTokenSnapshot(data: TokenData, input: { range: StatsRange; 
   }
   // A row only ever fed by the source fallback is the harness itself: label it with the harness's own name
   // (CodeBuddy, not the bare source id codebuddy). A row any agent attributed to keeps the provider's id.
-  for (const key of fallbackRows) if (!agentRows.has(key)) {
+  for (const key of fallbackRows) if (!attributedRows.has(key)) {
     const row = providers.get(key), name = tokenSourceNames[key as TokenSource];
     if (row && name) row.label = name;
   }

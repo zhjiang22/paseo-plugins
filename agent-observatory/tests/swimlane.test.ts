@@ -95,6 +95,42 @@ test("a live Agent whose subagents still work draws one subagent bar that is not
   // An open turn keeps its own bar; the subagent start adds nothing beside it.
   const open = [event("q", "turn_started", 30)];
   const openLive = new Map<string, "running" | "waiting">([["q", "running"]]);
-  const openLane = buildSwimlanes(open, openLive, now, 3_600_000, 10, undefined, subs).lanes.find(lane => lane.agentId === "q")!;
+  const openLane = buildSwimlanes(open, openLive, now, 3_600_000, 10, undefined, new Map([["q", at(12)]])).lanes.find(lane => lane.agentId === "q")!;
   assert.deepEqual(openLane.spans, [{ start: now - 30 * 60_000, end: now, kind: "running", open: true }]);
+});
+
+test("background spans overlapping their parent's turns count once per Agent toward the peak", () => {
+  const events = [
+    event("p", "turn_started", 50), event("p", "turn_completed", 40),
+    event("p", "turn_started", 30), event("p", "turn_completed", 20),
+    event("peer", "turn_started", 35), event("peer", "turn_completed", 10),
+  ];
+  const live = new Map<string, "running" | "waiting">([["p", "running"]]);
+  const subs = new Map([["p", at(45)]]);
+  const result = buildSwimlanes(events, live, now, 3_600_000, 10, undefined, subs);
+  assert.equal(result.peak, 2);
+  assert.equal(result.peakAt, now - 35 * 60_000);
+  assert.equal(result.turns, 3);
+  assert.equal(result.lanes.find(lane => lane.agentId === "p")!.spans.filter(span => span.subs).length, 1);
+  const parent = buildSwimlanes(events.filter(item => item.agentId === "p"), live, now, 3_600_000, 10, undefined, subs);
+  assert.equal(parent.peak, 1);
+  assert.equal(parent.peakAt, now - 50 * 60_000);
+});
+
+test("live background work creates lanes without retained events and respects the time window and directory state", () => {
+  const live = new Map<string, "running" | "waiting">([
+    ["p", "running"], ["q", "running"], ["waiting", "waiting"], ["invalid", "running"], ["future", "running"],
+  ]);
+  const subs = new Map([["p", at(90)], ["q", at(12)], ["waiting", at(20)], ["stale", at(15)], ["invalid", "not-a-date"], ["future", at(-5)]]);
+  const titles = new Map([["p", "后台仍在工作"]]);
+  const result = buildSwimlanes([], live, now, 3_600_000, 10, titles, subs);
+  assert.deepEqual(result.lanes.map(lane => [lane.agentId, lane.title]), [["p", "后台仍在工作"], ["q", "q"]]);
+  assert.deepEqual(result.lanes[0]!.spans, [{ start: now - 3_600_000, end: now, kind: "running", open: true, subs: true }]);
+  assert.equal(result.turns, 0);
+  assert.equal(result.peak, 2);
+  assert.equal(result.peakAt, now - 12 * 60_000);
+  const limited = buildSwimlanes([], live, now, 3_600_000, 1, titles, subs);
+  assert.equal(limited.lanes.length, 1);
+  assert.equal(limited.hidden, 1);
+  assert.equal(limited.peak, 2);
 });

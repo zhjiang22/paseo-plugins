@@ -52,7 +52,7 @@ export function ActivityFeed({ events, theme, telemetry, onSelect, now, selected
   return <FlatList style={{ flex: 1, minHeight: 0 }} data={events} keyExtractor={event => event.id} contentContainerStyle={{ paddingHorizontal: space.xs, paddingBottom: space.xl }}
     initialNumToRender={20} windowSize={7} extraData={`${now}:${selectedId}`}
     ListHeaderComponent={<View style={{ marginHorizontal: -space.xs }}>
-      {swimlane && events.length ? <Swimlane theme={theme} events={events} agents={agents} now={now} compact onSelect={onSelect} /> : null}
+      {swimlane ? <Swimlane theme={theme} events={events} agents={agents} now={now} compact onSelect={onSelect} /> : null}
       <Pulse theme={theme} events={events} now={now} telemetry={telemetry} />
     </View>}
     ListEmptyComponent={<EmptyState theme={theme} icon="Activity" title={t("coreActivityFeed.noExecutionEventsYet")} message={t("coreActivityFeed.taskStartsCompletionsFailuresAndApprovalsAppear")} />}

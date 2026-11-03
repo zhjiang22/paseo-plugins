@@ -1574,6 +1574,24 @@ test("事件 swimlane shows each Agent's turns and approval waits and opens the 
   expect(errors).toEqual([]);
 });
 
+test("background-only swimlanes survive an empty event log and obey project filters", async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await open(page, testInfo, "background-no-events");
+  await page.getByRole("tab", { name: /^事件/ }).click();
+  const lane = page.getByRole("button", { name: /^泳道 整理性能基线：执行中 / });
+  await expect(lane).toBeVisible();
+  await expect(page.getByText(/^0 轮 · 峰值 2 个同时执行/)).toBeVisible();
+  await expect(page.getByText("这个时间窗内没有记录到对话轮次", { exact: true })).toHaveCount(0);
+  await noHorizontalOverflow(page);
+  await page.getByRole("tab", { name: /^会话/ }).click();
+  await selectProject(page, "Mobile Experience");
+  await page.getByRole("tab", { name: /^事件/ }).click();
+  await expect(lane).toHaveCount(0);
+  await expect(page.getByText("并行泳道", { exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 const tokenCalls = (page: Page) => page.evaluate(() => (globalThis as Fixture).__previewRpcCalls.filter(call => call.name === "observatory.tokens.get" || call.name === "observatory.tokens.live").map(call => ({ name: call.name, input: call.input as { range?: string; windowMinutes?: number; detail?: string; utcOffsetMinutes?: number } })));
 
 test("Token 页 shows today's usage, the live speed chart and breakdowns from the local logs", async ({ page }, testInfo) => {

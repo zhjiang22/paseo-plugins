@@ -1,7 +1,7 @@
 import { t } from "../../shared/text";
 import { createHash } from "node:crypto";
 import { statsRangeDays, vendorOf, type StatsRange } from "../../shared/stats";
-import { addTokenCounts, emptyTokenCounts, MAX_TOKEN_ROOTS, TOKEN_SOURCES, TOKEN_UNMATCHED, tokenSourceNames, tokenTotal, type TokenCounts, type TokenRow, type TokenSession, type TokenSnapshot } from "../../shared/tokens";
+import { addTokenCounts, emptyTokenCounts, MAX_TOKEN_ROOTS, TOKEN_SOURCES, TOKEN_UNMATCHED, tokenSourceNames, tokenTotal, type TokenCounts, type TokenRow, type TokenSession, type TokenSnapshot, type TokenSource } from "../../shared/tokens";
 import type { StatsDirectory } from "../stats-directory";
 import { statsDayText, statsLocalDay, statsLocalHour, statsZone, type StatsDirectoryAgent } from "../stats-types";
 import { binSpeed, projectName, rootSession, sessionKey, type CallRecord, type TokenData } from "./data";
@@ -98,14 +98,20 @@ export function buildTokenSnapshot(data: TokenData, input: { range: StatsRange; 
     addTokenCounts(row, bucket); row.lastAt = Math.max(row.lastAt, bucket.lastAt);
   }
   const sessions = new Map<string, Session>(), providers = new Map<string, Breakdown>(), providerModels = new Map<string, Map<string | null, number>>();
+  const fallbackRows = new Set<string>(), attributedRows = new Set<string>();
   for (const bucket of data.sessionHours.values()) {
     if (!inRange(bucket.at)) continue;
     // A Codex subagent thread is part of its parent session: all of its calls are subagent calls (2.13).
     const root = rootSession(data, bucket.source, bucket.sessionId), child = root !== bucket.sessionId;
     const id = sessionKey(bucket.source, root), project = projectFor(bucket.cwd, cwdAgents), agent = agents.get(root);
     models.get(bucket.model ?? "unknown")?.ids.add(id); sources.get(bucket.source)?.ids.add(id); projects.get(project.key)?.ids.add(id);
-    // No agent: the provider whose own log directory the session came from, if one does (gemini-B9).
-    const owner = agent?.provider ?? owners.get(id) ?? owners.get(sessionKey(bucket.source, bucket.sessionId)) ?? null;
+    // No agent: the provider whose own log directory the session came from, if one does (gemini-B9). Otherwise the
+    // session's own source — a terminal run of a configured harness burns that harness's quota, so it lands in the
+    // harness's row (omp, claude, …); only a bucket without a source at all stays unmatched.
+    const claimed = owners.get(id) ?? owners.get(sessionKey(bucket.source, bucket.sessionId));
+    const owner = agent?.provider ?? claimed ?? bucket.source ?? null;
+    if (owner !== null && (agent?.provider || claimed !== undefined)) attributedRows.add(owner);
+    else if (owner !== null) fallbackRows.add(owner);
     const provider = getRow(providers, owner ?? TOKEN_UNMATCHED, owner ?? t("serverTokensSnapshot.m004"), null);
     addTokenCounts(provider, bucket); provider.lastAt = Math.max(provider.lastAt, bucket.lastAt); provider.ids.add(id);
     if (owner) { const mix = providerModels.get(owner) ?? new Map<string | null, number>(); mix.set(bucket.model, (mix.get(bucket.model) ?? 0) + bucket.calls); providerModels.set(owner, mix); }
@@ -123,6 +129,12 @@ export function buildTokenSnapshot(data: TokenData, input: { range: StatsRange; 
   for (const [provider, mix] of providerModels) {
     const top = [...mix].sort((a, b) => b[1] - a[1] || (a[0] ?? "").localeCompare(b[0] ?? ""))[0]?.[0] ?? null;
     providers.get(provider)!.vendor = vendorOf(top, provider);
+  }
+  // A row only ever fed by the source fallback is the harness itself: label it with the harness's own name
+  // (CodeBuddy, not the bare source id codebuddy). A row any agent attributed to keeps the provider's id.
+  for (const key of fallbackRows) if (!attributedRows.has(key)) {
+    const row = providers.get(key), name = tokenSourceNames[key as TokenSource];
+    if (row && name) row.label = name;
   }
   const unmatched = providers.get(TOKEN_UNMATCHED), providerRanked = sortedRows(new Map([...providers].filter(([key]) => key !== TOKEN_UNMATCHED)));
   // Without the agent directory every session would look unmatched; the row is left out until it has been read.

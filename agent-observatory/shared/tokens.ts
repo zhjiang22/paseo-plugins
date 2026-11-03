@@ -125,7 +125,8 @@ export const tokenSnapshotSchema = z.object({
   /**
    * By Paseo provider (2.13): a session counts for the provider of the agent whose `persistence.sessionId` it is, so
    * custom providers that share one log directory are told apart. Ranked by total tokens (beyond 24 one "__other__"
-   * row), then one TOKEN_UNMATCHED row (未关联会话) for the sessions no agent matches. Absent while the agent directory
+   * row), then one TOKEN_UNMATCHED row (未关联会话) for the sessions no agent matches and whose source names no
+   * provider (sessions of a provider base are rows of their own source). Absent while the agent directory
    * has not been read (everything would look unmatched).
    */
   providers: z.array(tokenRowSchema).max(26).optional(),

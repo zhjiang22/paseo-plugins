@@ -296,3 +296,14 @@
 ### 9.5 已修复的账本边界（同评审发现）
 
 `parseDshLedger` 原以「账本最新一天」为进行中日（`dates.at(-1)`）：间歇使用时最后活跃日会被永久跳过（文件不再变化即不触发重读）。已改为**按日历判定**——仅当键等于当天（本地或 UTC 任一历法）才视为进行中；并在跨日历变化时强制重读未变化的账本（`state.day` 水位，重读由 seen index 幂等去重）。提交见分支 `omp-token-source`。
+
+## 10. pi / oh-my-pi 共享会话目录的归属区分（2026-10-30 备忘）
+
+`roots.ts` 的设计约定：`PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` 设置时，pi 与 oh-my-pi **同时**迁移到该目录（oh-my-pi 有意兼容 Pi 变量），两源根碰撞、重复项丢弃、会话**计为 Pi**。双工具并用的用户若共享目录，其 oh-my-pi 用量会被记成 Pi——当前策略即如此（文档化决策）。
+
+若上游未来要按内容正确区分，标记已实证存在（真机样本对比）：
+
+- **`model_change` 记录结构**：pi 为 `provider` + `modelId` 两个字段；oh-my-pi 为裸 `model` 字段（无 provider）
+- **oh-my-pi 独有** `{"type":"title","v":1,…}` 记录
+
+实施形态：共享根下的会话文件在扫描/读取时嗅探头部记录 → 逐文件纠正 source（oh-my-pi 解析器与 pi 同构，解析路径不变，仅改归属与展示）。工作量 M；属 Provider/源归属政策变更，需上游协调，暂不实施。

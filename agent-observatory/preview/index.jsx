@@ -12,6 +12,8 @@ import { completeFixtureAgent, fixtureAgents, fixtureAnalytics, fixtureBackgroun
 
 const search = new URLSearchParams(location.search);
 const scenario = search.get("scenario") ?? "all";
+const telemetry = scenario === "background-no-events" ? { ...fixtureTelemetry, events: [] } : fixtureTelemetry;
+const background = scenario === "background" || scenario === "background-no-events" ? fixtureBackground : undefined;
 const light = search.get("theme") === "light";
 const theme = light ? paseoLight : paseoDark;
 globalThis.__previewTheme = theme;
@@ -55,7 +57,7 @@ function Preview() {
     <HostBar archiveMode={archiveMode} />
     <div className="plugin-frame">
       <DashboardView key={archiveMode ? "archives" : "overview"} theme={theme} host={host} navigation={navigation} layout={{ compact: innerWidth < 700, platform: "web" }}
-        data={data} telemetry={fixtureTelemetry} background={scenario === "background" ? fixtureBackground : undefined} analytics={fixtureAnalytics} readReceipts={fixtureReadReceipts} archiveOrigins={fixtureArchiveOrigins} archiveMode={archiveMode} onOpenArchive={() => setArchiveMode(true)} onOpenOverview={() => setArchiveMode(false)} onRefresh={refresh}
+        data={data} telemetry={telemetry} background={background} analytics={fixtureAnalytics} readReceipts={fixtureReadReceipts} archiveOrigins={fixtureArchiveOrigins} archiveMode={archiveMode} onOpenArchive={() => setArchiveMode(true)} onOpenOverview={() => setArchiveMode(false)} onRefresh={refresh}
         onOpenSchedules={focus => { focusScheduleRuns(focus); setSurface("schedules"); }} />
     </div>
     <ToastHost />

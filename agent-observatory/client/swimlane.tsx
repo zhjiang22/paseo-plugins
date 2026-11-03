@@ -30,14 +30,17 @@ export const Swimlane = memo(function Swimlane({ theme, events, agents, now, com
   const [width, setWidth] = useState(0);
   const live = useMemo(() => { const result = new Map<string, "running" | "waiting">(); for (const agent of agents) if (agent.status === "running" || agent.status === "waiting") result.set(agent.id, agent.status); return result; }, [agents]);
   const titles = useMemo(() => new Map(agents.map(agent => [agent.id, agent.title] as const)), [agents]);
+  // Provider subagents still working after the Agent's own turn ended (the tracker folds them into the record).
+  const subs = useMemo(() => new Map(agents.filter(agent => (agent.background?.running ?? 0) > 0 && agent.background?.since).map(agent => [agent.id, agent.background!.since!] as const)), [agents]);
   const windowMs = windows[range];
-  const { lanes, peak, peakAt, turns, hidden } = useMemo(() => buildSwimlanes(events, live, now, windowMs, compact ? 6 : 8, titles), [events, live, now, windowMs, compact, titles]);
+  const { lanes, peak, peakAt, turns, hidden } = useMemo(() => buildSwimlanes(events, live, now, windowMs, compact ? 6 : 8, titles, subs), [events, live, now, windowMs, compact, titles, subs]);
   const labelWidth = compact ? 88 : 150, track = Math.max(0, width - labelWidth - space.sm), from = now - windowMs;
   const x = (at: number) => (at - from) / windowMs * track;
   const ticks = swimTicks(now, windowMs, -new Date(now).getTimezoneOffset());
   // Label every n-th tick so clock labels (about 36 px) never collide on narrow tracks.
   const labelEvery = ticks.length > 1 ? Math.max(1, Math.ceil(44 / Math.max(1, x(ticks[1]!) - x(ticks[0]!)))) : 1;
   const grid = isDarkTheme(theme) ? withAlpha("#ffffff", 0.07) : withAlpha("#000000", 0.06);
+  if (!events.length && !lanes.length) return null;
   return <View style={{ marginHorizontal: inset, marginTop: space.md, padding: space.md, gap: space.sm, borderRadius: 16, borderWidth: hairline, borderColor: withAlpha(hue(theme, "blue"), 0.3), backgroundColor: isDarkTheme(theme) ? theme.colors.surface1 : theme.colors.surface0 }}>
     <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: space.sm }}>
       <View style={[{ width: 24, height: 24, borderRadius: 8, alignItems: "center", justifyContent: "center" }, gradient(theme, ["blue", "violet"])]}><Icon name="ChartGantt" size={14} color="#ffffff" /></View>
@@ -45,7 +48,7 @@ export const Swimlane = memo(function Swimlane({ theme, events, agents, now, com
       <Segmented theme={theme} size="sm" value={range} onChange={setRange} accessibilityLabel={t("secondarySwimlane.laneTimeWindow")} options={[{ value: "1h", label: t("secondarySwimlane.hour") }, { value: "6h", label: t("secondarySwimlane.hours") }, { value: "24h", label: t("secondarySwimlane.hours2") }]} />
     </View>
     <Text style={{ color: theme.colors.foregroundMuted, fontSize: fontSize.meta }}>
-      {turns ? tParts(peakAt ? hidden ? "secondarySwimlane.summaryAtHidden" : "secondarySwimlane.summaryAt" : hidden ? "secondarySwimlane.summaryHidden" : "secondarySwimlane.summary", { turns, peak, time: peakAt ? clock(peakAt) : "", hidden }).map((part, index) => part.param === "peak" ? <Text key={index} style={{ color: hue(theme, "violet", "text"), fontWeight: "800" }}>{part.text}</Text> : part.text) : t("secondarySwimlane.noConversationTurnsRecordedInThis")}
+      {turns || peak ? tParts(peakAt ? hidden ? "secondarySwimlane.summaryAtHidden" : "secondarySwimlane.summaryAt" : hidden ? "secondarySwimlane.summaryHidden" : "secondarySwimlane.summary", { turns, peak, time: peakAt ? clock(peakAt) : "", hidden }).map((part, index) => part.param === "peak" ? <Text key={index} style={{ color: hue(theme, "violet", "text"), fontWeight: "800" }}>{part.text}</Text> : part.text) : t("secondarySwimlane.noConversationTurnsRecordedInThis")}
     </Text>
     <View onLayout={event => setWidth(Math.round(event.nativeEvent.layout.width))} style={{ gap: 4 }}>
       {width > 0 && lanes.length ? <>

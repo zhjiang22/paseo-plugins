@@ -21,7 +21,7 @@ import { CodeModeToolDetail } from "./codemode";
 import { CopyButton, OutputCopyButtons } from "./copy-button";
 import { GithubToolDetail } from "./github";
 import { useHighlightTokens, type HighlightToken } from "./highlight";
-import { aria } from "./kit";
+import { aria, vividSyntaxColors } from "./kit";
 import { Breathe } from "./motion";
 import { OmpFindToolDetail } from "./omp-find";
 import { OmpWaitToolDetail } from "./omp-wait";
@@ -163,7 +163,8 @@ function HighlightedCodeBlock({
   // A file's final newline is not a line of its own (no empty numbered line at the end); copying keeps it.
   const view = useMemo(() => outputView(code, clean, showAll, language === "ansi"), [clean, code, language, showAll]);
   const { preview, shown: displayCode } = view;
-  const tokens = useHighlightTokens(view.highlight, language, theme.colors);
+  // 0.11.0:命令详情体（bash）与行头共用同一 vivid 派生映射——同一命令两处同色同构；其余语言不受影响。
+  const tokens = useHighlightTokens(view.highlight, language, language === "bash" ? { ...theme.colors, ...vividSyntaxColors(theme) } : theme.colors);
   const lineCount = useMemo(() => (lineStart === undefined ? 0 : displayCode.split("\n").length), [displayCode, lineStart]);
 
   return (

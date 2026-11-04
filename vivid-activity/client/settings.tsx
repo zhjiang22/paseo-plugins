@@ -466,9 +466,12 @@ function ThoughtControls({ settings }: { settings: ReadySettings }) {
   );
 }
 
-function DisplaySettings({ theme, actions, paletteFor, layout, scroll }: PluginSurfaceProps & { actions: SettingsActions; paletteFor: (theme: PluginSurfaceProps["theme"], mode: PaletteMode) => ActivityPalette; scroll?: boolean }) {
+export function DisplaySettings({ theme, actions, paletteFor, layout, scroll }: PluginSurfaceProps & { actions: SettingsActions; paletteFor: (theme: PluginSurfaceProps["theme"], mode: PaletteMode) => ActivityPalette; scroll?: boolean }) {
   const settings = useSettings(activitySettings);
   const textStyle = useMemo(() => ({ color: theme.colors.foreground }), [theme.colors.foreground]);
+  // hooks 必须在提前返回之前无条件调用（React 规则；loading→ready 迁移时 hook 数量不能变）。
+  const [paneWidth, setPaneWidth] = useState(0);
+  const onPaneLayout = useCallback((event: LayoutChangeEvent) => setPaneWidth(event.nativeEvent.layout.width), []);
   if (settings.status === "loading") return <Text style={textStyle}>{t("settings.readingSettings")}</Text>;
   if (settings.status === "error") {
     return (
@@ -491,8 +494,6 @@ function DisplaySettings({ theme, actions, paletteFor, layout, scroll }: PluginS
   // 0.11.0：布局随实测容器宽自适应（onLayout，不猜宿主断点）：
   // 容器 ≥ SPLIT_MIN_WIDTH → 左右 50/50 等分（screen 挂载左右各自滚动；host 页随页）；
   // 过挤（< SPLIT_MIN_WIDTH 或 compact）→ 不分栏，单列：设置在上，预览统一落到设置下方。
-  const [paneWidth, setPaneWidth] = useState(0);
-  const onPaneLayout = useCallback((event: LayoutChangeEvent) => setPaneWidth(event.nativeEvent.layout.width), []);
   /** 双列的最小可用宽：低于此值两列都会过挤，退回单列（预览落到设置下方）。 */
   const SPLIT_MIN_WIDTH = 860;
   const split = !compact && paneWidth >= SPLIT_MIN_WIDTH;

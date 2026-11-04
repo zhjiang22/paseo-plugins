@@ -13,15 +13,20 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  */
 const here = path.dirname(fileURLToPath(import.meta.url));
 const STANDINS: Record<string, string> = {
-  react: `export const Fragment = Symbol.for("standin.fragment");
+  react: `let __hooks = 0;
+const __hookLog = [];
+export const __hooksCount = () => __hooks;
+export const __hooksReset = () => { __hooks = 0; __hookLog.length = 0; };
+export const __hooksLog = () => __hookLog;
+export const Fragment = Symbol.for("standin.fragment");
 export const createElement = (type, props, ...children) => ({ type, props: { ...(props ?? {}), ...(children.length ? { children: children.length === 1 ? children[0] : children } : {}) } });
-export const useState = (value) => [typeof value === "function" ? value() : value, () => {}];
-export const useMemo = (factory) => factory();
-export const useCallback = (callback) => callback;
-export const useRef = (value) => ({ current: value });
-export const useEffect = () => {};
-export const useLayoutEffect = () => {};
-export const useSyncExternalStore = (_subscribe, snapshot) => snapshot();
+export const useState = (value) => { __hooks++; __hookLog.push("state"); return [typeof value === "function" ? value() : value, () => {}]; };
+export const useMemo = (factory, deps) => { __hooks++; __hookLog.push("memo"); return factory(); };
+export const useCallback = (callback, deps) => { __hooks++; __hookLog.push("callback"); return callback; };
+export const useRef = (value) => { __hooks++; __hookLog.push("ref"); return { current: value }; };
+export const useEffect = (fn, deps) => { __hooks++; __hookLog.push("effect"); };
+export const useLayoutEffect = (fn, deps) => { __hooks++; __hookLog.push("layout"); };
+export const useSyncExternalStore = (subscribe, snapshot) => { __hooks++; __hookLog.push("store"); return snapshot(); };
 export const createContext = (value) => ({ Provider: "ContextProvider", _value: value });
 export const useContext = (context) => context._value;
 export default { Fragment, createElement, useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect, useSyncExternalStore, createContext, useContext };`,
@@ -48,7 +53,15 @@ export const useRpc = () => async () => ({});
 export const useSettings = () => globalThis.__vividSettings ?? ({ status: "loading" });
 export const defineRpc = (contract) => contract;
 export const defineSettings = (definition) => definition;
-export const settingsRpc = () => ({ read: {} });`,
+export const settingsRpc = () => ({ read: {} });
+export const SettingsSection = "SettingsSection";
+export const SettingsCard = "SettingsCard";
+export const SettingsRow = "SettingsRow";
+export const SettingsSelect = "SettingsSelect";
+export const SettingsSwitch = "SettingsSwitch";
+export const SettingsInput = "SettingsInput";
+export const SettingsAction = "SettingsAction";
+export const SettingsGroup = "SettingsGroup";`,
 };
 const HOST_SPECIFIERS = ["@getpaseo/plugin", "@getpaseo/plugin/client", "@getpaseo/plugin/client/react-native", "@getpaseo/plugin/client/ui"];
 
@@ -110,8 +123,11 @@ beforeAll(async () => {
     `export { FoldRow } from ${JSON.stringify(path.join(here, "fold-row.tsx"))};`,
     `export { DiffBlock } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
     `export { PreviewPanel } from ${JSON.stringify(path.join(here, "settings-preview-rows.tsx"))};`,
+    `export { DisplaySettings } from ${JSON.stringify(path.join(here, "settings.tsx"))};`,
+    `export { activitySettings } from ${JSON.stringify(path.join(here, "../shared/settings.ts"))};`,
     `export { CommandTokens } from ${JSON.stringify(path.join(here, "command-tokens.tsx"))};`,
     `export { configureFx } from ${JSON.stringify(path.join(here, "fx.ts"))};`,
+    `export { __hooksCount, __hooksReset, __hooksLog } from "react";`,
     `export { paletteFor } from ${JSON.stringify(path.join(here, "activity.tsx"))};`,
     `export { stillCells } from ${JSON.stringify(path.join(here, "../shared/loaders.ts"))};`,
     `export { fileId } from ${JSON.stringify(path.join(here, "../shared/changes.ts"))};`,
@@ -630,6 +646,30 @@ describe("0.11.0: 设置预览面板", () => {
     }
   };
   const draw = (settings: unknown) => withSettings(settings, () => render({ type: ui.PreviewPanel, props: { theme: fullTheme, paletteFor: ui.paletteFor, actions: {}, compact: false } }));
+
+  it("invokes hooks in a stable sequence across loading → ready → takeover-off renders (React #310 class)", () => {
+    const firstHook = (settings: unknown) => {
+      ui.__hooksReset();
+      withSettings(settings, () => render({ type: ui.PreviewPanel, props: { theme: fullTheme, paletteFor: ui.paletteFor, actions: {}, compact: false } }));
+      return ui.__hooksLog()[0] ?? "none";
+    };
+    const loading = firstHook(undefined);
+    expect(loading).toBe("effect");
+    expect(firstHook(ready({}))).toBe(loading);
+    expect(firstHook(ready({ takeover: "off" }))).toBe(loading);
+  });
+
+  it("renders with a stable hook sequence across loading → ready re-renders (React #310 class)", () => {
+    const log = (settings: unknown) => {
+      ui.__hooksReset();
+      withSettings(settings, () => render({ type: ui.DisplaySettings, props: { theme: fullTheme, paletteFor: ui.paletteFor, actions: {}, layout: { compact: false, platform: "web" }, scroll: true } }));
+      return ui.__hooksLog().slice();
+    };
+    const loadingLog = log({ status: "loading" });
+    const readyLog = log({ status: "ready", values: ui.activitySettings.schema.parse({ strength: "faded" }), revision: 1 });
+    // loading 的 hook 序列必须是 ready 序列的前缀（hooks 在提前返回之前无条件调用）。
+    expect(readyLog.slice(0, loadingLog.length)).toEqual(loadingLog);
+  });
   const viewsWithOpacity = (nodes: Host[]): number[] => nodes.flatMap(nodesOf).flatMap((node) => {
     if (node.type !== "View") return [];
     const opacity = flatten(node.props.style).opacity;
@@ -643,6 +683,18 @@ describe("0.11.0: 设置预览面板", () => {
     expect(faded).toEqual(expect.arrayContaining([0.45]));
     expect(faded).not.toContain(0.3);
     expect(viewsWithOpacity(draw(ready({ strength: "dim" })))).toContain(0.3);
+  });
+
+  it("colors the collapsed shell command only in the always mode (When open keeps it plain until expanded)", () => {
+    const summarySpans = (mode: string) => {
+      const nodes = draw(ready({ commandColors: mode, expansion: { shell: "never" }, strength: "full" }));
+      const summary = nodes.flatMap(nodesOf).find((node) => node.type === "Text" && textOf(node).includes("npm ci") && node.children && node.children.length > 0);
+      // 着色段 = 嵌套的 Text 元素 children；纯文本 = 单个字符串 children。
+      return summary && Array.isArray(summary.children) ? summary.children.filter((c) => typeof c === "object" && !("text" in c) && c.type === "Text").length : 0;
+    };
+    // Always：收起的行也带语法色段（多个嵌套 Text）；When open：收起行纯文本（展开后才着色）。
+    expect(summarySpans("always")).toBeGreaterThan(1);
+    expect(summarySpans("expanded")).toBe(0);
   });
 
   it("mirrors the wrap diff lines setting in the diff sample", () => {

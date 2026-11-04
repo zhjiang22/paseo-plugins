@@ -10,7 +10,8 @@ import { looks, type LookKey } from "../shared/vivid-model";
 import type { ActivityPalette } from "../shared/presentation";
 import { buildActivityStyles, type ActivityStyles } from "./activity-styles";
 import { DiffBlock, ReasoningMarkdown } from "./activity-details";
-import { hue, isDarkTheme, withAlpha } from "./kit";
+import { hue, isDarkTheme, vividSyntaxColors, withAlpha } from "./kit";
+import { emphasizeShellHead, highlightCodeSync, type HighlightToken } from "./highlight";
 import type { SettingsActions } from "./settings";
 import { useTypography } from "./typography";
 import { t } from "../shared/text";
@@ -33,7 +34,10 @@ export interface PreviewPanelProps {
   compact: boolean;
 }
 
-const SAMPLE_COMMAND = "npm ci --omit=dev && npm test";
+const SAMPLE_COMMAND = 'echo "$(git rev-parse --short HEAD)" && npm ci --omit=dev || true # smoke';
+// 第二个样本：heredoc（青绿）、boolean（青柠）、flag（靛）与斜体注释挤在一行短命令里，
+// 让「命令着色」的全部新增语法在预览里一屏可见（第一个样本展示子壳嵌套，太长会被截断）。
+const SAMPLE_HEREDOC_COMMAND = 'cat <<CFG && npm ci --omit=dev || true # demo';
 const SAMPLE_QUESTION = () => t("settings.previewQuestion");
 const reasoningSample = () => t("settings.previewReasoning").split("\n");
 
@@ -70,8 +74,44 @@ function Pill({ color, soft, text }: { color: string; soft: string; text: string
   );
 }
 
+/** 行头命令的语法色段（真 Prism bash 语法；vivid 派生 12 色 + 首词粗体/注释斜体；整行一色或超长时返回 null 走纯文本）。 */
+function shellSegments(command: string, theme: PluginTheme): ReactNode | null {
+  const lines = highlightCodeSync(command, "shell", vividSyntaxColors(theme));
+  const line = lines && emphasizeShellHead(lines)?.[0];
+  if (!line || line.length <= 1) return null;
+  return (
+    <>
+      {line.map((token, index) => (
+        <Text key={index} style={shellTokenStyle(token)}>{token.content}</Text>
+      ))}
+    </>
+  );
+}
+
+/** 0.11.0:与 fx 真实行同构的 token 样式（颜色 + 1 斜体 / 2 粗体）。 */
+function shellTokenStyle(token: HighlightToken) {
+  if (!token.color && !token.fontStyle) return null;
+  return {
+    ...(token.color ? { color: token.color } : null),
+    ...(token.fontStyle && token.fontStyle & 1 ? { fontStyle: "italic" as const } : null),
+    ...(token.fontStyle && token.fontStyle & 2 ? { fontWeight: "700" as const } : null),
+  };
+}
+
 function RowText({ style, children }: { style: TextStyle; children: string }) {
   return <Text numberOfLines={1} style={style}>{children}</Text>;
+}
+
+/** 迷你行头：类别色点 + 动作词（可带语法色段）+ 命令/摘要 + 右侧注记。 */
+function MiniHeader({ theme, styles, dotColor, title, summary, summaryNode, right }: { theme: PluginTheme; styles: ActivityStyles; dotColor: string; title: string; summary?: string; summaryNode?: ReactNode; right?: ReactNode }) {
+  return (
+    <View style={styles.headerButton}>
+      <Dot color={dotColor} />
+      <RowText style={styles.title}>{title}</RowText>
+      {summaryNode ? <Text numberOfLines={1} style={styles.summary}>{summaryNode}</Text> : summary ? <RowText style={styles.summary}>{summary}</RowText> : null}
+      {right ?? <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, flexShrink: 0 }}>›</Text>}
+    </View>
+  );
 }
 
 /** 淡出豁免谓词的预览版：与 client/activity.tsx、fold-row.tsx 的真实规则同构。运行中不淡；展开不淡；失败档豁免失败行。 */
@@ -115,7 +155,7 @@ function ReasoningReplica({ theme, styles, values, palette, metrics }: { theme: 
 }
 
 /** 工具行副本：state/expanded 驱动（failures 档 = 失败行展开全强度红态，完成行收起淡出）。 */
-function ToolReplica({ theme, styles, palette, values, metrics, look, label, command, state, expanded, diff, errorLine }: {
+function ToolReplica({ theme, styles, palette, values, metrics, look, label, command, commandNode, state, expanded, diff, errorLine }: {
   theme: PluginTheme;
   styles: ActivityStyles;
   palette: ActivityPalette;
@@ -124,6 +164,8 @@ function ToolReplica({ theme, styles, palette, values, metrics, look, label, com
   look: LookKey;
   label: string;
   command: string;
+  /** 0.11.0:「命令着色」——命令的语法色段（给出时替代纯文本摘要）。 */
+  commandNode?: ReactNode;
   state: "completed" | "failed" | "running";
   expanded?: boolean;
   diff?: ReactNode;
@@ -139,7 +181,7 @@ function ToolReplica({ theme, styles, palette, values, metrics, look, label, com
       <View style={styles.headerButton}>
         <Tile theme={theme} look={look} size={metrics.tile} />
         <RowText style={{ ...styles.title, color }}>{label}</RowText>
-        <RowText style={styles.summary}>{command}</RowText>
+        {commandNode ? <Text numberOfLines={1} style={styles.summary}>{commandNode}</Text> : <RowText style={styles.summary}>{command}</RowText>}
         {state === "failed" ? <Pill color={hue(theme, "red", "text")} soft={hue(theme, "red", "soft")} text={t("ui.failed2", { count: 1 })} /> : null}
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, flexShrink: 0 }}>{running ? "…" : "›"}</Text>
       </View>
@@ -242,6 +284,9 @@ export function PreviewPanel({ theme, paletteFor, actions, compact }: PreviewPan
   styles.card = { ...styles.card, marginTop: 6, marginBottom: 6 };
   const failuresMode = values.expansion.shell === "failures";
   const shellAlways = values.expansion.shell === "always";
+  const colored = values.commandColors === "always" || (failuresMode && values.commandColors === "expanded");
+  const shellCommandNode = colored ? shellSegments(SAMPLE_COMMAND, theme) : null;
+  const heredocCommandNode = colored ? shellSegments(SAMPLE_HEREDOC_COMMAND, theme) : null;
   const indent = (compact ? 6 : 8) + metrics.tile + metrics.gap;
   const toolValues = { strength: values.strength, shellExpansion: values.expansion.shell };
   const diffDetail = { type: "edit", filePath: "/demo/src/app.ts", oldString: `const a = ${"lorem-ipsum-dolor.".repeat(16)}\nconst b = 1;`, newString: "const a = 1;\nconst b = 2;" } as const;
@@ -262,10 +307,11 @@ export function PreviewPanel({ theme, paletteFor, actions, compact }: PreviewPan
           <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="edit" label={t("modelLook.edit")} command="/demo/src/app.ts" state="completed" expanded diff={<DiffBlock detail={diffDetail} palette={palette} styles={styles} />} />
           <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="search" label={t("modelLook.search")} command="vivid preview coverage" state="completed" />
           {failuresMode ? (
-            <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} state="failed" expanded errorLine={<Text style={{ color: hue(theme, "red", "text"), fontFamily: "monospace", fontSize: 11, lineHeight: 16 }}>{t("ui.error")}: Exit code 1</Text>} />
+            <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={shellCommandNode} state="failed" expanded errorLine={<Text style={{ color: hue(theme, "red", "text"), fontFamily: "monospace", fontSize: 11, lineHeight: 16 }}>{t("ui.error")}: Exit code 1</Text>} />
           ) : (
-            <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} state="completed" />
+            <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={shellCommandNode} state="completed" />
           )}
+          <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_HEREDOC_COMMAND} commandNode={heredocCommandNode} state="completed" />
           <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} state="running" />
           {actions.LoaderMark ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: metrics.gap, minHeight: metrics.rowMinHeight, paddingLeft: 5 }}>

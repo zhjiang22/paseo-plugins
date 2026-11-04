@@ -6,7 +6,7 @@ import { useAgent, useSettings } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { type NativeScrollEvent, type ScrollView as NativeScrollView, type NativeSyntheticEvent } from "react-native";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { z } from "zod";
 import { parsePiSubagentCall, piSubagentOperation } from "../shared/pi-subagents";
@@ -27,7 +27,7 @@ import { createLatestRows, forgetWith } from "./latest-rows";
 import { PiSubagentLifecycleSummary } from "./pi-subagent-summary";
 import { PinnedPrompt, usePromptPin } from "./prompt-pin";
 import { timingText, useLiveNow, useOnScreen, useRowTiming } from "./timing";
-import { useFollowOutput } from "./settings-hooks";
+import { useFollowBottom, useFollowOutput } from "./settings-hooks";
 import { useFx } from "./fx";
 import { retryPiNotices } from "./transform";
 import { failureText, lookFor, mcpParts, resolveVividPalette, VividHeader, zh, type LookKey, type RowStatus } from "./vivid";
@@ -491,13 +491,8 @@ export function ColorfulToolCall({
   const follow = useFollowOutput(followArea) && isRunning;
   const detailScrollRef = useRef<NativeScrollView | null>(null);
   const detailNearBottom = useRef(true);
-  const onDetailScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    detailNearBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - 32;
-  }, []);
-  useEffect(() => {
-    if (follow && detailNearBottom.current) detailScrollRef.current?.scrollToEnd({ animated: false });
-  });
+  // 共享回底钩子（client/settings-hooks.ts）：明细对象随宿主更新换新（即内容键），每次更新回底。
+  const { onScroll: onDetailScroll, onContentSizeChange: onDetailContentSizeChange } = useFollowBottom(detailScrollRef, detailNearBottom, item.data.detail, follow);
   const isTaskUpdate = isTodoTool(item.data.name);
   const itemTimestamp = timestamp.getTime();
   const latestTaskUpdateTimestamp = useLatestTaskUpdateTimestamp(agentId, timestamp, isTaskUpdate);
@@ -606,7 +601,7 @@ export function ColorfulToolCall({
       {hasDetails && subAgentDetail ? <SubAgentProgress detail={subAgentDetail} toolName={item.data.name} styles={styles} /> : null}
       {expandable && expanded ? (
         <View {...cmonoViewEscape} style={styles.details}>
-          <ScrollView ref={detailScrollRef} style={styles.detailsScroll} contentContainerStyle={styles.detailsContent} nestedScrollEnabled showsVerticalScrollIndicator onScroll={onDetailScroll} scrollEventThrottle={16}>
+          <ScrollView ref={detailScrollRef} style={styles.detailsScroll} contentContainerStyle={styles.detailsContent} nestedScrollEnabled showsVerticalScrollIndicator onScroll={onDetailScroll} onContentSizeChange={onDetailContentSizeChange} scrollEventThrottle={16}>
             {hasBody ? (
               <DetailBody data={item.data} agentId={agentId} theme={theme} palette={palette} styles={styles} />
             ) : null}

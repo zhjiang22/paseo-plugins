@@ -1,7 +1,7 @@
 import { LanguageSettings } from "./language-settings";
 import { t } from "../shared/text";
 import { PreviewPanel } from "./settings-preview-rows";
-import { useCallback, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { ScrollView, Text, View, type LayoutChangeEvent } from "react-native";
 import {
   useSettings,
@@ -479,13 +479,18 @@ function ThoughtControls({ settings }: { settings: ReadySettings }) {
   }
   const parsed = /^\d+$/.test(draft.trim()) ? Number.parseInt(draft.trim(), 10) : null;
   const valid = parsed !== null && parsed >= 5 && parsed <= 500;
+  // 0.11.0:合法即应用——SDK 输入框没有失焦事件，防抖后保存；非法中间态只提示不保存。
+  // 外部保存到达时 shown/draft 重置，改变量也随之收敛，不会重复保存。
+  useEffect(() => {
+    if (!valid || parsed === saved || settings.saving) return;
+    const timer = setTimeout(() => {
+      void settings.save({ ...settings.values, thoughtTailLines: parsed }, settings.revision);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [draft, parsed, saved, settings.saving, settings.revision, settings.values]);
   const changeFollow = (value: boolean) => {
     if (value === settings.values.thoughtTailFollow) return;
     void settings.save({ ...settings.values, thoughtTailFollow: value }, settings.revision);
-  };
-  const applyLines = () => {
-    if (!valid || parsed === saved) return;
-    void settings.save({ ...settings.values, thoughtTailLines: parsed }, settings.revision);
   };
   const error = valid || !draft.trim() ? null : t("settings.tailLinesInvalid");
   return (
@@ -500,12 +505,6 @@ function ThoughtControls({ settings }: { settings: ReadySettings }) {
           initialValue={String(saved)}
           disabled={settings.saving || !settings.values.thoughtTailFollow}
           onChangeText={setDraft}
-        />
-        <SettingsAction
-          label={t("settings.applyTailLines")}
-          actionLabel={t("settings.apply")}
-          disabled={settings.saving || !settings.values.thoughtTailFollow || !valid || parsed === saved}
-          onPress={applyLines}
         />
       </SettingsCard>
     </SettingsSection>

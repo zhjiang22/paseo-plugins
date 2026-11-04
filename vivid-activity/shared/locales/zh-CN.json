@@ -758,7 +758,6 @@
     "tailLines": "窗口大小",
     "tailLinesHint": "窗口保留的行数（全文视图）或步数（分步视图），5–500，默认 20。",
     "tailLinesInvalid": "请输入 5–500 的整数。",
-    "applyTailLines": "应用窗口大小",
     "commandColors": "命令着色",
     "commandColorsHint": "行头 shell 命令的语法着色（颜色来自主题）。",
     "whenOpen": "展开时",

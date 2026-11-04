@@ -833,7 +833,6 @@
     "tailLines": "Window size",
     "tailLinesHint": "Lines (block view) or steps (step view) kept in the window, 5–500. Default 20.",
     "tailLinesInvalid": "Enter a whole number between 5 and 500.",
-    "applyTailLines": "Apply the window size",
     "commandColors": "Command colors",
     "commandColorsHint": "Syntax colors for the shell command in a row's title (colors from the theme).",
     "whenOpen": "When open",

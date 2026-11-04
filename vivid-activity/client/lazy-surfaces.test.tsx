@@ -18,7 +18,7 @@ vi.mock("./kit", () => ({ toneColor: () => "#ffffff" }));
 vi.mock("./loader-preview", () => ({ LoaderPreview: () => null, loaderLabels: { spinner: "转圈", sparkle: "星芒", orb: "光球", snake: "点阵 · 蛇形", matrix: "点阵 · 闪烁" } }));
 // 0.11.0: same for the full preview panel (its render is covered in native-rows.test with the fuller react-native stand-ins).
 vi.mock("./settings-preview-rows", () => ({ PreviewPanel: () => null }));
-vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(), useCallback: (fn: unknown) => fn, useMemo: (compute: () => unknown) => compute(), useState: (value: unknown) => [value, () => undefined] }));
+vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(), useCallback: (fn: unknown) => fn, useEffect: () => undefined, useMemo: (compute: () => unknown) => compute(), useState: (value: unknown) => [value, () => undefined] }));
 vi.mock("./typography", async (original) => ({ ...await original<typeof import("./typography")>(), useTypography: () => ({ scale: 1, line: 1 }) }));
 
 import { ActivitySettings, type SettingsActions } from "./settings";

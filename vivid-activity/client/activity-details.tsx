@@ -22,7 +22,7 @@ import { CopyButton, OutputCopyButtons } from "./copy-button";
 import { GithubToolDetail } from "./github";
 import { useHighlightTokens, type HighlightToken } from "./highlight";
 import { aria, vividSyntaxColors } from "./kit";
-import { useWrapLines } from "./settings-hooks";
+import { useFollowBottom, useWrapLines } from "./settings-hooks";
 import { Breathe } from "./motion";
 import { OmpFindToolDetail } from "./omp-find";
 import { OmpWaitToolDetail } from "./omp-wait";
@@ -1346,27 +1346,18 @@ export function ReasoningText({
   const isStreaming = phase === "streaming";
   const scrollRef = useRef<NativeScrollView | null>(null);
   const isNearBottom = useRef(true);
-  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    isNearBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - 32;
-  }, []);
-  const handleContentSizeChange = useCallback(() => {
-    if (isNearBottom.current) scrollRef.current?.scrollToEnd({ animated: false });
-  }, []);
   // 窗口饱和后内容高度近似不变（旧的从顶上裁掉、新的接在底下），onContentSizeChange 不再触发，
-  // 跟随就此停摆——回底改挂内容本身：尾窗内容一变就回底，直到用户向上滚离底部（handleScroll 置假）。
+  // 跟随就此停摆——共享回底钩子把回底挂在尾窗内容本身（tailHead 一变就回底），直到用户上滚离底。
   const tailHead = shownSteps.length > 1 ? shownSteps[shownSteps.length - 1] : blockText;
-  useEffect(() => {
-    if (isNearBottom.current) scrollRef.current?.scrollToEnd({ animated: false });
-  }, [tailHead]);
+  const { onScroll: onTailScroll, onContentSizeChange: onTailContentSizeChange } = useFollowBottom(scrollRef, isNearBottom, tailHead, true);
 
   return (
     <View>
       <ScrollView
         ref={scrollRef}
         nestedScrollEnabled
-        onContentSizeChange={handleContentSizeChange}
-        onScroll={handleScroll}
+        onContentSizeChange={onTailContentSizeChange}
+        onScroll={onTailScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator
         style={styles.detailsScroll}

@@ -13,23 +13,36 @@ import { defaultRuntimeRoot } from '../server/runtime';
 
 // A stand-in for Playwright MCP that records what reaches it: its environment, working directory and every request.
 // Like Playwright MCP it saves a call's output to the file named in "filename", relative to its working directory.
-const fakeMcp=(log:string)=>`import {appendFileSync,writeFileSync} from 'node:fs';
+// `tabs` makes browser_tabs list/select answer with Playwright MCP's text list (`- <index>: (current)? [title](url)`),
+// in that array's order, which need not match the plugin's validate targets. Without it, every call is JSON.
+type ScriptedTab={title:string;url:string;suffix?:string};
+type ScriptedTabs={tabs:ScriptedTab[];current?:number|null;afterSelect?:number|null};
+const fakeMcp=(log:string,scripted?:ScriptedTabs)=>`import {appendFileSync,writeFileSync} from 'node:fs';
 import {createInterface} from 'node:readline';
 const record=value=>appendFileSync(${JSON.stringify(log)},JSON.stringify(value)+'\\n');
 const tools=['browser_click','browser_file_upload','browser_drop','browser_navigate','browser_network_request','browser_tabs','browser_close','browser_run_code_unsafe','browser_pdf_save','browser_mouse_click_xy'].map(name=>({name,description:name,inputSchema:{type:'object',properties:{}}}));
+const scripted=${JSON.stringify(scripted??null)};
+const renderTabs=()=>scripted.tabs.map((tab,index)=>'- '+index+':'+(index===scripted.current?' (current)':'')+' ['+tab.title+']('+tab.url+')'+(tab.suffix||'')).join('\\n');
 createInterface({input:process.stdin}).on('line',line=>{const message=JSON.parse(line);record({method:message.method,params:message.params,...(message.method==='initialize'?{cwd:process.cwd(),env:process.env,argv:process.argv.slice(2)}:{})});if(message.id===undefined)return;
 if(message.method==='tools/call'&&message.params.arguments?.filename)writeFileSync(message.params.arguments.filename,'saved by the stand-in');
-const result=message.method==='initialize'?{protocolVersion:'2025-03-26',capabilities:{},serverInfo:{name:'fake',version:'1'}}:message.method==='tools/list'?{tools}:{content:[{type:'text',text:JSON.stringify(message.params)}]};
+let rendered;
+if(scripted&&message.method==='tools/call'&&message.params.name==='browser_tabs'){
+ const action=message.params.arguments?.action;
+ if(action==='select')scripted.current=Object.prototype.hasOwnProperty.call(scripted,'afterSelect')?scripted.afterSelect:message.params.arguments?.index;
+ if(action==='list'||action==='select')rendered=renderTabs();
+}
+const result=message.method==='initialize'?{protocolVersion:'2025-03-26',capabilities:{},serverInfo:{name:'fake',version:'1'}}:message.method==='tools/list'?{tools}:{content:[{type:'text',text:rendered??JSON.stringify(message.params)}]};
 process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:message.id,result})+'\\n');});`;
 
 type Control={route:string;body:Record<string,unknown>};
-async function fixture(t:TestContext,options:{workspaceDirectory?:boolean}={}){
+type FixtureView={activeTargetId?:string;activeIndex?:number;targets?:{id:string;index:number;title?:string;url:string;active?:boolean;pinned?:boolean}[]};
+async function fixture(t:TestContext,options:{workspaceDirectory?:boolean;view?:FixtureView;tabs?:ScriptedTabs}={}){
   const root=await realpath(await mkdtemp(path.join(tmpdir(),'paseo-browser-policy-')));
   t.after(()=>rm(root,{recursive:true,force:true}));
   const runtime=path.join(root,'runtime'),cli=path.join(runtime,'node_modules','@playwright','mcp','cli.js'),log=path.join(root,'mcp.log');
   const workspace=path.join(root,'workspace'),data=path.join(root,'data');
   await mkdir(path.dirname(cli),{recursive:true});await mkdir(path.join(workspace,'nested'),{recursive:true});await mkdir(data);
-  await writeFile(cli,fakeMcp(log));await writeFile(path.join(root,'bridge.mjs'),bridgeScript(runtime));
+  await writeFile(cli,fakeMcp(log,options.tabs));await writeFile(path.join(root,'bridge.mjs'),bridgeScript(runtime));
   await writeFile(path.join(workspace,'report.txt'),'synthetic report');await writeFile(path.join(root,'outside.txt'),'outside the workspace');
   await symlink(path.join(workspace,'report.txt'),path.join(workspace,'link-inside.txt'));await symlink(path.join(root,'outside.txt'),path.join(workspace,'link-outside.txt'));
   // The control endpoint: it answers like the plugin and normalizes navigation to a value the bridge cannot have made up itself.
@@ -38,7 +51,7 @@ async function fixture(t:TestContext,options:{workspaceDirectory?:boolean}={}){
     let body='';for await(const chunk of request)body+=chunk;const input=JSON.parse(body||'{}');controls.push({route:request.url!.slice(1),body:input});
     const answer=(status:number,value:unknown)=>{response.writeHead(status,{'content-type':'application/json'});response.end(JSON.stringify(value));};
     if(request.headers.authorization!=='Bearer test-token')return answer(401,{error:'Unauthorized'});
-    const view={leaseId:'lease-1',activeTargetId:'target-1',activeIndex:0,epoch:1,targets:[],maxTabs:20,tabCount:1};
+    const view={leaseId:'lease-1',activeTargetId:'target-1',activeIndex:0,epoch:1,targets:[],maxTabs:20,tabCount:1,...options.view};
     if(request.url==='/acquire'){if(input.url!==undefined&&String(input.url).includes('@'))return answer(409,{error:'请在网页内登录，不要在地址中填写密码。'});return answer(200,{...view,...(input.url!==undefined?{url:'https://normalized.example/'}:{})});}
     if(request.url==='/validate')return answer(200,view);
     return answer(200,{ok:true});
@@ -194,6 +207,124 @@ test('files Playwright MCP saves for the Agent are private to the daemon user, w
   await request('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}});
   assert.equal((await call('browser_network_requests',{filename:'requests.log'})).isError,undefined);
   assert.equal((await stat(path.join(workspace,'requests.log'))).mode&0o777,0o600);
+});
+
+// Plugin order is about:blank, Paseo, Google. The child's list is about:blank, Google, Paseo: index 1 and index 2 swap.
+const pluginTargets=[
+  {id:'blank',index:0,title:'',url:'about:blank',active:false,pinned:false},
+  {id:'paseo',index:1,title:'Paseo',url:'https://paseo.example/',active:true,pinned:false},
+  {id:'google',index:2,title:'Google',url:'https://google.example/',active:false,pinned:false},
+];
+const childTabs:ScriptedTab[]=[
+  {title:'',url:'about:blank'},
+  {title:'Google',url:'https://google.example/'},
+  {title:'Paseo',url:'https://paseo.example/'},
+];
+const toolNames=async(mcpLog:()=>Promise<any[]>)=> (await mcpLog()).filter(entry=>entry.method==='tools/call').map(entry=>({name:entry.params.name,arguments:entry.params.arguments}));
+
+test('a reordered Playwright tab list selects the child index of the target URL', {timeout:30000}, async t=>{
+  const {request,call,mcpLog}=await fixture(t,{view:{activeTargetId:'paseo',activeIndex:1,targets:pluginTargets},tabs:{tabs:childTabs}});
+  await request('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}});
+  const shot=await call('browser_take_screenshot',{});
+  assert.equal(shot.isError,undefined,text(shot));
+  const calls=await toolNames(mcpLog);
+  assert.deepEqual(calls.map(entry=>entry.name),['browser_tabs','browser_tabs','browser_tabs','browser_take_screenshot']);
+  assert.deepEqual(calls[1].arguments,{action:'select',index:2},'Paseo is index 2 in the child, not the plugin index 1');
+  assert.deepEqual(calls[3].arguments,{});
+});
+
+test('the same address with one trailing slash still selects that child tab', {timeout:30000}, async t=>{
+  const tabs:ScriptedTab[]=[{title:'Other',url:'https://other.example/'},{title:'Paseo',url:'https://paseo.example'}];
+  const {request,call,mcpLog}=await fixture(t,{view:{activeTargetId:'paseo',activeIndex:0,targets:[{id:'paseo',index:0,title:'Paseo',url:'https://paseo.example/',active:true}]},tabs:{tabs}});
+  await request('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}});
+  assert.equal((await call('browser_take_screenshot',{})).isError,undefined);
+  const calls=await toolNames(mcpLog);
+  assert.deepEqual(calls[1].arguments,{action:'select',index:1});
+  assert.equal(calls.at(-1)?.name,'browser_take_screenshot');
+});
+
+test('duplicate URLs fail and the tool is not forwarded', {timeout:30000}, async t=>{
+  const tabs:ScriptedTab[]=[
+    {title:'Paseo',url:'https://paseo.example/'},
+    {title:'Google',url:'https://google.example/'},
+    {title:'Paseo',url:'https://paseo.example/'},
+  ];
+  const {request,call,mcpLog}=await fixture(t,{view:{activeTargetId:'paseo',activeIndex:1,targets:pluginTargets},tabs:{tabs}});
+  await request('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}});
+  const shot=await call('browser_take_screenshot',{});
+  assert.equal(shot.isError,true);
+  assert.match(text(shot),/多个共享标签页是这个地址/);
+  const calls=await toolNames(mcpLog);
+  assert.deepEqual(calls.map(entry=>entry.name),['browser_tabs'],'the list is read, then the call stops before select or the tool');
+  assert.deepEqual(calls[0].arguments,{action:'list'});
+});
+
+test('the same URL is selected by title when exactly one of the matching tabs has it', {timeout:30000}, async t=>{
+  const tabs:ScriptedTab[]=[
+    {title:'服务器浏览器 · 互动体验',url:'about:blank'},
+    {title:'Shared MCP proof',url:'about:blank'},
+  ];
+  const targets=[
+    {id:'demo',index:0,title:'服务器浏览器 · 互动体验',url:'about:blank',active:false},
+    {id:'proof',index:1,title:'Shared MCP proof',url:'about:blank',active:true},
+  ];
+  // The raw plugin index is 0, which is the demo page. The proof tab is the child's index 1.
+  const {request,call,mcpLog}=await fixture(t,{view:{activeTargetId:'proof',activeIndex:0,targets},tabs:{tabs}});
+  await request('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}});
+  assert.equal((await call('browser_take_screenshot',{})).isError,undefined);
+  const calls=await toolNames(mcpLog);
+  assert.deepEqual(calls[1].arguments,{action:'select',index:1});
+  assert.equal(calls.at(-1)?.name,'browser_take_screenshot');
+});
+
+test('a parsed tab list with no URL match fails and the tool is not forwarded', {timeout:30000}, async t=>{
+  const tabs:ScriptedTab[]=[{title:'Google',url:'https://google.example/'},{title:'Other',url:'https://other.example/'}];
+  const {request,call,mcpLog}=await fixture(t,{view:{activeTargetId:'paseo',activeIndex:0,targets:pluginTargets},tabs:{tabs}});
+  await request('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}});
+  const shot=await call('browser_take_screenshot',{});
+  assert.equal(shot.isError,true);
+  assert.match(text(shot),/不在共享浏览器的标签列表里/);
+  const calls=await toolNames(mcpLog);
+  assert.deepEqual(calls.map(entry=>entry.arguments?.action??entry.name),['list']);
+  assert.equal(calls.some(entry=>entry.name==='browser_take_screenshot'),false);
+});
+
+test('the wrong current tab after select fails with tabsChanged and the tool is not forwarded', {timeout:30000}, async t=>{
+  const {request,call,mcpLog}=await fixture(t,{view:{activeTargetId:'paseo',activeIndex:1,targets:pluginTargets},tabs:{tabs:childTabs,afterSelect:0}});
+  await request('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}});
+  const shot=await call('browser_take_screenshot',{});
+  assert.equal(shot.isError,true);
+  assert.match(text(shot),/标签列表在操作前发生变化/);
+  const calls=await toolNames(mcpLog);
+  assert.deepEqual(calls.map(entry=>entry.name),['browser_tabs','browser_tabs','browser_tabs']);
+  assert.deepEqual(calls[1].arguments,{action:'select',index:2});
+  assert.equal(calls.some(entry=>entry.name==='browser_take_screenshot'),false);
+});
+
+test('a title containing ]( and a URL containing ) still select that child tab', {timeout:30000}, async t=>{
+  const tabs:ScriptedTab[]=[
+    {title:'Click ]( here',url:'https://other.example/a)b',suffix:' [crashed] [isolatedContext: reader]'},
+    {title:'Wiki',url:'https://example.com/Foo_(bar)'},
+  ];
+  const targets=[{id:'wiki',index:0,title:'Wiki',url:'https://example.com/Foo_(bar)',active:false},{id:'tricky',index:1,title:'Click ]( here',url:'https://other.example/a)b',active:true}];
+  // Plugin index 1 is the raw index. The child lists the tricky tab first, so the right index is 0.
+  const {request,call,mcpLog}=await fixture(t,{view:{activeTargetId:'tricky',activeIndex:1,targets},tabs:{tabs}});
+  await request('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}});
+  const shot=await call('browser_take_screenshot',{});
+  assert.equal(shot.isError,undefined,text(shot));
+  const calls=await toolNames(mcpLog);
+  assert.deepEqual(calls.filter(entry=>entry.arguments?.action==='select').map(entry=>entry.arguments.index),[0]);
+  assert.equal(calls.at(-1)?.name,'browser_take_screenshot');
+});
+
+test('a child that renders no tab list keeps the raw plugin index', {timeout:30000}, async t=>{
+  const {request,call,mcpLog}=await fixture(t,{view:{activeTargetId:'paseo',activeIndex:1,targets:pluginTargets}});
+  await request('initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}});
+  const shot=await call('browser_take_screenshot',{});
+  assert.equal(shot.isError,undefined,text(shot));
+  const calls=await toolNames(mcpLog);
+  assert.deepEqual(calls.map(entry=>entry.name),['browser_tabs','browser_tabs','browser_take_screenshot']);
+  assert.deepEqual(calls[1].arguments,{action:'select',index:1});
 });
 
 test('the runtime\'s Playwright MCP takes the CDP address from PLAYWRIGHT_MCP_CDP_ENDPOINT, so the bridge can keep it out of argv', {timeout:60000}, async t=>{

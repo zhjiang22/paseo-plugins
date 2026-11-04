@@ -756,6 +756,8 @@
     "targetClosed": "The target tab has closed. Check the tab list again. Other pages will remain untouched.",
     "tabsUnreadable": "Could not read the shared browser's tabs. Try reconnecting.",
     "tabsChanged": "The tab list changed before the operation. Refresh and try again.",
+    "ambiguousTab": "More than one shared tab has this address, so it is unclear which tab to use. The tool was not run.",
+    "tabNotListed": "The selected tab is not in the shared browser's tab list, so the tool was not run.",
     "uploadMissing": "The upload file was not found: {path}",
     "uploadSymlink": "Cannot upload a symbolic link: {path}. Use a real file in the workspace.",
     "uploadNotRegular": "Only regular files can be uploaded: {path}",

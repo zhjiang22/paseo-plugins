@@ -731,6 +731,8 @@
     "targetClosed": "目标标签页已经关闭，请重新查看标签列表。不会自动切换到其他网页。",
     "tabsUnreadable": "无法读取共享浏览器标签页，请重试连接。",
     "tabsChanged": "标签列表在操作前发生变化，请刷新后重试。",
+    "ambiguousTab": "有多个共享标签页是这个地址，无法确定要操作哪一个，因此没有执行。",
+    "tabNotListed": "选中的标签页不在共享浏览器的标签列表里，因此没有执行。",
     "uploadMissing": "找不到要上传的文件：{path}",
     "uploadSymlink": "不能上传符号链接：{path}。请改用工作区里的真实文件。",
     "uploadNotRegular": "只能上传普通文件：{path}",

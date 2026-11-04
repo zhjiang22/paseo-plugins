@@ -405,7 +405,6 @@ export function DiffBlock({
 }) {
   const [showAll, setShowAll] = useState(false);
   const wrap = useDiffWrap();
-  console.log("DIFFPROBE:", JSON.stringify({ wrap, hasDetail: !!detail }));
   const lines = useMemo(() => diffLinesForDetail(detail), [detail]);
   const isTruncated = lines.length > PREVIEW_LINES;
   const displayLines = showAll || !isTruncated ? lines : lines.slice(0, PREVIEW_LINES);
@@ -1300,7 +1299,6 @@ export function ReasoningText({
   const blockText = windowed?.kind === "block" ? windowed.block : revealedText;
   // 窗口确实裁掉了内容（或用户已展开）才给按钮；OFF 时沿用头部预览的截断判定。
   const windowTruncated = tail.follow && !showAll && (allSteps.length > 1 ? allSteps.length > tail.lines : revealedText.split("\n").length > tail.lines);
-  console.log("TAILPROBE:", JSON.stringify({ follow: tail.follow, lines: tail.lines, showAll, phase, steps: allSteps.length, windowedKind: windowed?.kind ?? null, start: windowed && "start" in windowed ? windowed.start : null }));
   const showExpandButton = showAll || windowTruncated || (!tail.follow && preview.truncated);
   const isStreaming = phase === "streaming";
   const scrollRef = useRef<NativeScrollView | null>(null);

@@ -508,7 +508,7 @@ export function DisplaySettings({ theme, actions, paletteFor, layout, scroll }: 
       <ExpansionControls settings={settings} />
     </>
   );
-  const preview = theme ? <PreviewPanel theme={theme} paletteFor={paletteFor} actions={actions} compact={compact} /> : null;
+  const preview = theme ? <PreviewPanel theme={theme} paletteFor={paletteFor} actions={actions} compact={compact} native={layout?.platform !== "web"} /> : null;
   const previewSection = (
     <SettingsSection title={t("settings.preview")}>
       <SettingsCard>{preview}</SettingsCard>

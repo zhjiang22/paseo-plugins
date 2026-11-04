@@ -4,8 +4,8 @@ import { Icon } from "@getpaseo/plugin/client/react-native";
 import type { ReactNode } from "react";
 import { Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { STRENGTH_OPACITY, activitySettings, type LoaderKind, type PaletteMode } from "../shared/settings";
+import { PIN_COLLAPSED_LINES } from "../shared/prompt-pin";
 import { densityMetrics, type DensityMetrics } from "../shared/density";
-import { createReasoningData } from "../shared/timeline";
 import { looks, type LookKey } from "../shared/vivid-model";
 import type { ActivityPalette } from "../shared/presentation";
 import { buildActivityStyles, type ActivityStyles } from "./activity-styles";
@@ -13,16 +13,17 @@ import { DiffBlock, ReasoningMarkdown } from "./activity-details";
 import { hue, isDarkTheme, vividSyntaxColors, withAlpha } from "./kit";
 import { emphasizeShellHead, highlightCodeSync, type HighlightToken } from "./highlight";
 import type { SettingsActions } from "./settings";
-import { useTypography } from "./typography";
+import { typesetStyle, useTypography } from "./typography";
 import { t } from "../shared/text";
 
 /**
  * 0.11.0：设置页右侧的全量实时预览——一段模拟回合的高保真静态副本（展示态固定并标注，不可交互）。
  * 结构镜像真实行头（tile/动词/计数/状态丸/时长/勾叉/chevron），样式全部来自 buildActivityStyles
  * （与真实行同一构建器，零漂移由构造保证）；淡出豁免谓词与真实行同构（运行中不淡；展开不淡；
- * failures 档豁免失败行；折叠摘要跟随档位、含失败自动展开为全强度）。样本结构是行组件的轻量副本，
- * 不引用常驻行组件（fold-runtime/prompt-pin/attention 的状态不得被假 agent 污染）。
- * 命令着色（Prism，fx chunk）与 fx 改动清单不在预览内：命令以纯文本呈现。
+ * 失败行同样淡出——failures 档只让它初始展开；折叠摘要跟随档位、含失败自动展开为全强度）。
+ * 样本结构是行组件的轻量副本，不引用常驻行组件（fold-runtime/prompt-pin/attention 的状态不得
+ * 被假 agent 污染）。命令着色（Prism，fx chunk）在预览内：命令段、运行中行的着色跟随与真实行
+ * 同一规则（always，或 shell 展开为 always/latest）；fx 改动清单（fold-changes）仍以纯文本示意。
  */
 
 type Typography = ReturnType<typeof useTypography>;
@@ -32,6 +33,8 @@ export interface PreviewPanelProps {
   paletteFor: (theme: PluginTheme, mode: PaletteMode) => ActivityPalette;
   actions: SettingsActions;
   compact: boolean;
+  /** 宿主表面平台（layout.platform !== "web"）——密度指标的 native 分支与真实行同参。 */
+  native?: boolean;
 }
 
 const SAMPLE_COMMAND = 'echo "$(git rev-parse --short HEAD)" && npm ci --omit=dev || true # smoke';
@@ -46,7 +49,6 @@ interface PreviewValues {
   thoughtExpansion?: "always" | "latest" | "never" | "failures";
   tailFollow?: boolean;
   tailLines?: number;
-  shellExpansion?: "always" | "latest" | "never" | "failures";
   fold?: boolean;
 }
 
@@ -114,11 +116,11 @@ function MiniHeader({ theme, styles, dotColor, title, summary, summaryNode, righ
   );
 }
 
-/** 淡出豁免谓词的预览版：与 client/activity.tsx、fold-row.tsx 的真实规则同构。运行中不淡；展开不淡；失败档豁免失败行。 */
-function idleOpacity(values: PreviewValues, opts: { expanded?: boolean; failed?: boolean } = {}): number | null {
+/** 淡出豁免谓词的预览版：与 client/activity.tsx、fold-row.tsx 的真实规则同构。运行中不淡；展开不淡；
+ * 失败行同样淡出（failures 档只让它初始展开——经 expanded 豁免，与真实点击收起后的行为一致）。 */
+function idleOpacity(values: PreviewValues, opts: { expanded?: boolean } = {}): number | null {
   if (values.strength === "full") return null;
   if (opts.expanded) return null;
-  if (values.shellExpansion === "failures" && opts.failed) return null;
   return STRENGTH_OPACITY[values.strength];
 }
 
@@ -173,7 +175,7 @@ function ToolReplica({ theme, styles, palette, values, metrics, look, label, com
 }) {
   const running = state === "running";
   const open = expanded === true;
-  const opacity = running ? null : idleOpacity(values, { expanded: open, failed: state === "failed" });
+  const opacity = running ? null : idleOpacity(values, { expanded: open });
   const meta = looks[look];
   const color = meta.hue === "gray" ? theme.colors.foregroundMuted : hue(theme, meta.hue);
   return card(
@@ -193,12 +195,15 @@ function ToolReplica({ theme, styles, palette, values, metrics, look, label, com
   );
 }
 
-/** 折叠摘要副本：done 段（绿 tile/勾/时长），跟随淡出档位；含失败 → 自动展开明细（全强度）。 */
-function FoldReplica({ theme, styles, values, palette, metrics, failed }: { theme: PluginTheme; styles: ActivityStyles; values: PreviewValues; palette: ActivityPalette; metrics: DensityMetrics; failed: boolean }) {
+/** 折叠摘要副本：done 段（绿 tile/勾/时长），跟随淡出档位；含失败 → 自动展开明细（全强度）。
+ * 明细字号走 typeset（与真实 FoldChangeList 的 mono 同基，随字号/行距缩放）。 */
+function FoldReplica({ theme, styles, values, palette, metrics, failed, type }: { theme: PluginTheme; styles: ActivityStyles; values: PreviewValues; palette: ActivityPalette; metrics: DensityMetrics; failed: boolean; type: Typography }) {
   if (!values.fold) return null;
   const expanded = failed;
   const opacity = values.strength === "full" || expanded ? null : STRENGTH_OPACITY[values.strength];
   const green = hue(theme, "green");
+  const noteStyle = typesetStyle<TextStyle>({ color: theme.colors.foregroundMuted, fontFamily: "monospace", fontSize: 12, lineHeight: 16 }, type);
+  const failedStyle = typesetStyle<TextStyle>({ color: hue(theme, "red", "text"), fontFamily: "monospace", fontSize: 11, lineHeight: 16, fontWeight: "700" }, type);
   return card(
     <>
       <View style={styles.headerButton}>
@@ -213,8 +218,8 @@ function FoldReplica({ theme, styles, values, palette, metrics, failed }: { them
       </View>
       {expanded ? (
         <View style={styles.details}>
-          <Text style={{ color: theme.colors.foregroundMuted, fontFamily: "monospace", fontSize: 11, lineHeight: 16 }}>{t("settings.previewFoldAuto")}</Text>
-          <Text style={{ color: hue(theme, "red", "text"), fontFamily: "monospace", fontSize: 11, lineHeight: 16 }}>npm test — Exit code 1</Text>
+          <Text style={noteStyle}>{t("settings.previewFoldAuto")}</Text>
+          <Text style={failedStyle}>npm test — Exit code 1</Text>
         </View>
       ) : null}
     </>,
@@ -255,12 +260,12 @@ function PanelLabel({ theme, children }: { theme: PluginTheme; children: string 
   return <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, letterSpacing: 0.5 }}>{children.toUpperCase()}</Text>;
 }
 
-export function PreviewPanel({ theme, paletteFor, actions, compact }: PreviewPanelProps) {
+export function PreviewPanel({ theme, paletteFor, actions, compact, native }: PreviewPanelProps) {
   const settings = useSettings(activitySettings);
   const type = useTypography();
   const ready = settings.status === "ready";
   const values = ready ? settings.values : null;
-  const metrics = densityMetrics(values?.density ?? "compact", compact, false);
+  const metrics = densityMetrics(values?.density ?? "compact", compact, native ?? false);
   if (!ready || !values) {
     return (
       <View style={{ gap: 6 }}>
@@ -285,20 +290,26 @@ export function PreviewPanel({ theme, paletteFor, actions, compact }: PreviewPan
   const failuresMode = values.expansion.shell === "failures";
   const shellAlways = values.expansion.shell === "always";
   const colored = values.commandColors === "always" || (failuresMode && values.commandColors === "expanded");
+  // 运行中行的着色与真实行同规则（activity.tsx:561 always 或该行展开）：shell=always/latest 时运行行是展开的。
+  const runningColored = values.commandColors === "always" || shellAlways || values.expansion.shell === "latest";
   const shellCommandNode = colored ? shellSegments(SAMPLE_COMMAND, theme) : null;
   const heredocCommandNode = colored ? shellSegments(SAMPLE_HEREDOC_COMMAND, theme) : null;
+  const runningShellNode = runningColored ? shellSegments(SAMPLE_COMMAND, theme) : null;
+  // 失败明细行与折叠明细的字号走 typeset（与真实 codeLine/fold-changes mono 同基），随字号/行距缩放。
+  const failedErrorStyle = typesetStyle({ color: hue(theme, "red", "text"), fontFamily: "monospace", fontSize: 11, lineHeight: 16 }, type);
   const indent = (compact ? 6 : 8) + metrics.tile + metrics.gap;
-  const toolValues = { strength: values.strength, shellExpansion: values.expansion.shell };
+  const toolValues = { strength: values.strength };
   const diffDetail = { type: "edit", filePath: "/demo/src/app.ts", oldString: `const a = ${"lorem-ipsum-dolor.".repeat(16)}\nconst b = 1;`, newString: "const a = 1;\nconst b = 2;" } as const;
   return (
     <View>
       {values.pinPrompt ? (
         <View style={[styles.section, { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, backgroundColor: theme.colors.surface1, marginBottom: metrics.marginTop + 4 }]}>
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11, fontWeight: "600" }}>{t("settings.previewPinned")}</Text>
-          <Text numberOfLines={2} style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 17, marginTop: 2 }}>{SAMPLE_QUESTION()}</Text>
+          {/* 与真实钉住行同行数（PIN_COLLAPSED_LINES，shared/prompt-pin.ts）。 */}
+          <Text numberOfLines={PIN_COLLAPSED_LINES} style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 17, marginTop: 2 }}>{SAMPLE_QUESTION()}</Text>
         </View>
       ) : null}
-      <ReasoningReplica theme={theme} styles={styles} values={{ strength: values.strength, thoughtExpansion: values.expansion.thinking, tailFollow: values.thoughtTailFollow, tailLines: values.thoughtTailLines, shellExpansion: values.expansion.shell, fold: values.fold }} palette={palette} metrics={metrics} />
+      <ReasoningReplica theme={theme} styles={styles} values={{ strength: values.strength, thoughtExpansion: values.expansion.thinking, tailFollow: values.thoughtTailFollow, tailLines: values.thoughtTailLines, fold: values.fold }} palette={palette} metrics={metrics} />
       {values.takeover === "reasoning" ? (
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>{t("settings.previewThinkingOnly")}</Text>
       ) : (
@@ -307,19 +318,19 @@ export function PreviewPanel({ theme, paletteFor, actions, compact }: PreviewPan
           <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="edit" label={t("modelLook.edit")} command="/demo/src/app.ts" state="completed" expanded diff={<DiffBlock detail={diffDetail} palette={palette} styles={styles} />} />
           <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="search" label={t("modelLook.search")} command="vivid preview coverage" state="completed" />
           {failuresMode ? (
-            <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={shellCommandNode} state="failed" expanded errorLine={<Text style={{ color: hue(theme, "red", "text"), fontFamily: "monospace", fontSize: 11, lineHeight: 16 }}>{t("ui.error")}: Exit code 1</Text>} />
+            <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={shellCommandNode} state="failed" expanded errorLine={<Text style={failedErrorStyle}>{t("ui.error")}: Exit code 1</Text>} />
           ) : (
             <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={shellCommandNode} state="completed" />
           )}
           <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_HEREDOC_COMMAND} commandNode={heredocCommandNode} state="completed" />
-          <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} state="running" />
+          <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={runningShellNode} state="running" />
           {actions.LoaderMark ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: metrics.gap, minHeight: metrics.rowMinHeight, paddingLeft: 5 }}>
               {(() => { const Mark = actions.LoaderMark; return Mark ? <Mark kind={values.loader} size={16} color={palette.statusColors.running} /> : null; })()}
               <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>{t("modelLook.shell")} · {SAMPLE_COMMAND}</Text>
             </View>
           ) : null}
-          <FoldReplica theme={theme} styles={styles} values={{ strength: values.strength, fold: values.fold }} palette={palette} metrics={metrics} failed={failuresMode} />
+          <FoldReplica theme={theme} styles={styles} values={{ strength: values.strength, fold: values.fold }} palette={palette} metrics={metrics} failed={failuresMode} type={type} />
           <TokensReplica theme={theme} indent={indent} />
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center", paddingLeft: indent, paddingTop: 6 }}>
             {Object.entries(palette.categoryColors).map(([category, color]) => <Dot key={category} color={color} size={12} />)}

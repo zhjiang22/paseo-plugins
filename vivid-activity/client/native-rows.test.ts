@@ -109,7 +109,7 @@ beforeAll(async () => {
     `export { ChangeStat, TurnTokens } from ${JSON.stringify(path.join(here, "fold-row.tsx"))};`,
     `export { FoldRow } from ${JSON.stringify(path.join(here, "fold-row.tsx"))};`,
     `export { DiffBlock } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
-    `export { PreviewCard, previewDiffStyles } from ${JSON.stringify(path.join(here, "preview-card.tsx"))};`,
+    `export { PreviewPanel } from ${JSON.stringify(path.join(here, "settings-preview-rows.tsx"))};`,
     `export { CommandTokens } from ${JSON.stringify(path.join(here, "command-tokens.tsx"))};`,
     `export { configureFx } from ${JSON.stringify(path.join(here, "fx.ts"))};`,
     `export { paletteFor } from ${JSON.stringify(path.join(here, "activity.tsx"))};`,
@@ -618,7 +618,7 @@ describe("0.11.0: 思考行尾随窗口", () => {
   });
 });
 
-describe("0.11.0: 设置预览卡", () => {
+describe("0.11.0: 设置预览面板", () => {
   const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
   const ready = (values: Record<string, unknown>) => ({ status: "ready", values: { expansion: {}, density: "compact", ...values }, revision: 1 });
   const withSettings = (settings: unknown, draw: () => Host[]) => {
@@ -629,38 +629,49 @@ describe("0.11.0: 设置预览卡", () => {
       (globalThis as { __vividSettings?: unknown }).__vividSettings = undefined;
     }
   };
-  const draw = (settings: unknown) => withSettings(settings, () => render({ type: ui.PreviewCard, props: { theme: fullTheme, paletteFor: ui.paletteFor } }));
+  const draw = (settings: unknown) => withSettings(settings, () => render({ type: ui.PreviewPanel, props: { theme: fullTheme, paletteFor: ui.paletteFor, actions: {}, compact: false } }));
   const viewsWithOpacity = (nodes: Host[]): number[] => nodes.flatMap(nodesOf).flatMap((node) => {
     if (node.type !== "View") return [];
     const opacity = flatten(node.props.style).opacity;
     return typeof opacity === "number" ? [opacity] : [];
   });
   const scrollsHorizontally = (nodes: Host[]) => nodes.flatMap(nodesOf).some((node) => node.type === "ScrollView" && node.props.horizontal === true);
-  const swatches = (nodes: Host[]) => nodes.flatMap(nodesOf).filter((node) => typeof node.props.accessibilityLabel === "string" && /^(?:cat|status)-/.test(node.props.accessibilityLabel));
+  const text = (nodes: Host[]) => nodes.map(textOf).join("\n");
 
-  it("renders a strength sample at every tier, dimmed by its own opacity", () => {
-    const opacities = viewsWithOpacity(draw(ready({ strength: "faded" })));
-    expect(opacities).toEqual(expect.arrayContaining([0.3, 0.45, 0.65, 1]));
+  it("dims the idle samples by the chosen strength and keeps expanded and running ones full", () => {
+    const faded = viewsWithOpacity(draw(ready({ strength: "faded" })));
+    expect(faded).toEqual(expect.arrayContaining([0.45]));
+    expect(faded).not.toContain(0.3);
+    expect(viewsWithOpacity(draw(ready({ strength: "dim" })))).toContain(0.3);
   });
 
   it("mirrors the wrap diff lines setting in the diff sample", () => {
-    expect(scrollsHorizontally(draw(ready({ diffWrap: "off" })))).toBe(true);
-    expect(scrollsHorizontally(draw(ready({ diffWrap: "on" })))).toBe(false);
+    // diff 样本挂在展开的 shell 行下：显式给 shell「总是展开」（expansion 嵌套结构与真实设置一致）。
+    expect(scrollsHorizontally(draw(ready({ diffWrap: "off", expansion: { shell: "always" } })))).toBe(true);
+    expect(scrollsHorizontally(draw(ready({ diffWrap: "on", expansion: { shell: "always" } })))).toBe(false);
   });
 
-  it("renders category and status swatches from the palette", () => {
-    const dots = swatches(draw(ready({ palette: "vivid" })));
-    // 类别色 + 状态色，随调色板实现走；只要求成组且不重复。
-    expect(dots.length).toBeGreaterThanOrEqual(10);
-    expect(new Set(dots.map((node) => node.props.accessibilityLabel)).size).toBe(dots.length);
+  it("draws the mock turn: pinned question, thinking, tools, fold summary and tokens", () => {
+    const out = text(draw(ready({ pinPrompt: true, strength: "faded", fold: true })));
+    expect(out).toContain("把登录模块");
+    expect(out).toContain("第 1 步：先找到超时配置的来源。");
+    expect(out).toContain("npm ci --omit=dev");
+    expect(out).toContain("4 步");
+    expect(out).toContain("本轮 输入 12k");
   });
 
-  it("keeps the preview diff styles aligned with the real activity styles (drift guard)", () => {
-    const palette = ui.resolveVividPalette(fullTheme);
-    const real = ui.useActivityStyles(fullTheme, palette, ui.densityMetrics("compact", false, false));
-    const preview = ui.previewDiffStyles(fullTheme, palette);
-    for (const key of ["section", "detailLabel", "diffLine", "diffMarker", "diffText", "diffAdded", "diffRemoved", "diffMeta", "diffSurface", "codeLine", "empty", "codeScroll", "showMoreButton", "showMoreText"] as const) {
-      expect(preview[key]).toMatchObject(real[key]);
-    }
+  it("renders the mock turn without negative card margins (the panel has no Paseo spacing to offset, so negatives would overlap rows)", () => {
+    const negative = draw(ready({ strength: "faded" })).flatMap(nodesOf).filter((node) => {
+      if (node.type !== "View") return false;
+      const style = flatten(node.props.style);
+      return (typeof style.marginTop === "number" && style.marginTop < 0) || (typeof style.marginBottom === "number" && style.marginBottom < 0);
+    });
+    expect(negative).toHaveLength(0);
+  });
+
+  it("says there is nothing to preview while takeover is off", () => {
+    const out = text(draw(ready({ takeover: "off" })));
+    expect(out).toContain("接管已关闭");
+    expect(out).not.toContain("npm ci --omit=dev");
   });
 });

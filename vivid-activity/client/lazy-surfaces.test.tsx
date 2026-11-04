@@ -7,6 +7,7 @@ vi.mock("@getpaseo/plugin/client", () => ({ useSettings: () => host.settings }))
 vi.mock("@getpaseo/plugin/client/ui", () => ({ SettingsAction: "SettingsAction", SettingsCard: "SettingsCard", SettingsInput: "SettingsInput", SettingsRow: "SettingsRow", SettingsSection: "SettingsSection", SettingsSelect: "SettingsSelect", SettingsSwitch: "SettingsSwitch" }));
 vi.mock("react-native", () => ({
   Text: "Text",
+  View: "View",
   // 0.11.0: the preview card renders a real DiffBlock, whose module graph reaches use-foreground (AppState).
   AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) },
 }));
@@ -15,9 +16,9 @@ vi.mock("./i18n-client", () => ({ useI18n: () => undefined }));
 vi.mock("./kit", () => ({ toneColor: () => "#ffffff" }));
 // 0.8.0: the running animations preview draws live loaders (fx code); the settings logic is what this test covers.
 vi.mock("./loader-preview", () => ({ LoaderPreview: () => null, loaderLabels: { spinner: "转圈", sparkle: "星芒", orb: "光球", snake: "点阵 · 蛇形", matrix: "点阵 · 闪烁" } }));
-// 0.11.0: same for the preview card (its render is covered in native-rows.test with the fuller react-native stand-ins).
-vi.mock("./preview-card", () => ({ PreviewCard: () => null }));
-vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(), useMemo: (compute: () => unknown) => compute(), useState: (value: unknown) => [value, () => undefined] }));
+// 0.11.0: same for the full preview panel (its render is covered in native-rows.test with the fuller react-native stand-ins).
+vi.mock("./settings-preview-rows", () => ({ PreviewPanel: () => null }));
+vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(), useCallback: (fn: unknown) => fn, useMemo: (compute: () => unknown) => compute(), useState: (value: unknown) => [value, () => undefined] }));
 vi.mock("./typography", async (original) => ({ ...await original<typeof import("./typography")>(), useTypography: () => ({ scale: 1, line: 1 }) }));
 
 import { ActivitySettings, type SettingsActions } from "./settings";

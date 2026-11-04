@@ -100,12 +100,9 @@ export default function contribute(client: PluginClientContext) {
   // （重挂会把正停在页面上的用户带走的坑，见 observatory 的 settings screen 注释）；侧边栏项和命令标题是
   // 注册时的字符串，语言切换时由 i18n.localized 重挂。
   const ScreenSettings = (props: PluginScreenProps) => (
-    // 独立 screen 不在 host 设置页里：host 的 screen 容器定高裁剪（宿主自家 Tasks 屏同样在根节点自管
-    // flex:1），设置面比一屏长时必须自带滚动（照 observatory 分析屏的 ScrollView 模式）。host 设置页
-    // 挂的仍是不带滚动的 ActivitySettings，避免双层滚动。
-    <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
-      <LazySettings {...props} actions={actions} paletteFor={paletteFor} />
-    </ScrollView>
+    // 独立 screen：分栏布局自带左右滚动（client/settings.tsx DisplaySettings 的 scroll 分支），
+    // 这里不再包外层 ScrollView——避免双层滚动。
+    <LazySettings {...props} actions={actions} paletteFor={paletteFor} scroll />
   );
   const stopScreen = client.addScreen({ id: "settings", title: () => t("boot.name"), Component: ScreenSettings });
   const stopSidebar = i18n.localized(() => [

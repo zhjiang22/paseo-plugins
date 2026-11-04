@@ -1,8 +1,8 @@
 import { LanguageSettings } from "./language-settings";
 import { t } from "../shared/text";
-import { PreviewCard } from "./preview-card";
-import { useMemo, useState, type ComponentType } from "react";
-import { Text } from "react-native";
+import { PreviewPanel } from "./settings-preview-rows";
+import { useCallback, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { ScrollView, Text, View, type LayoutChangeEvent } from "react-native";
 import {
   useSettings,
   type PluginSurfaceProps,
@@ -466,7 +466,7 @@ function ThoughtControls({ settings }: { settings: ReadySettings }) {
   );
 }
 
-function DisplaySettings({ theme, actions }: PluginSurfaceProps & { actions: SettingsActions }) {
+function DisplaySettings({ theme, actions, paletteFor, layout, scroll }: PluginSurfaceProps & { actions: SettingsActions; paletteFor: (theme: PluginSurfaceProps["theme"], mode: PaletteMode) => ActivityPalette; scroll?: boolean }) {
   const settings = useSettings(activitySettings);
   const textStyle = useMemo(() => ({ color: theme.colors.foreground }), [theme.colors.foreground]);
   if (settings.status === "loading") return <Text style={textStyle}>{t("settings.readingSettings")}</Text>;
@@ -487,7 +487,16 @@ function DisplaySettings({ theme, actions }: PluginSurfaceProps & { actions: Set
       </SettingsSection>
     );
   }
-  return (
+  const compact = layout?.compact ?? false;
+  // 0.11.0：布局随实测容器宽自适应（onLayout，不猜宿主断点）：
+  // 容器 ≥ SPLIT_MIN_WIDTH → 左右 50/50 等分（screen 挂载左右各自滚动；host 页随页）；
+  // 过挤（< SPLIT_MIN_WIDTH 或 compact）→ 不分栏，单列：设置在上，预览统一落到设置下方。
+  const [paneWidth, setPaneWidth] = useState(0);
+  const onPaneLayout = useCallback((event: LayoutChangeEvent) => setPaneWidth(event.nativeEvent.layout.width), []);
+  /** 双列的最小可用宽：低于此值两列都会过挤，退回单列（预览落到设置下方）。 */
+  const SPLIT_MIN_WIDTH = 860;
+  const split = !compact && paneWidth >= SPLIT_MIN_WIDTH;
+  const controls = (
     <>
       <TakeoverControls settings={settings} actions={actions} />
       <FoldControls settings={settings} actions={actions} />
@@ -498,21 +507,53 @@ function DisplaySettings({ theme, actions }: PluginSurfaceProps & { actions: Set
       <ExpansionControls settings={settings} />
     </>
   );
-}
-
-
-export function ActivitySettings(props: PluginSurfaceProps & { actions: SettingsActions; paletteFor: (theme: PluginSurfaceProps["theme"], mode: PaletteMode) => ActivityPalette }) {
-  return <><LanguageSettings /><PreviewSection theme={props.theme} paletteFor={props.paletteFor} /><DisplaySettings {...props} /></>;
-}
-
-/** 0.11.0：设置顶部的实时预览卡（client/preview-card.tsx）。 */
-function PreviewSection({ theme, paletteFor }: { theme: PluginSurfaceProps["theme"]; paletteFor: (theme: PluginSurfaceProps["theme"], mode: PaletteMode) => ActivityPalette }) {
-  if (!theme) return null;
-  return (
+  const preview = theme ? <PreviewPanel theme={theme} paletteFor={paletteFor} actions={actions} compact={compact} /> : null;
+  const previewSection = (
     <SettingsSection title={t("settings.preview")}>
-      <SettingsCard>
-        <PreviewCard theme={theme} paletteFor={paletteFor} />
-      </SettingsCard>
+      <SettingsCard>{preview}</SettingsCard>
     </SettingsSection>
   );
+  if (split) {
+    const pane = (children: ReactNode, key: string) =>
+      scroll ? (
+        <ScrollView key={key} style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ paddingBottom: 24 }}>
+          {children}
+        </ScrollView>
+      ) : (
+        <View key={key} style={{ flex: 1, minWidth: 0 }}>
+          {children}
+        </View>
+      );
+    return (
+      <View style={{ flex: 1, flexDirection: "row", gap: 16 }} onLayout={onPaneLayout}>
+        {pane(<><LanguageSettings />{controls}</>, "controls")}
+        {pane(previewSection, "preview")}
+      </View>
+    );
+  }
+  const stacked = (
+    <>
+      {controls}
+      {previewSection}
+    </>
+  );
+  if (scroll) {
+    return (
+      <ScrollView style={{ flex: 1, minHeight: 0 }} onLayout={onPaneLayout} contentContainerStyle={{ paddingBottom: 24 }}>
+        <LanguageSettings />
+        {stacked}
+      </ScrollView>
+    );
+  }
+  return (
+    <View onLayout={onPaneLayout}>
+      <LanguageSettings />
+      {stacked}
+    </View>
+  );
+}
+
+
+export function ActivitySettings(props: PluginSurfaceProps & { actions: SettingsActions; paletteFor: (theme: PluginSurfaceProps["theme"], mode: PaletteMode) => ActivityPalette; scroll?: boolean }) {
+  return <><DisplaySettings {...props} scroll={props.scroll ?? false} /></>;
 }

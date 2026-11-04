@@ -404,6 +404,7 @@ export function DiffBlock({
 }) {
   const [showAll, setShowAll] = useState(false);
   const wrap = useDiffWrap();
+  console.log("DIFFPROBE:", JSON.stringify({ wrap, hasDetail: !!detail }));
   const lines = useMemo(() => diffLinesForDetail(detail), [detail]);
   const isTruncated = lines.length > PREVIEW_LINES;
   const displayLines = showAll || !isTruncated ? lines : lines.slice(0, PREVIEW_LINES);

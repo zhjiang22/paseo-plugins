@@ -7,8 +7,11 @@
   (up to 4,000 characters);
   the window holds 5–500 lines (steps in the step view) and defaults to 20. The per-row Expand all still shows
   everything, and a segment you collapsed yourself stays collapsed.
-- **Live preview**: the settings page opens with a preview card — one mini row header per strength tier dimmed by
-  its own opacity, a real diff sample that mirrors the wrap setting, and the palette's category and status colors.
+- **Live preview**: the settings page is split — controls on the left, a live preview panel on the right (above
+  the controls on phones). The preview draws a full mock turn with the plugin's own styles: pinned question,
+  an expanded thinking row with the tail window, tool rows (read, shell with diff, failed, running), a fold
+  summary with failures auto-expanded, and the turn's tokens — all following the strength, palette, density,
+  wrap, expansion and animation settings live. Takeover off shows a note instead.
 - **Expand failed rows**: a new "Expand failed rows" choice in Expansion lets only failed rows start open; a running
   row opens once it fails (thinking rows and task lists treat the choice like collapsed).
 - **Failed folds open themselves**: a fold summary whose steps include failures now starts expanded, so the failed

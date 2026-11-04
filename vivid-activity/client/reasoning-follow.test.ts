@@ -1,0 +1,201 @@
+import * as esbuild from "esbuild";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+
+/**
+ * 0.11.0:「实时跟随输出」的回底回归。窗口饱和后内容高度近似不变（旧的从顶上裁掉、新的接在底下），
+ * onContentSizeChange 不再触发——跟随必须挂在尾窗内容本身（tailHead），否则长内容一开始就停摆。
+ * 这里用会执行 effect 的 react 替身 + 可捕获 ref/回调的 ScrollView 替身，直接驱动这两条路径。
+ */
+const here = path.dirname(fileURLToPath(import.meta.url));
+const STANDINS: Record<string, string> = {
+  react: `export const Fragment = Symbol.for("standin.fragment");
+export const createElement = (type, props, ...children) => ({ type, props: { ...(props ?? {}), ...(children.length ? { children: children.length === 1 ? children[0] : children } : {}) } });
+export const useState = (value) => [typeof value === "function" ? value() : value, () => {}];
+export const useMemo = (factory) => factory();
+export const useCallback = (callback) => callback;
+let __refSlots = [];
+let __refIdx = 0;
+export const useRef = (value) => { if (__refIdx >= __refSlots.length) __refSlots.push({ current: value }); return __refSlots[__refIdx++]; };
+export const __refsReset = () => { __refIdx = 0; };
+export const __refsClear = () => { __refSlots = []; __refIdx = 0; };
+export const useEffect = (fn) => { fn(); };
+export const useSyncExternalStore = (subscribe, snapshot) => snapshot();
+export const createContext = (value) => ({ Provider: "ContextProvider", _value: value });
+export const useContext = (context) => context._value;
+export default { Fragment, createElement, useState, useMemo, useCallback, useRef, useEffect, useSyncExternalStore, createContext, useContext };`,
+  "react/jsx-runtime": `export const Fragment = Symbol.for("standin.fragment");
+export const jsx = (type, props) => ({ type, props: props ?? {} });
+export const jsxs = jsx;`,
+  "react-native": `export const View = (props) => ({ type: "View", props });
+export const Text = (props) => ({ type: "Text", props });
+export const Pressable = (props) => ({ type: "Pressable", props });
+export const ScrollView = (props) => { globalThis.__vividScroll = props; return { type: "ScrollView", props }; };
+export const Image = "Image";
+export const ActivityIndicator = "ActivityIndicator";
+export const StyleSheet = { create: (styles) => styles, hairlineWidth: 0.5, absoluteFillObject: {} };
+export const Platform = { OS: "web", select: (spec) => spec.web ?? spec.default };
+class Value { constructor(value) { this.value = value; } interpolate() { return this; } }
+const animation = () => ({ start() {}, stop() {} });
+export const Animated = { Value, View: "View", timing: animation, spring: animation, loop: animation, sequence: animation, parallel: animation, delay: animation };
+const curve = (t) => t;
+export const Easing = { linear: curve, ease: curve, quad: curve, cubic: curve, sin: curve, in: () => curve, out: () => curve, inOut: () => curve, bezier: () => curve };
+export const AppState = { currentState: "active", addEventListener: () => ({ remove() {} }) };
+export const AccessibilityInfo = { isReduceMotionEnabled: async () => false, addEventListener: () => ({ remove() {} }) };`,
+  host: `export const Icon = () => ({ type: "Icon", props: {} });
+export const ScrollView = (props) => { globalThis.__vividHostScroll = props; return { type: "ScrollView", props }; };
+export const Modal = "Modal";
+export const TextInput = "TextInput";
+export const useRevealedText = (text) => text;
+export const copyText = async () => {};
+export const useToast = () => ({ error() {} });
+export const useSettings = () => globalThis.__vividSettings ?? ({ status: "loading" });
+export const useAgent = () => undefined;
+export const usePaseo = () => ({ agents: { ref: () => ({}) } });
+export const useRpc = () => async () => ({});
+export const defineRpc = (contract) => contract;
+export const defineSettings = (definition) => definition;
+export const settingsRpc = () => ({ read: {} });`,
+};
+const HOST_SPECIFIERS = ["@getpaseo/plugin", "@getpaseo/plugin/client", "@getpaseo/plugin/client/react-native", "@getpaseo/plugin/client/ui"];
+
+type Element = { type: unknown; props: Record<string, unknown> } | string | number | boolean | null | undefined | Element[];
+
+function render(element: Element): Element[] {
+  if (element === null || element === undefined || typeof element === "boolean") return [];
+  if (typeof element === "string" || typeof element === "number") return [String(element)];
+  if (Array.isArray(element)) return element.flatMap(render);
+  if (typeof element.type === "function") return render((element.type as (props: unknown) => Element)(element.props));
+  if (typeof element.type === "symbol") return render(element.props.children as Element);
+  return [element];
+}
+
+let dir: string;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let ui: any;
+
+beforeAll(async () => {
+  dir = mkdtempSync(path.join(os.tmpdir(), "vivid-reasoning-follow-"));
+  const entry = path.join(dir, "entry.ts");
+  writeFileSync(entry, [
+    `import ${JSON.stringify(path.join(here, "../tests/i18n-setup.ts"))};`,
+    `export { ReasoningText } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
+    `export { __refsReset, __refsClear } from "react";`,
+  ].join("\n"));
+  const result = await esbuild.build({
+    entryPoints: [entry],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    write: false,
+    jsx: "automatic",
+    logLevel: "silent",
+    nodePaths: [path.join(here, "../node_modules")],
+    plugins: [{
+      name: "standins",
+      setup(build) {
+        build.onResolve({ filter: /.*/ }, (args) => {
+          if (args.path in STANDINS) return { path: args.path, namespace: "standin" };
+          if (HOST_SPECIFIERS.includes(args.path)) return { path: "host", namespace: "standin" };
+          return undefined;
+        });
+        build.onLoad({ filter: /.*/, namespace: "standin" }, (args) => ({ contents: STANDINS[args.path], loader: "js" }));
+      },
+    }],
+  });
+  const file = path.join(dir, "bundle.mjs");
+  writeFileSync(file, result.outputFiles[0]!.text);
+  // 替身只覆盖推理路径用到的 SDK 面；其余组件的未匹配导出警告不阻塞（真实组件在别处渲染）。
+  // 动态导入是本测试的目的本身：被导入的是 esbuild 刚写出的临时 bundle（路径运行时才存在），
+  // 静态导入无法指向尚未生成的文件（同 client/native-rows.test.ts 的既有做法）。
+  ui = await import(pathToFileURL(file).href);
+}, 60_000);
+
+beforeEach(() => {
+  // 每个用例都是一次全新挂载：ref 槽位连值一起清空（用例内的两次 draw 之间只做索引回绕，槽位保留）。
+  ui?.__refsClear?.();
+});
+
+afterAll(() => {
+  if (dir) rmSync(dir, { recursive: true, force: true });
+});
+
+const theme = { colors: { surface0: "#101114", surface1: "#17181c", surface2: "#1f2026", foreground: "#ececf1", foregroundMuted: "#9a9aa5", border: "#2c2d33", accent: "#20744a" } };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const styles = () => ({ detailsScroll: { maxHeight: 420 }, details: {}, stepList: {}, showMoreButton: {}, showMoreText: {} } as any);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const palette = () => ({ mode: "vivid" } as any);
+const steps = (count: number) => Array.from({ length: count }, (_, index) => `第 ${index + 1} 步：写一段足够成为独立步骤的推理文本。`).join("\n\n");
+
+function draw(text: string) {
+  ui.__refsReset();
+  const raw = { type: ui.ReasoningText, props: { text, phase: "streaming", theme, palette: palette(), styles: styles() } };
+  const element = render(raw);
+  // render 的叶分支保留函数 type，直接在渲染结果里找 ScrollView 节点取 ref/回调。
+  const find = (nodes: Element[]): { ref: { current: unknown }; onScroll?: (event: unknown) => void; onContentSizeChange?: () => void } | null => {
+    for (const node of nodes) {
+      if (node === null || node === undefined || typeof node === "boolean" || typeof node === "string" || typeof node === "number") continue;
+      if (Array.isArray(node)) { const hit = find(node); if (hit) return hit; continue; }
+      if (typeof node.type === "function" && node.type.name === "ScrollView") return node.props as never;
+      const hit = find(node.props?.children as Element[]);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const scroll = find(element);
+  expect(scroll).toBeTruthy();
+  expect(typeof scroll!.onContentSizeChange).toBe("function");
+  return { scroll: scroll! };
+}
+
+describe("reasoning live follow (0.11.0 tail-follow)", () => {
+  it("scrolls to the bottom when the tail window content changes, even at constant height", () => {
+    const { scroll } = draw(steps(5));
+    let calls = 0;
+    const scrollToEnd = () => { calls += 1; };
+    (scroll.ref as { current: unknown }).current = { scrollToEnd };
+    // 模拟窗口饱和后的 tick：内容换新但高度不变（不会触发 onContentSizeChange）。
+    const grown = draw(steps(6));
+    expect(grown.scroll.ref).toBeTruthy();
+    (grown.scroll.ref as { current: unknown }).current = { scrollToEnd };
+    expect(calls).toBeGreaterThan(0);
+  });
+
+  it("does not yank the viewport when the user scrolled away from the bottom", () => {
+    const { scroll } = draw(steps(5));
+    let calls = 0;
+    const scrollToEnd = () => { calls += 1; };
+    (scroll.ref as { current: unknown }).current = { scrollToEnd };
+    // 用户向上滚离底部（handleScroll 置假），随后的内容变化不再回底。
+    scroll.onScroll?.({ nativeEvent: { contentOffset: { y: 0, x: 0 }, contentSize: { height: 2000, width: 400 }, layoutMeasurement: { height: 300, width: 400 } } });
+    draw(steps(6));
+    expect(calls).toBe(0);
+  });
+
+  it("keeps following through a sustained 40-tick stream while near the bottom (long content)", () => {
+    // 长内容持续输出的真实形态：窗口早已饱和（40 步 > 20），每个 tick 高度近似不变——
+    // 回底必须逐 tick 触发，停摆一次就算失败（修复前该场景为 0 次调用）。
+    const { scroll } = draw(steps(20));
+    let calls = 0;
+    const scrollToEnd = () => { calls += 1; };
+    (scroll.ref as { current: unknown }).current = { scrollToEnd };
+    for (let count = 21; count <= 60; count += 1) {
+      draw(steps(count));
+      if (calls < count - 20) break;
+    }
+    expect(calls).toBe(40);
+  });
+
+  it("keeps the content-size growth path working (unsaturated window)", () => {
+    const { scroll } = draw("只有一行");
+    let calls = 0;
+    const scrollToEnd = () => { calls += 1; };
+    // 真实环境里 ScrollView 挂载后 ref.current 才有值——这里等价地在回调前挂上。
+    (scroll.ref as { current: unknown }).current = { scrollToEnd };
+    scroll.onContentSizeChange?.();
+    expect(calls).toBe(1);
+  });
+});

@@ -1310,6 +1310,12 @@ export function ReasoningText({
   const handleContentSizeChange = useCallback(() => {
     if (isNearBottom.current) scrollRef.current?.scrollToEnd({ animated: false });
   }, []);
+  // 窗口饱和后内容高度近似不变（旧的从顶上裁掉、新的接在底下），onContentSizeChange 不再触发，
+  // 跟随就此停摆——回底改挂内容本身：尾窗内容一变就回底，直到用户向上滚离底部（handleScroll 置假）。
+  const tailHead = shownSteps.length > 1 ? shownSteps[shownSteps.length - 1] : blockText;
+  useEffect(() => {
+    if (isNearBottom.current) scrollRef.current?.scrollToEnd({ animated: false });
+  }, [tailHead]);
 
   return (
     <View>

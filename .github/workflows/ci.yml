@@ -1,0 +1,75 @@
+# Plugin CI. Each directory is its own npm project (see the root README).
+#
+# Node 22 satisfies claude-theme/package.json "engines.node": ">=22.6".
+# The repo has no .nvmrc, .node-version, Volta pin, or root package.json.
+# The other plugins typecheck against @types/node 22, and project-notes bundles for node22.
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin:
+    name: ${{ matrix.directory }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        directory:
+          - agent-observatory
+          - claude-theme
+          - project-notes
+          - server-browser
+          - vivid-activity
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.directory }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.directory }}
+        run: npm ci
+
+      # server-browser's npm test launches the host Chromium through the runtime
+      # prepared by scripts/setup-runtime.mjs. That script installs the locked
+      # runtime with npm ci --ignore-scripts (so Playwright does not download a
+      # browser) and exits 1 until a Chromium build is on disk. Install the
+      # runtime Playwright's Chromium and its Ubuntu libraries, then re-check.
+      - name: Install server-browser Chromium runtime
+        if: matrix.directory == 'server-browser'
+        working-directory: server-browser
+        run: |
+          set -euo pipefail
+          runtime="${PASEO_SERVER_BROWSER_RUNTIME:-$HOME/.local/share/paseo-server-browser}"
+          set +e
+          node scripts/setup-runtime.mjs
+          status=$?
+          set -e
+          if [[ ! -f "$runtime/node_modules/playwright/cli.js" ]]; then
+            echo "setup-runtime.mjs did not install the runtime Playwright (exit ${status})" >&2
+            exit 1
+          fi
+          node "$runtime/node_modules/playwright/cli.js" install-deps chromium
+          node "$runtime/node_modules/playwright/cli.js" install chromium chromium-headless-shell
+          node scripts/setup-runtime.mjs --check
+
+      - name: Test
+        working-directory: ${{ matrix.directory }}
+        run: npm test
+
+      - name: Typecheck
+        working-directory: ${{ matrix.directory }}
+        run: npm run typecheck

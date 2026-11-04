@@ -42,6 +42,8 @@ export const bridgeMessages=()=>({
  targetClosed:t('bridge.targetClosed'),
  tabsUnreadable:t('bridge.tabsUnreadable'),
  tabsChanged:t('bridge.tabsChanged'),
+ ambiguousTab:t('bridge.ambiguousTab'),
+ tabNotListed:t('bridge.tabNotListed'),
  uploadMissing:t('bridge.uploadMissing'),
  uploadSymlink:t('bridge.uploadSymlink'),
  uploadNotRegular:t('bridge.uploadNotRegular'),
@@ -209,25 +211,44 @@ function textResult(value){return {content:[{type:'text',text:typeof value==='st
 function refusal(id,text){send({jsonrpc:'2.0',id,result:{isError:true,content:[{type:'text',text}]}});}
 function toolCatalog(result){return {...result,tools:[...(result.tools||[]).filter(t=>readonlyTools.has(t.name)||writeTools.has(t.name)).map(tool=>tool.name==='browser_handle_dialog'?{...tool,description:'Respond to the pending shared-page dialog. It stays open until explicitly accepted or dismissed; manual takeover blocks Agent responses.',inputSchema:{type:'object',properties:{accept:{type:'boolean'},promptText:{type:'string'},dialogId:{type:'string'}},required:['accept'],additionalProperties:false}}:tool.name==='browser_tabs'?{...tool,description:'List, create, select or close shared tabs. Prefer stable tabId from list for select/close. Index refers to the last listed snapshot; closed targets fail rather than selecting another page.',inputSchema:{...tool.inputSchema,properties:{...tool.inputSchema.properties,tabId:{type:'string',description:'Stable tab ID from browser_tabs list; preferred over index'}}}}:tool),...extraTools]};}
 function rememberTabs(result){const tabs=result.tabs||result.session?.tabs||[];tabSnapshot=new Map(tabs.map((tab,index)=>[index,tab.id]));return result;}
-// Playwright MCP numbers tabs in its own page-discovery order, which need not match the plugin's page order. Read the
-// list it renders (- <index>: (current)? [title](url)) to translate a plugin target into that process's index.
+// Playwright MCP numbers tabs in its own page-discovery order, which need not match the plugin's page order. Its
+// browser_tabs list renders "- <index>: (current)? [title](url)" and may append " [crashed]" and
+// " [isolatedContext: ...]" (renderTabsMarkdown). Titles and URLs are not escaped.
+function parseTabLine(line){
+ const head=/^- (\d+):( \(current\))? \[/.exec(line.replace(/\r$/,''));
+ if(!head)return undefined;
+ let body=line.replace(/\r$/,'').slice(head[0].length);
+ const isolated=/ \[isolatedContext: [^\]]*\]$/.exec(body);
+ if(isolated)body=body.slice(0,isolated.index);
+ if(body.endsWith(' [crashed]'))body=body.slice(0,-' [crashed]'.length);
+ // The closing ")" is the last one, so a URL may contain ")". The title/URL split is the last "](", so a title may contain "](".
+ if(!body.endsWith(')'))return undefined;
+ const inner=body.slice(0,-1),split=inner.lastIndexOf('](');
+ if(split<0)return undefined;
+ return {index:Number(head[1]),current:Boolean(head[2]),title:inner.slice(0,split),url:inner.slice(split+2)};
+}
 function tabEntries(result){
  const text=(result.content||[]).filter(item=>item&&item.type==='text').map(item=>item.text).join('\n'),tabs=[];
- for(const line of text.split('\n')){
-  const match=/^- (\d+):( \(current\))? \[(.*)\]\((.*)\)(?: \[crashed\])?$/.exec(line);
-  if(match)tabs.push({index:Number(match[1]),current:Boolean(match[2]),title:match[3],url:match[4]});
- }
+ for(const line of text.split('\n')){const tab=parseTabLine(line);if(tab)tabs.push(tab);}
  return tabs;
 }
 function withoutTrailingSlash(value){return value.endsWith('/')?value.slice(0,-1):value;}
 function sameUrl(left,right){return left===right||withoutTrailingSlash(left)===withoutTrailingSlash(right);}
-// Match the plugin's target URL against that list, exact first and then ignoring a trailing slash. No match returns
-// undefined so the caller keeps the old raw index: a Playwright MCP that renders no tab list (the plugin's own
-// bridge-policy stand-in answers every call with JSON) must keep working exactly as before.
-function tabIndexFor(tabs,target){
- if(!target||typeof target.url!=='string')return undefined;
- const url=target.url,pick=test=>{for(const tab of tabs)if(test(tab))return tab.index;return undefined;};
- return pick(tab=>tab.url===url)??pick(tab=>withoutTrailingSlash(tab.url)===withoutTrailingSlash(url));
+// Exact URL first, then one trailing slash. Several matches are not guessed: the first can still be the wrong
+// same-URL tab, and the later (current) check would pass. A title that belongs to exactly one of them tells them
+// apart. No parsed list at all (the bridge-policy stand-in answers with JSON) stays unparsed so the raw index remains.
+function matchTab(tabs,target){
+ if(!tabs.length)return {kind:'unparsed'};
+ if(!target||typeof target.url!=='string')return {kind:'missing'};
+ const url=target.url;
+ const exact=tabs.filter(tab=>tab.url===url);
+ const chosen=exact.length?exact:tabs.filter(tab=>withoutTrailingSlash(tab.url)===withoutTrailingSlash(url));
+ if(chosen.length===1)return {kind:'match',index:chosen[0].index};
+ if(!chosen.length)return {kind:'missing'};
+ const title=typeof target.title==='string'?target.title:undefined;
+ const titled=title===undefined?[]:chosen.filter(tab=>tab.title===title);
+ if(titled.length===1)return {kind:'match',index:titled[0].index,title};
+ return {kind:'ambiguous'};
 }
 // Every path must be a regular file (not a symbolic link) whose real path is inside the workspace directory.
 // Relative paths are read from the workspace directory, as Playwright MCP does. The checked real paths are what MCP receives.
@@ -306,20 +327,22 @@ async function handle(message){
   // Populate Playwright MCP's lazy tab list before selecting an existing CDP target.
   const listing=await callChild('tools/call',{name:'browser_tabs',arguments:{action:'list'}},budgets.mcpInternalMs);
   if(listing.isError)throw new Error(text('tabsUnreadable'));
-  // That list's index belongs to Playwright MCP's own page order, not the plugin's: select the tab whose URL matches
-  // the target the plugin picked. No match (including a list this bridge cannot parse) keeps the old raw index and
-  // skips the check below, so a Playwright MCP that renders no tab list keeps working exactly as before.
+  // That list's index belongs to Playwright MCP's own page order, not the plugin's. Select the tab the list
+  // identifies. A list that parsed but does not identify one tab fails before select, instead of falling back to the
+  // plugin's index. Only a list this bridge cannot parse at all keeps the raw index, with no (current) check.
   const target=(selected.targets||[]).find(item=>item&&item.id===selected.activeTargetId);
-  const matched=tabIndexFor(tabEntries(listing),target);
-  const selection=await callChild('tools/call',{name:'browser_tabs',arguments:{action:'select',index:matched===undefined?selected.activeIndex:matched}},budgets.mcpInternalMs);
+  const matched=matchTab(tabEntries(listing),target);
+  if(matched.kind==='ambiguous')throw new Error(text('ambiguousTab'));
+  if(matched.kind==='missing')throw new Error(text('tabNotListed'));
+  const selection=await callChild('tools/call',{name:'browser_tabs',arguments:{action:'select',index:matched.kind==='match'?matched.index:selected.activeIndex}},budgets.mcpInternalMs);
   if(selection.isError)throw new Error(text('selectionFailed',{error:(selection.content||[]).filter(item=>item.type==='text').map(item=>item.text).join('\n')}));
-  // Only a URL match is checked: Playwright MCP's own (current) marker must land on that index and keep the target's
-  // URL, or the next tool would run on another page, so that call fails loudly instead.
-  if(matched!==undefined){
+  // A URL match is checked against Playwright MCP's own (current) marker: that index, the target URL, and the title
+  // when the title was what distinguished two tabs with the same URL. Otherwise the tool would run on another page.
+  if(matched.kind==='match'){
    const relisting=await callChild('tools/call',{name:'browser_tabs',arguments:{action:'list'}},budgets.mcpInternalMs);
    if(relisting.isError)throw new Error(text('tabsUnreadable'));
    const current=tabEntries(relisting).find(item=>item.current);
-   if(!current||current.index!==matched||!sameUrl(current.url,target.url))throw new Error(text('tabsChanged'));
+   if(!current||current.index!==matched.index||!sameUrl(current.url,target.url)||(matched.title!==undefined&&current.title!==matched.title))throw new Error(text('tabsChanged'));
   }
   const validated=await control('validate',{leaseId:lease.leaseId});
   if(validated.activeTargetId!==selected.activeTargetId||validated.activeIndex!==selected.activeIndex)throw new Error(text('tabsChanged'));

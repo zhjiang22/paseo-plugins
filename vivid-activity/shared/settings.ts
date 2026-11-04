@@ -6,7 +6,7 @@ import { DEFAULT_LINE_SPACING, DEFAULT_TEXT_SIZE, LINE_SPACINGS, MONO_FONT_MAX, 
 export const paletteModeSchema = z.enum(["vivid", "soft", "high_contrast", "theme"]);
 export type PaletteMode = z.output<typeof paletteModeSchema>;
 
-export const expansionModeSchema = z.enum(["always", "latest", "never"]);
+export const expansionModeSchema = z.enum(["always", "latest", "never", "failures"]);
 export type ExpansionMode = z.output<typeof expansionModeSchema>;
 
 /**
@@ -77,6 +77,9 @@ export const STRENGTH_KINDS = ["dim", "faded", "soft", "full"] as const;
 export type Strength = (typeof STRENGTH_KINDS)[number];
 export const DEFAULT_STRENGTH: Strength = "full";
 export const strengthSchema = z.enum(STRENGTH_KINDS);
+
+/** 0.11.0:「命令着色」档位（client/activity.tsx 行头段；设置页 settings.tsx 消费）。 */
+export const commandColorsSchema = z.enum(["expanded", "always"]);
 /** 0.6.0: 「钉住本轮提问」 (shared/prompt-pin.ts). */
 export const DEFAULT_PIN_PROMPT = true;
 
@@ -102,6 +105,10 @@ export const activitySettings = defineSettings({
     density: densitySchema.default(DEFAULT_DENSITY),
     // 0.11.0：同上，旧设置读出来取默认值。
     strength: strengthSchema.default(DEFAULT_STRENGTH),
+    // 0.11.0：diff 行折行。off = 单行横滚（0.11.0 前的现状）；on = 折到可用宽度（client/activity-details.tsx DiffBlock）。
+    diffWrap: z.enum(["on", "off"]).default("off"),
+    // 0.11.0：「命令着色」行头 shell 命令的语法色（client/activity.tsx 行头段；chat-polish 同名设置）。
+    commandColors: commandColorsSchema.default("expanded"),
     // 0.6.0：同上，旧设置没有这一项，读出来取默认值。
     pinPrompt: z.boolean().default(DEFAULT_PIN_PROMPT),
     // 0.8.0：同上。

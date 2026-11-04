@@ -78,4 +78,17 @@ describe("activity settings", () => {
     expect(activitySettings.schema.parse({ strength: "soft" }).strength).toBe("soft");
     expect(activitySettings.schema.safeParse({ strength: "half" }).success).toBe(false);
   });
+
+  it("keeps diff lines scrolling by default and accepts the wrap choice for settings stored before 0.11.0", () => {
+    expect(activitySettings.schema.parse({}).diffWrap).toBe("off");
+    expect(activitySettings.schema.parse({ strength: "dim" }).diffWrap).toBe("off");
+    expect(activitySettings.schema.parse({ diffWrap: "on" }).diffWrap).toBe("on");
+    expect(activitySettings.schema.safeParse({ diffWrap: "maybe" }).success).toBe(false);
+  });
+
+  it("colors the row command only while open by default, and accepts always", () => {
+    expect(activitySettings.schema.parse({}).commandColors).toBe("expanded");
+    expect(activitySettings.schema.parse({ commandColors: "always" }).commandColors).toBe("always");
+    expect(activitySettings.schema.safeParse({ commandColors: "never" }).success).toBe(false);
+  });
 });

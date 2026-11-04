@@ -107,6 +107,9 @@ beforeAll(async () => {
     `export { FoldChanges } from ${JSON.stringify(path.join(here, "fold-changes.tsx"))};`,
     `export { ChangeStat, TurnTokens } from ${JSON.stringify(path.join(here, "fold-row.tsx"))};`,
     `export { FoldRow } from ${JSON.stringify(path.join(here, "fold-row.tsx"))};`,
+    `export { DiffBlock } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
+    `export { CommandTokens } from ${JSON.stringify(path.join(here, "command-tokens.tsx"))};`,
+    `export { configureFx } from ${JSON.stringify(path.join(here, "fx.ts"))};`,
     `export { stillCells } from ${JSON.stringify(path.join(here, "../shared/loaders.ts"))};`,
     `export { fileId } from ${JSON.stringify(path.join(here, "../shared/changes.ts"))};`,
   ].join("\n"));
@@ -413,6 +416,11 @@ describe("0.8.0: running animations, the change summary and the turn's tokens", 
 });
 
 describe("0.11.0: 淡出强度 (strength)", () => {
+  // 命令着色的组件在 fx 懒加载块：测试里用同步 loader 直接供给（peek 不经下载）。
+  beforeAll(() => {
+    const surfaces = { CommandTokens: ui.CommandTokens };
+    ui.configureFx({ peek: () => surfaces, load: async () => surfaces });
+  });
   // 非 vivid 调色板读 host 主题的状态色（与上面的 Pi 用例同一个完整主题）。
   const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
   const ready = (strength: string) => ({ status: "ready", values: { expansion: {}, density: "compact", strength }, revision: 1 });
@@ -465,5 +473,64 @@ describe("0.11.0: 淡出强度 (strength)", () => {
     // 运行中的段头（「前面 N 步」）代表还在进行的活动：不淡。
     expect(cardStyle(foldRow({ mode: "earlier", durationMs: null }, ready("dim"))).opacity).toBeUndefined();
     expect(cardStyle(foldRow({}, ready("full"))).opacity).toBeUndefined();
+  });
+});
+
+describe("0.11.0: diff 折行与命令着色", () => {
+  // 命令着色的组件在 fx 懒加载块：测试里用同步 loader 直接供给（peek 不经下载）。
+  const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
+  const ready = (values: Record<string, unknown>) => ({ status: "ready", values: { expansion: {}, density: "compact", ...values }, revision: 1 });
+  const withSettings = (settings: unknown, draw: () => Host[]) => {
+    (globalThis as { __vividSettings?: unknown }).__vividSettings = settings;
+    try {
+      return draw();
+    } finally {
+      (globalThis as { __vividSettings?: unknown }).__vividSettings = undefined;
+    }
+  };
+  beforeAll(() => {
+    const surfaces = { CommandTokens: ui.CommandTokens };
+    ui.configureFx({ peek: () => surfaces, load: async () => surfaces });
+  });
+
+  it("keeps diff lines on one scrolling row by default and wraps them to the width when asked", () => {
+    const detail = { type: "edit", filePath: "/demo/src/app.ts", oldString: `const a = ${"很长的一行。".repeat(30)}\nconst b = 1;`, newString: "const a = 1;\nconst b = 2;" };
+    const diffStyles = () => ui.useActivityStyles(fullTheme, ui.resolveVividPalette(fullTheme), ui.densityMetrics("compact", true, true));
+    const draw = (settings: unknown) => withSettings(settings, () => render({
+      type: ui.DiffBlock,
+      props: { detail, palette: ui.resolveVividPalette(fullTheme), styles: diffStyles() },
+    }));
+    const scrollsHorizontally = (nodes: Host[]) => nodes.flatMap(nodesOf).some((node) => node.type === "ScrollView" && node.props.horizontal === true);
+    // marker（「+」）是独立 Text；行内容 Text 紧随其后。
+    const lineText = (nodes: Host[]) => {
+      const flat = nodes.flatMap(nodesOf);
+      const marker = flat.findIndex((node) => node.type === "Text" && textOf(node) === "+");
+      return marker >= 0 ? (flat[marker + 1] as HostNode) : undefined;
+    };
+    // 默认 off：diff 行单行横滚（ScrollView horizontal），文字不折（flexShrink 0）。
+    expect(scrollsHorizontally(draw(undefined))).toBe(true);
+    expect(flatten(lineText(draw(undefined))!.props.style).flexShrink).toBe(0);
+    // on：不再横滚，diff 文字折行（flexShrink 1 + minWidth 0）。
+    const on = ready({ diffWrap: "on" });
+    expect(scrollsHorizontally(draw(on))).toBe(false);
+    expect(flatten(lineText(draw(on))!.props.style)).toMatchObject({ flexShrink: 1, minWidth: 0 });
+  });
+
+  it("colors the shell command in the title when always, leaves it plain while collapsed by default", () => {
+    const shell = (settings: unknown) => withSettings(settings, () => render({ type: ui.ColorfulToolCall, props: { agentId: "a-strength", item: { kind: "colorful-tool-call", data: ui.createToolCallData({ type: "tool_call", callId: "t1", name: "Bash", status: "completed", error: null, detail: { type: "shell", command: "npm ci --omit=dev && npm test" } }) }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } }));
+    // 非前景/弱化色（语法 token 色）的 Text = 着色段；计数、计时等常规文本用 foregroundMuted，不算。
+    const spans = (nodes: Host[]) => nodes.flatMap(nodesOf).filter((node) => {
+      if (node.type !== "Text") return false;
+      const style = flatten(node.props.style);
+      const color = style.color as string | undefined;
+      return !!color && color !== fullTheme.colors.foreground && color !== fullTheme.colors.foregroundMuted;
+    });
+    const collapsedDefault = spans(shell(ready({ expansion: { shell: "never" } })));
+    expect(collapsedDefault).toHaveLength(0);
+    const always = spans(shell(ready({ expansion: { shell: "never" }, commandColors: "always" })));
+    expect(always.length).toBeGreaterThan(1);
+    // 展开时（默认 expanded 档）也着色。
+    const expandedDefault = spans(shell(ready({ expansion: { shell: "always" } })));
+    expect(expandedDefault.length).toBeGreaterThan(1);
   });
 });

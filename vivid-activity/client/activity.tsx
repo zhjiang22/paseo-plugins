@@ -5,7 +5,7 @@ import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
 import { useAgent, useSettings } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Pressable, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import type { z } from "zod";
 import { parsePiSubagentCall, piSubagentOperation } from "../shared/pi-subagents";
@@ -25,6 +25,7 @@ import { createLatestRows, forgetWith } from "./latest-rows";
 import { PiSubagentLifecycleSummary } from "./pi-subagent-summary";
 import { PinnedPrompt, usePromptPin } from "./prompt-pin";
 import { timingText, useLiveNow, useOnScreen, useRowTiming } from "./timing";
+import { useFx } from "./fx";
 import { retryPiNotices } from "./transform";
 import { failureText, lookFor, mcpParts, resolveVividPalette, VividHeader, zh, type LookKey, type RowStatus } from "./vivid";
 import { cmonoViewEscape, cuiTextEscape, pmonoViewEscape } from "./web";
@@ -148,6 +149,12 @@ export const QUIET: Record<Strength, number> = { dim: 0.3, faded: 0.45, soft: 0.
 export function useStrength(): Strength {
   const settings = useSettings(activitySettings);
   return settings.status === "ready" ? settings.values.strength : DEFAULT_STRENGTH;
+}
+
+/** 0.11.0:「命令着色」档位（着色组件在 fx 懒加载块 client/command-tokens.tsx，常驻包不带 Prism）。 */
+function useCommandColors(): "expanded" | "always" {
+  const settings = useSettings(activitySettings);
+  return settings.status === "ready" ? settings.values.commandColors : "expanded";
 }
 
 export function useActivityStyles(theme: Theme, palette: ActivityPalette, metrics: DensityMetrics) {
@@ -975,6 +982,7 @@ function ActivityHeader({
   iconColor,
   title,
   summary,
+  summaryNode,
   fileDisplay,
   status,
   statusColor,
@@ -991,6 +999,7 @@ function ActivityHeader({
   iconColor: string;
   title: string;
   summary?: string;
+  summaryNode?: ReactNode;
   fileDisplay?: { dir?: string; base: string };
   status?: ToolCallData["status"];
   statusColor?: string;
@@ -1009,6 +1018,7 @@ function ActivityHeader({
         look={vivid.look}
         title={title}
         summary={summary}
+        summaryNode={summaryNode}
         fileDisplay={fileDisplay}
         status={vivid.status}
         statusText={vivid.statusText}
@@ -1048,7 +1058,9 @@ function ActivityHeader({
         <Icon name={icon} color={iconColor} size={12} />
       </View>
       <Text {...cuiTextEscape} numberOfLines={1} style={styles.title}>{title}</Text>
-      {fileDisplay ? (
+      {summaryNode ? (
+        <Text {...cuiTextEscape} numberOfLines={1} style={styles.summary}>{summaryNode}</Text>
+      ) : fileDisplay ? (
         <View style={styles.filePath}>
           {fileDisplay.dir ? (
             <Text numberOfLines={1} style={styles.fileDir}>
@@ -1218,7 +1230,7 @@ export function ColorfulToolCall({
   const expansionMode = item.data.notice || item.data.pi ? "never" : configuredExpansion;
   const baseExpanded = isTaskUpdate
     ? resolveTaskUpdateExpansion(expansionMode, isLatestTaskCard, latestTaskUpdateTimestamp, taskUpdateOverride)
-    : resolveExpansion(expansionMode, isLatest, userExpanded);
+    : resolveExpansion(expansionMode, isLatest, userExpanded, item.data.status === "failed");
   const hasDetails = detail ? hasMeaningfulToolCallDetail(detail) : true;
   // A notice always has its explanation and state to show.
   const hasBody = Boolean(item.data.notice || item.data.pi) || toolCallHasBody(item.data.name, detail, item.data.presentation.summary);
@@ -1276,6 +1288,16 @@ export function ColorfulToolCall({
       ? pi.state === "stopped" ? t("ui.stopped") : undefined
       : rowStatus === "failed" ? failureText(detail, item.data.errorText) : undefined;
   const vivid = palette.mode === "vivid";
+  // 0.11.0:「命令着色」：shell 行的行头命令按语法色渲染（展开时或始终）。着色组件在 fx 懒加载块，
+  // 下载到之前（或失败时）行头保持纯文本摘要——与运行中动画同一降级模式。只有真的需要着色才触发下载：
+  // 默认配置（折叠 + 展开时着色）下，fx 不因工具行的存在而被下载。
+  const commandColors = useCommandColors();
+  const wantsColor = look === "shell" && !mcp && !notice && !pi && (commandColors === "always" || expanded);
+  const CommandTokens = useFx(wantsColor)?.CommandTokens;
+  const commandNode =
+    wantsColor && headerSummary && CommandTokens ? (
+      <CommandTokens text={headerSummary} theme={theme} />
+    ) : null;
   return (
     <View ref={rootRef} {...pmonoViewEscape} style={[styles.card, isLiveTail ? styles.cardTail : null, quiet ? { opacity: QUIET[strength] } : null]}>
       {pin ? <PinnedPrompt agentId={agentId} pin={pin} theme={theme} mode={palette.mode} metrics={metrics} /> : null}
@@ -1284,6 +1306,7 @@ export function ColorfulToolCall({
         iconColor={categoryColor}
         title={vividTitle}
         summary={vividSummary}
+        summaryNode={commandNode}
         fileDisplay={headerFile ?? undefined}
         // 0.6.0-local.5 (codex-vivid-merge-F2): the other palettes leave out the same state marks as the vivid one.
         status={headerStatus === undefined ? undefined : item.data.status}

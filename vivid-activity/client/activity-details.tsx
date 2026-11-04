@@ -1,6 +1,6 @@
 import { t } from "../shared/text";
 import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
-import { useAgent, useRpc } from "@getpaseo/plugin/client";
+import { useAgent, useRpc, useSettings } from "@getpaseo/plugin/client";
 import { Icon, ScrollView, useRevealedText } from "@getpaseo/plugin/client/react-native";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -31,6 +31,7 @@ import { BgWaitToolDetail, PiSubagentToolDetail, SupervisorToolDetail } from "./
 import { TodoToolDetail } from "./todo";
 import { BrandChip, zh } from "./vivid";
 import { cmonoTextEscape, cmonoViewEscape, cuiViewEscape } from "./web";
+import { activitySettings } from "../shared/settings";
 import type { useActivityStyles } from "./activity";
 
 type Theme = PluginTimelineItemProps["theme"];
@@ -379,7 +380,13 @@ function ReadImageBlock({
   );
 }
 
-function DiffBlock({
+/** 0.11.0：「折行 diff 行」。off（默认）= 单行横滚；on = 折到可用宽度。 */
+function useDiffWrap(): boolean {
+  const settings = useSettings(activitySettings);
+  return settings.status === "ready" ? settings.values.diffWrap === "on" : false;
+}
+
+export function DiffBlock({
   detail,
   palette,
   styles,
@@ -389,6 +396,7 @@ function DiffBlock({
   styles: ReturnType<typeof useActivityStyles>;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const wrap = useDiffWrap();
   const lines = useMemo(() => diffLinesForDetail(detail), [detail]);
   const isTruncated = lines.length > PREVIEW_LINES;
   const displayLines = showAll || !isTruncated ? lines : lines.slice(0, PREVIEW_LINES);
@@ -396,15 +404,25 @@ function DiffBlock({
   return (
     <View style={styles.section}>
       <DetailLabel style={styles.detailLabel}>{t("ui.changes")}</DetailLabel>
-      <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
+      {wrap ? (
         <View style={styles.diffSurface}>
           {displayLines.length === 0 ? (
             <Text style={styles.empty}>{t("ui.noChangesToShow")}</Text>
           ) : (
-            displayLines.map((line, index) => <DiffRow key={`${line.kind}-${index}`} line={line} palette={palette} styles={styles} />)
+            displayLines.map((line, index) => <DiffRow key={`${line.kind}-${index}`} line={line} palette={palette} styles={styles} wrap />)
           )}
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
+          <View style={styles.diffSurface}>
+            {displayLines.length === 0 ? (
+              <Text style={styles.empty}>{t("ui.noChangesToShow")}</Text>
+            ) : (
+              displayLines.map((line, index) => <DiffRow key={`${line.kind}-${index}`} line={line} palette={palette} styles={styles} />)
+            )}
+          </View>
+        </ScrollView>
+      )}
       {isTruncated ? (
         <Pressable
           accessibilityRole="button"
@@ -425,10 +443,13 @@ function DiffRow({
   line,
   palette,
   styles,
+  wrap = false,
 }: {
   line: DiffLine;
   palette: ActivityPalette;
   styles: ReturnType<typeof useActivityStyles>;
+  /** 「折行 diff 行」：文字折到可用宽度（horizontal 滚动关闭时）。 */
+  wrap?: boolean;
 }) {
   const rowStyle =
     line.kind === "add"
@@ -450,7 +471,7 @@ function DiffRow({
   return (
     <View style={[styles.diffLine, rowStyle]}>
       <Text style={[styles.diffMarker, { color: markerColor }]}>{marker}</Text>
-      <Text selectable style={[styles.diffText, { color: line.kind === "meta" ? markerColor : styles.codeLine.color }]}>
+      <Text selectable style={[styles.diffText, wrap ? { flexShrink: 1, minWidth: 0 } : null, { color: line.kind === "meta" ? markerColor : styles.codeLine.color }]}>
         {line.text || " "}
       </Text>
     </View>

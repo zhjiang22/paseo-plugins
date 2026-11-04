@@ -24,6 +24,7 @@ import {
   loaderSchema,
   paletteModeSchema,
   strengthSchema,
+  commandColorsSchema,
   takeoverScopeSchema,
   visibleExpansionTargets,
 } from "../shared/settings";
@@ -75,12 +76,14 @@ const paletteDescriptions = {
 const expansionOptions = [
   { value: "always", get label() { return t("settings.alwaysExpand"); } },
   { value: "latest", get label() { return t("settings.expandLatestOnly"); } },
+  { value: "failures", get label() { return t("settings.expandFailedRows"); } },
   { value: "never", get label() { return t("settings.collapsedByDefault"); } },
 ];
 
 const expansionDescriptions = {
   get always() { return t("settings.expandEveryRowOldAnd"); },
   get latest() { return t("settings.expandOnlyTheLatestRow"); },
+  get failures() { return t("settings.expandFailedRowsHint"); },
   get never() { return t("settings.startCollapsedEvenWhileRunning"); },
 } as const;
 
@@ -88,6 +91,8 @@ function expansionDescription(target: ExpansionTarget, mode: ExpansionMode): str
   if (target !== "todo") return expansionDescriptions[mode];
   if (mode === "always") return t("settings.alwaysExpandTaskListTool");
   if (mode === "never") return t("settings.startTaskListToolRows");
+  // failures 对任务清单等同收起；其余档位有专属文案。
+  if (mode === "failures") return t("settings.startTaskListToolRows");
   return t("settings.expandOnlyTheLatestTask");
 }
 
@@ -382,6 +387,37 @@ function FontControls({ settings, theme }: { settings: ReadySettings; theme: Plu
   );
 }
 
+/** 0.11.0：代码与 diff（diffWrap 开关 + commandColors 行头命令着色）。 */
+function DiffControls({ settings }: { settings: ReadySettings }) {
+  const changeWrap = (value: boolean) => {
+    if (value === (settings.values.diffWrap === "on")) return;
+    void settings.save({ ...settings.values, diffWrap: value ? "on" : "off" }, settings.revision);
+  };
+  const changeCommandColors = (value: string) => {
+    const parsed = commandColorsSchema.safeParse(value);
+    if (!parsed.success || parsed.data === settings.values.commandColors) return;
+    void settings.save({ ...settings.values, commandColors: parsed.data }, settings.revision);
+  };
+  return (
+    <SettingsSection title={t("settings.codeAndDiffs")}>
+      <SettingsCard>
+        <SettingsSelect
+          label={t("settings.commandColors")}
+          hint={t("settings.commandColorsHint")}
+          value={settings.values.commandColors}
+          options={[
+            { value: "expanded", get label() { return t("settings.whenOpen"); } },
+            { value: "always", get label() { return t("settings.alwaysColored"); } },
+          ]}
+          disabled={settings.saving}
+          onValueChange={changeCommandColors}
+        />
+        <SettingsSwitch label={t("settings.wrapDiffLines")} hint={t("settings.wrapDiffHint")} value={settings.values.diffWrap === "on"} disabled={settings.saving} onValueChange={changeWrap} />
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
 function DisplaySettings({ theme, actions }: PluginSurfaceProps & { actions: SettingsActions }) {
   const settings = useSettings(activitySettings);
   const textStyle = useMemo(() => ({ color: theme.colors.foreground }), [theme.colors.foreground]);
@@ -409,6 +445,7 @@ function DisplaySettings({ theme, actions }: PluginSurfaceProps & { actions: Set
       <FoldControls settings={settings} actions={actions} />
       <PaletteControls settings={settings} theme={theme} actions={actions} />
       <FontControls settings={settings} theme={theme} />
+      <DiffControls settings={settings} />
       <ExpansionControls settings={settings} />
     </>
   );

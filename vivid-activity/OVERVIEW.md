@@ -23,7 +23,9 @@ in the Command Center — all three show the same page:
 - Palette: vivid (default), follow the theme accent, soft, or high contrast.
 - Running animation: spinner (default), sparkle, orb, or a dot grid as a snake or a twinkle, with live previews.
 - Code font: family (web, desktop), size, line spacing.
-- Expansion for each kind of row: always, newest only, or collapsed.
+- Command colors: when open (default) or always — the shell command in a row's title carries the theme's syntax colors.
+- Wrap diff lines: off by default (long diff lines scroll sideways); on wraps them to the width.
+- Expansion for each kind of row: always, newest only, failed only, or collapsed. A fold summary with failures starts expanded.
 
 Settings live on the daemon and apply to every connected device. Agent output, prompts and paths keep their original text.
 

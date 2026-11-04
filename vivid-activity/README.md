@@ -41,6 +41,12 @@ from Beautiful Chat and [TokenLedger](https://github.com/stv1024/token-ledger).
   (full strength by default). Running, waiting and asking rows keep their full color, the newest row of a run
   stays bright, and rows with nothing to expand never fade. Finished fold summaries dim too; expand or hover
   one to restore it.
+- **Failures stay visible**: "Expand failed rows" starts only failed rows open, and a running row opens once
+  it fails. A fold summary with failures expands by default, so the failed rows show without a tap; collapse
+  it yourself to keep the segment tight.
+- **Colored commands**: the shell command in a row's title carries the theme's syntax colors — while the row
+  is open (default) or always.
+- **Wrap diff lines**: keep long diff lines on one scrolling row (default) or wrap them to the available width.
 - **Detail cards**: highlighted commands with output, exit code and copy buttons; file reads with a language
   badge and line numbers; colored diffs; inline previews for images the agent read; dedicated views for Paseo's
   own tools, GitHub and Exa results.
@@ -76,7 +82,9 @@ The Vivid Activity settings page offers:
 | Palette | vivid (default), follow theme, soft, high contrast |
 | Running animation | spinner (default), sparkle, orb, dot grid: snake, dot grid: twinkle, with live previews |
 | Code font | font family (web and desktop; fonts installed on the viewing device, falling back to the default stack), text size small / standard (default) / large / larger (11 to 16 px), line spacing compact / standard (default) / relaxed |
-| Expansion | per row kind: always, newest only, collapsed |
+| Command colors | when open (default), always — syntax colors for the shell command in a row's title |
+| Wrap diff lines | off (default, long lines scroll sideways), on |
+| Expansion | per row kind: always, newest only, failed only, collapsed |
 
 The same page opens from Paseo's **Settings → Plugins**, from the **Vivid Activity** row in the app's sidebar,
 and from "Open Vivid Activity settings" in the Command Center.

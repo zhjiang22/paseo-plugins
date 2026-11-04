@@ -48,7 +48,7 @@ describe("lazy activity surfaces", () => {
     await settle();
     expect(actions.onFoldSettings).toHaveBeenCalledWith({ scope: "off" });
     expect(actions.onTakeover).toHaveBeenCalledWith("off");
-    rendered.find((entry) => entry.type === "SettingsSwitch")!.props.onValueChange(false);
+    rendered.find((entry) => entry.type === "SettingsSwitch" && String(entry.props.label).includes("折叠"))!.props.onValueChange(false);
     await settle();
     expect(actions.onFoldSettings).toHaveBeenCalledWith({ enabled: false });
     expect(host.settings.save).toHaveBeenCalledWith(expect.objectContaining({ takeover: "off" }), "revision-1");
@@ -58,7 +58,7 @@ describe("lazy activity surfaces", () => {
     host.settings.save.mockResolvedValue(false);
     const rendered = renderSettings();
     rendered.find((entry) => entry.props.label === "接管")!.props.onValueChange("off");
-    rendered.find((entry) => entry.type === "SettingsSwitch")!.props.onValueChange(false);
+    rendered.find((entry) => entry.type === "SettingsSwitch" && String(entry.props.label).includes("折叠"))!.props.onValueChange(false);
     await settle();
     expect(actions.onFoldSettings).not.toHaveBeenCalled();
     expect(actions.onTakeover).not.toHaveBeenCalled();

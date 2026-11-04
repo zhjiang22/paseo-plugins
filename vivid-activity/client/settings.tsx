@@ -165,6 +165,21 @@ function foldScopeNote(scope: TakeoverScope): string | null {
   return null;
 }
 
+/** 0.11.0：侧边栏入口开关（index.client.tsx 的 addSidebarHeaderItem 按此挂/摘；命令面板入口不受影响）。 */
+function SidebarControls({ settings }: { settings: ReadySettings }) {
+  const changeSidebar = (value: boolean) => {
+    if (value === settings.values.sidebar) return;
+    void settings.save({ ...settings.values, sidebar: value }, settings.revision);
+  };
+  return (
+    <SettingsSection title={t("settings.sidebarSection")}>
+      <SettingsCard>
+        <SettingsSwitch label={t("settings.sidebarEntry")} hint={t("settings.sidebarHint")} value={settings.values.sidebar} disabled={settings.saving} onValueChange={changeSidebar} />
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
 function FoldControls({ settings, actions }: { settings: ReadySettings; actions: SettingsActions }) {
   const fold = settings.values.fold;
   const density = settings.values.density;
@@ -500,6 +515,7 @@ export function DisplaySettings({ theme, actions, paletteFor, layout, scroll }: 
   const controls = (
     <>
       <TakeoverControls settings={settings} actions={actions} />
+      <SidebarControls settings={settings} />
       <FoldControls settings={settings} actions={actions} />
       <ThoughtControls settings={settings} />
       <PaletteControls settings={settings} theme={theme} actions={actions} />

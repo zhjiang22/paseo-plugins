@@ -101,6 +101,8 @@ export const activitySettings = defineSettings({
   version: 1,
   schema: z.object({
     takeover: takeoverScopeSchema.default(DEFAULT_TAKEOVER),
+    // 0.11.0：左侧边栏入口开关。关 = 移除设置入口（命令面板入口不受影响）；旧设置没有这一项，读出来取默认值。
+    sidebar: z.boolean().default(true),
     palette: paletteModeSchema.default("vivid"),
     expansion: expansionSettingsSchema.default(DEFAULT_EXPANSION),
     // 本地补丁：「完成后折叠连续的思考与工具行」。旧设置没有这两项，读出来取默认值，所以版本号不变。

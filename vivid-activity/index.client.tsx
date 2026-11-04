@@ -105,9 +105,26 @@ export default function contribute(client: PluginClientContext) {
     <LazySettings {...props} actions={actions} paletteFor={paletteFor} scroll />
   );
   const stopScreen = client.addScreen({ id: "settings", title: () => t("boot.name"), Component: ScreenSettings });
-  const stopSidebar = i18n.localized(() => [
-    client.addSidebarHeaderItem({ id: "settings", title: t("boot.name"), Component: SettingsSidebarItem }),
-    client.addCommandCenterItem({
+  // 0.11.0：侧边栏入口开关（settings.sidebar）。挂/摘走同一 handle：设置初读与任意设备的改动都触发
+  // syncSidebarItem；语言切换时 remove-then-add 顺带刷新标题。命令面板入口不受此开关影响。
+  let stopSidebarItem: (() => void) | null = null;
+  let sidebarVisible = true;
+  const removeSidebarItem = () => {
+    if (!stopSidebarItem) return;
+    stopSidebarItem();
+    stopSidebarItem = null;
+  };
+  const syncSidebarItem = () => {
+    removeSidebarItem();
+    if (sidebarVisible) stopSidebarItem = client.addSidebarHeaderItem({ id: "settings", title: t("boot.name"), Component: SettingsSidebarItem });
+  };
+  const applySidebarValues = (values: unknown) => {
+    const parsed = activitySettings.schema.safeParse(values ?? {});
+    sidebarVisible = parsed.success ? parsed.data.sidebar : true;
+    syncSidebarItem();
+  };
+  const stopSidebar = i18n.localized(() => {
+    const stopCommand = client.addCommandCenterItem({
       id: "open-settings",
       title: t("boot.openSettings"),
       icon: "Palette",
@@ -116,8 +133,22 @@ export default function contribute(client: PluginClientContext) {
       onSelect({ openScreen }) {
         openScreen({ screenId: "settings" });
       },
-    }),
-  ]);
+    });
+    syncSidebarItem();
+    return () => {
+      stopCommand();
+      removeSidebarItem();
+    };
+  });
+  const sidebarRead = settingsRpc(activitySettings.id).read;
+  void client.rpc(sidebarRead, {}).then((result) => {
+    if (result.status === "ready") applySidebarValues(result.values);
+  }).catch(() => undefined);
+  const stopSidebarWatch = watchSettings(client, () => {
+    void client.rpc(sidebarRead, {}).then((result) => {
+      if (result.status === "ready") applySidebarValues(result.values);
+    }).catch(() => undefined);
+  });
   // 计划（ExitPlanMode / plan_approval）和任务清单（TodoWrite）不注册转换器，始终由 Paseo 显示。
   client.addTimelineRenderer({
     kind: REASONING_RENDERER_KIND,
@@ -198,6 +229,8 @@ export default function contribute(client: PluginClientContext) {
   return () => {
     stopScreen();
     stopSidebar();
+    stopSidebarWatch();
+    removeSidebarItem();
     stopText();
     i18n.dispose();
     setLiveTakeover(null);

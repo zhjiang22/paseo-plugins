@@ -530,7 +530,7 @@ describe("0.11.0: diff 折行与命令着色", () => {
     expect(scrollsHorizontally(draw(undefined))).toBe(true);
     expect(flatten(lineText(draw(undefined))!.props.style).flexShrink).toBe(0);
     // on：不再横滚，diff 文字折行（flexShrink 1 + minWidth 0）。
-    const on = ready({ diffWrap: "on" });
+    const on = ready({ wrapLines: { diff: true, code: false, output: false } });
     expect(scrollsHorizontally(draw(on))).toBe(false);
     expect(flatten(lineText(draw(on))!.props.style)).toMatchObject({ flexShrink: 1, minWidth: 0 });
   });
@@ -699,8 +699,8 @@ describe("0.11.0: 设置预览面板", () => {
 
   it("mirrors the wrap diff lines setting in the diff sample", () => {
     // diff 样本挂在展开的 shell 行下：显式给 shell「总是展开」（expansion 嵌套结构与真实设置一致）。
-    expect(scrollsHorizontally(draw(ready({ diffWrap: "off", expansion: { shell: "always" } })))).toBe(true);
-    expect(scrollsHorizontally(draw(ready({ diffWrap: "on", expansion: { shell: "always" } })))).toBe(false);
+    expect(scrollsHorizontally(draw(ready({ wrapLines: { diff: false, code: false, output: false }, expansion: { shell: "always" } })))).toBe(true);
+    expect(scrollsHorizontally(draw(ready({ wrapLines: { diff: true, code: false, output: false }, expansion: { shell: "always" } })))).toBe(false);
   });
 
   it("draws the mock turn: pinned question, thinking, tools, fold summary and tokens", () => {

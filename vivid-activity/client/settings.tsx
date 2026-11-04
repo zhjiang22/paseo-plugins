@@ -405,12 +405,8 @@ function FontControls({ settings, theme }: { settings: ReadySettings; theme: Plu
   );
 }
 
-/** 0.11.0：代码与 diff（diffWrap 开关 + commandColors 行头命令着色）。 */
+/** 0.11.0：代码与 diff（commandColors 行头命令着色；折行开关移入「展开与滚动」的 wrapLines 矩阵）。 */
 function DiffControls({ settings }: { settings: ReadySettings }) {
-  const changeWrap = (value: boolean) => {
-    if (value === (settings.values.diffWrap === "on")) return;
-    void settings.save({ ...settings.values, diffWrap: value ? "on" : "off" }, settings.revision);
-  };
   const changeCommandColors = (value: string) => {
     const parsed = commandColorsSchema.safeParse(value);
     if (!parsed.success || parsed.data === settings.values.commandColors) return;
@@ -430,7 +426,42 @@ function DiffControls({ settings }: { settings: ReadySettings }) {
           disabled={settings.saving}
           onValueChange={changeCommandColors}
         />
-        <SettingsSwitch label={t("settings.wrapDiffLines")} hint={t("settings.wrapDiffHint")} value={settings.values.diffWrap === "on"} disabled={settings.saving} onValueChange={changeWrap} />
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
+/** 0.11.0：「展开与滚动」——跟随矩阵（followOutput）与长行折行矩阵（wrapLines）的逐域开关。 */
+function ScrollControls({ settings }: { settings: ReadySettings }) {
+  const changeFollow = (area: "shell" | "logs" | "todo") => (value: boolean) => {
+    if (value === settings.values.followOutput[area]) return;
+    void settings.save({ ...settings.values, followOutput: { ...settings.values.followOutput, [area]: value } }, settings.revision);
+  };
+  const changeWrap = (area: "diff" | "code" | "output") => (value: boolean) => {
+    if (value === settings.values.wrapLines[area]) return;
+    void settings.save({ ...settings.values, wrapLines: { ...settings.values.wrapLines, [area]: value } }, settings.revision);
+  };
+  const followRows: Array<{ area: "shell" | "logs" | "todo"; label: string }> = [
+    { area: "shell", label: t("settings.followShell") },
+    { area: "logs", label: t("settings.followLogs") },
+    { area: "todo", label: t("settings.followTodo") },
+  ];
+  const wrapRows: Array<{ area: "diff" | "code" | "output"; label: string }> = [
+    { area: "diff", label: t("settings.wrapDiff") },
+    { area: "code", label: t("settings.wrapCode") },
+    { area: "output", label: t("settings.wrapOutput") },
+  ];
+  return (
+    <SettingsSection title={t("settings.expandScrollSection")}>
+      <SettingsCard>
+        <SettingsRow label={t("settings.followGroup")} hint={t("settings.followHint")} />
+        {followRows.map((row) => (
+          <SettingsSwitch key={row.area} label={row.label} value={settings.values.followOutput[row.area]} disabled={settings.saving} onValueChange={changeFollow(row.area)} />
+        ))}
+        <SettingsRow label={t("settings.wrapGroup")} hint={t("settings.wrapHint")} />
+        {wrapRows.map((row) => (
+          <SettingsSwitch key={row.area} label={row.label} value={settings.values.wrapLines[row.area]} disabled={settings.saving} onValueChange={changeWrap(row.area)} />
+        ))}
       </SettingsCard>
     </SettingsSection>
   );
@@ -518,6 +549,7 @@ export function DisplaySettings({ theme, actions, paletteFor, layout, scroll }: 
       <SidebarControls settings={settings} />
       <FoldControls settings={settings} actions={actions} />
       <ThoughtControls settings={settings} />
+      <ScrollControls settings={settings} />
       <PaletteControls settings={settings} theme={theme} actions={actions} />
       <FontControls settings={settings} theme={theme} />
       <DiffControls settings={settings} />

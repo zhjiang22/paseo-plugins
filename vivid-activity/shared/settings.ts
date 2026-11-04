@@ -98,11 +98,28 @@ export const loaderSchema = z.enum(LOADER_KINDS);
 export const activitySettings = defineSettings({
   id: "display",
   scope: "host",
-  version: 1,
+  // 版本 2：本地插件无分发，v1 的 diffWrap 不做迁移（读出取默认；重新拨一次即可）。
+  version: 2,
   schema: z.object({
     takeover: takeoverScopeSchema.default(DEFAULT_TAKEOVER),
     // 0.11.0：左侧边栏入口开关。关 = 移除设置入口（命令面板入口不受影响）；旧设置没有这一项，读出来取默认值。
     sidebar: z.boolean().default(true),
+    // 0.11.0：跟随矩阵（思考行走 thoughtTailFollow，尾窗窗口语义独立）。按展开区域逐域开关。
+    followOutput: z
+      .object({
+        shell: z.boolean().default(true),
+        logs: z.boolean().default(true),
+        todo: z.boolean().default(true),
+      })
+      .default({ shell: true, logs: true, todo: true }),
+    // 0.11.0：长行折行矩阵（原 diffWrap 扩围，migrate 迁移旧值）。off = 单行横滚（0.11.0 前的现状）。
+    wrapLines: z
+      .object({
+        diff: z.boolean().default(false),
+        code: z.boolean().default(false),
+        output: z.boolean().default(false),
+      })
+      .default({ diff: false, code: false, output: false }),
     palette: paletteModeSchema.default("vivid"),
     expansion: expansionSettingsSchema.default(DEFAULT_EXPANSION),
     // 本地补丁：「完成后折叠连续的思考与工具行」。旧设置没有这两项，读出来取默认值，所以版本号不变。
@@ -110,8 +127,6 @@ export const activitySettings = defineSettings({
     density: densitySchema.default(DEFAULT_DENSITY),
     // 0.11.0：同上，旧设置读出来取默认值。
     strength: strengthSchema.default(DEFAULT_STRENGTH),
-    // 0.11.0：diff 行折行。off = 单行横滚（0.11.0 前的现状）；on = 折到可用宽度（client/activity-details.tsx DiffBlock）。
-    diffWrap: z.enum(["on", "off"]).default("off"),
     // 0.11.0：「命令着色」行头 shell 命令的语法色（client/activity.tsx 行头段；chat-polish 同名设置）。
     commandColors: commandColorsSchema.default("expanded"),
     // 0.11.0：「思考行实时跟随」：开 = 展开后的思考框展示最新 N 行并跟随输出；关 = 头部 20 行冻结（现状）。

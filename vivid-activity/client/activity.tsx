@@ -4,8 +4,9 @@ import { t } from "../shared/text";
 import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
 import { useAgent, useSettings } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
+import { type NativeScrollEvent, type ScrollView as NativeScrollView, type NativeSyntheticEvent } from "react-native";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { z } from "zod";
 import { parsePiSubagentCall, piSubagentOperation } from "../shared/pi-subagents";
@@ -26,6 +27,7 @@ import { createLatestRows, forgetWith } from "./latest-rows";
 import { PiSubagentLifecycleSummary } from "./pi-subagent-summary";
 import { PinnedPrompt, usePromptPin } from "./prompt-pin";
 import { timingText, useLiveNow, useOnScreen, useRowTiming } from "./timing";
+import { useFollowOutput } from "./settings-hooks";
 import { useFx } from "./fx";
 import { retryPiNotices } from "./transform";
 import { failureText, lookFor, mcpParts, resolveVividPalette, VividHeader, zh, type LookKey, type RowStatus } from "./vivid";
@@ -471,6 +473,7 @@ export function ColorfulToolCall({
   const metrics = densityMetrics(useDensity(), layout.compact, layout.platform !== "web");
   const styles = useActivityStyles(theme, palette, metrics);
   const isRunning = item.data.status === "running";
+
   useFoldRow(agentId, item.data.fold, item.data.status, timestamp);
   // 本地补丁：耗时；运行中实时走表（只在前台、行在屏幕上时每秒刷新）。
   const rootRef = useRef<View>(null);
@@ -483,6 +486,18 @@ export function ColorfulToolCall({
   // 0.6.0 (grok-B2): the question of this turn, when this row opens the newest stretch of activity.
   const pin = usePromptPin(agentId, { key: item.data.fold, part: item.data.part });
   const detail = asToolCallDetail(item.data.detail);
+  // 0.11.0:「跟随最新输出」矩阵：展开明细区流式更新时回底（域按明细类型映射；思考行走 thoughtTail*，折叠明细无内滚容器不在矩阵内）。
+  const followArea = detail?.type === "shell" ? "shell" : isTodoTool(item.data.name) ? "todo" : "logs";
+  const follow = useFollowOutput(followArea) && isRunning;
+  const detailScrollRef = useRef<NativeScrollView | null>(null);
+  const detailNearBottom = useRef(true);
+  const onDetailScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    detailNearBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - 32;
+  }, []);
+  useEffect(() => {
+    if (follow && detailNearBottom.current) detailScrollRef.current?.scrollToEnd({ animated: false });
+  });
   const isTaskUpdate = isTodoTool(item.data.name);
   const itemTimestamp = timestamp.getTime();
   const latestTaskUpdateTimestamp = useLatestTaskUpdateTimestamp(agentId, timestamp, isTaskUpdate);
@@ -591,7 +606,7 @@ export function ColorfulToolCall({
       {hasDetails && subAgentDetail ? <SubAgentProgress detail={subAgentDetail} toolName={item.data.name} styles={styles} /> : null}
       {expandable && expanded ? (
         <View {...cmonoViewEscape} style={styles.details}>
-          <ScrollView style={styles.detailsScroll} contentContainerStyle={styles.detailsContent} nestedScrollEnabled showsVerticalScrollIndicator>
+          <ScrollView ref={detailScrollRef} style={styles.detailsScroll} contentContainerStyle={styles.detailsContent} nestedScrollEnabled showsVerticalScrollIndicator onScroll={onDetailScroll} scrollEventThrottle={16}>
             {hasBody ? (
               <DetailBody data={item.data} agentId={agentId} theme={theme} palette={palette} styles={styles} />
             ) : null}

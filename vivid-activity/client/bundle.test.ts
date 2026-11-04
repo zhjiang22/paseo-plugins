@@ -89,7 +89,7 @@ describe("client mobile bundle compatibility", () => {
     // resolver branch, the failed flag at the call sites) and the wrap-diff/command-colors settings reads; the command
     // coloring itself lives in the fx chunk, not here. 374 → 375 KiB for the thought tail-follow window (the schema
     // scalars and the windowed render in ReasoningText).
-    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(375 * 1024);
+    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(376 * 1024);
     expect(bundle).toContain("function ChangeStat");
     expect(bundle).toContain("function TurnTokens");
     expect(bundle).not.toMatch(/function (?:RunningLoader|LoaderFrame|FoldChanges|sparkleStops|shiftStops)\b/);

@@ -2,8 +2,18 @@ import { describe, expect, it } from "vitest";
 import { activitySettings, DEFAULT_EXPANSION, DEFAULT_STRENGTH, EXPANSION_TARGETS, foldFromValues, visibleExpansionTargets } from "./settings";
 
 describe("activity settings", () => {
-  it("stays on version 1 so stored settings need no migration", () => {
-    expect(activitySettings.version).toBe(1);
+  it("is on version 2; matrices default for local-only stored values (no migration)", () => {
+    expect(activitySettings.version).toBe(2);
+    expect(activitySettings.migrate).toBeUndefined();
+    const parsed = activitySettings.schema.parse({ takeover: "all", diffWrap: "on" });
+    expect(parsed.wrapLines).toEqual({ diff: false, code: false, output: false });
+    expect(parsed.followOutput).toEqual({ shell: true, logs: true, todo: true });
+  });
+
+  it("defaults both matrices when nothing is stored", () => {
+    const parsed = activitySettings.schema.parse({});
+    expect(parsed.followOutput).toEqual({ shell: true, logs: true, todo: true });
+    expect(parsed.wrapLines).toEqual({ diff: false, code: false, output: false });
   });
 
   it("backfills expansion defaults and the takeover scope for older stored values", () => {
@@ -79,11 +89,9 @@ describe("activity settings", () => {
     expect(activitySettings.schema.safeParse({ strength: "half" }).success).toBe(false);
   });
 
-  it("keeps diff lines scrolling by default and accepts the wrap choice for settings stored before 0.11.0", () => {
-    expect(activitySettings.schema.parse({}).diffWrap).toBe("off");
-    expect(activitySettings.schema.parse({ strength: "dim" }).diffWrap).toBe("off");
-    expect(activitySettings.schema.parse({ diffWrap: "on" }).diffWrap).toBe("on");
-    expect(activitySettings.schema.safeParse({ diffWrap: "maybe" }).success).toBe(false);
+  it("keeps long lines scrolling by default; stored v1 diffWrap is ignored (local-only, no migration)", () => {
+    expect(activitySettings.schema.parse({}).wrapLines).toEqual({ diff: false, code: false, output: false });
+    expect(activitySettings.schema.parse({ strength: "dim", diffWrap: "on" }).wrapLines).toEqual({ diff: false, code: false, output: false });
   });
 
   it("colors the row command only while open by default, and accepts always", () => {

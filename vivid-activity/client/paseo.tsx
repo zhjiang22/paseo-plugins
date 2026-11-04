@@ -3,6 +3,7 @@ import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Pressable, Text, View, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
+import { useWrapLines } from "./settings-hooks";
 import { extractPaseoChildAgentId } from "../shared/child-agent";
 import { instantParts, instantText, isInstantString } from "../shared/clock";
 import { exaOutputText, exaToolKind, exaToolSummary, parseExaSearchResults, type ExaSearchResult, } from "../shared/exa";
@@ -448,14 +449,16 @@ function PromptBlock({
 function TokenizedLines({
   lines,
   styles,
+  wrapLines: wrap,
 }: {
   lines: HighlightToken[][];
   styles: ActivityStyles;
+  wrapLines?: boolean;
 }) {
   return (
     <View>
       {lines.map((line, lineIndex) => (
-        <Text key={`line-${lineIndex}`} selectable style={styles.codeLine}>
+        <Text key={`line-${lineIndex}`} selectable style={[styles.codeLine, wrap ? { flexShrink: 1 } : null]}>
           {line.length === 0
             ? " "
             : line.map((token, tokenIndex) => {
@@ -506,6 +509,8 @@ export function PaseoCodeBlock({
     language,
     theme.colors,
   );
+  // 0.11.0:「长行折行·代码与文件」：exa/github/codemode 等工具详情的代码块随矩阵折行。
+  const wrap = useWrapLines("code");
   const title = label ?? t("ui.output");
   return (
     <View style={styles.section}>
@@ -513,17 +518,29 @@ export function PaseoCodeBlock({
         <Text style={[styles.detailLabel, { flexShrink: 1 }]}>{title}</Text>
         <OutputCopyButtons clean={clean} raw={code} label={t("ui.copy", { label: title })} theme={theme} styles={styles} />
       </View>
-      <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
+      {wrap ? (
         <View style={styles.codeSurface}>
           {tokens ? (
-            <TokenizedLines lines={tokens} styles={styles} />
+            <TokenizedLines lines={tokens} styles={styles} wrapLines />
           ) : (
-            <Text selectable style={styles.codeLine}>
+            <Text selectable style={[styles.codeLine, { flexShrink: 1 }]}>
               {displayCode || " "}
             </Text>
           )}
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
+          <View style={styles.codeSurface}>
+            {tokens ? (
+              <TokenizedLines lines={tokens} styles={styles} />
+            ) : (
+              <Text selectable style={styles.codeLine}>
+                {displayCode || " "}
+              </Text>
+            )}
+          </View>
+        </ScrollView>
+      )}
       {preview.truncated ? (
         <Pressable
           accessibilityRole="button"

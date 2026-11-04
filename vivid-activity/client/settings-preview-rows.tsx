@@ -157,7 +157,7 @@ function ReasoningReplica({ theme, styles, values, palette, metrics }: { theme: 
 }
 
 /** 工具行副本：state/expanded 驱动（failures 档 = 失败行展开全强度红态，完成行收起淡出）。 */
-function ToolReplica({ theme, styles, palette, values, metrics, look, label, command, commandNode, state, expanded, diff, errorLine }: {
+function ToolReplica({ theme, styles, palette, values, metrics, look, label, command, commandNode, state, expanded, diff, errorLine, expandedBody, chip }: {
   theme: PluginTheme;
   styles: ActivityStyles;
   palette: ActivityPalette;
@@ -172,6 +172,10 @@ function ToolReplica({ theme, styles, palette, values, metrics, look, label, com
   expanded?: boolean;
   diff?: ReactNode;
   errorLine?: ReactNode;
+  /** 0.11.0:「长行折行/跟随」演示——展开区里的附加内容行（长输出等）。 */
+  expandedBody?: ReactNode;
+  /** 0.11.0:「跟随最新输出」的静态标注徽标（运行中行）。 */
+  chip?: ReactNode;
 }) {
   const running = state === "running";
   const open = expanded === true;
@@ -185,10 +189,12 @@ function ToolReplica({ theme, styles, palette, values, metrics, look, label, com
         <RowText style={{ ...styles.title, color }}>{label}</RowText>
         {commandNode ? <Text numberOfLines={1} style={styles.summary}>{commandNode}</Text> : <RowText style={styles.summary}>{command}</RowText>}
         {state === "failed" ? <Pill color={hue(theme, "red", "text")} soft={hue(theme, "red", "soft")} text={t("ui.failed2", { count: 1 })} /> : null}
+        {chip}
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, flexShrink: 0 }}>{running ? "…" : "›"}</Text>
       </View>
       {open && errorLine ? <View style={styles.details}>{errorLine}</View> : null}
       {open && diff ? <View style={styles.details}>{diff}</View> : null}
+      {open && expandedBody ? <View style={styles.details}>{expandedBody}</View> : null}
     </>,
     opacity,
     styles,
@@ -290,6 +296,11 @@ export function PreviewPanel({ theme, paletteFor, actions, compact, native }: Pr
   const failuresMode = values.expansion.shell === "failures";
   const shellAlways = values.expansion.shell === "always";
   const colored = values.commandColors === "always" || (failuresMode && values.commandColors === "expanded");
+  const wrapCode = values.wrapLines?.code ?? false;
+  const wrapOutput = values.wrapLines?.output ?? false;
+  const followShell = values.followOutput?.shell ?? true;
+  // 「长行折行」演示行：开=折入面板，关=单行溢出裁切（与真实横滚/折行行为对齐的静态示意）。
+  const longLineStyle = { color: theme.colors.foregroundMuted, fontFamily: "monospace", fontSize: 11, lineHeight: 16, flexShrink: wrapCode || wrapOutput ? 1 : 0 };
   // 运行中行的着色与真实行同规则（activity.tsx:561 always 或该行展开）：shell=always/latest 时运行行是展开的。
   const runningColored = values.commandColors === "always" || shellAlways || values.expansion.shell === "latest";
   const shellCommandNode = colored ? shellSegments(SAMPLE_COMMAND, theme) : null;
@@ -314,16 +325,16 @@ export function PreviewPanel({ theme, paletteFor, actions, compact, native }: Pr
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>{t("settings.previewThinkingOnly")}</Text>
       ) : (
         <View>
-          <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="read" label={t("modelLook.read")} command="/demo/src/app.ts" state="completed" />
+          <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="read" label={t("modelLook.read")} command="/demo/src/app.ts" state="completed" expanded expandedBody={<Text selectable style={[longLineStyle, { flexShrink: wrapCode ? 1 : 0 }]}>{"export function renderApp(root: HTMLElement) { mount(<Application theme={theme} routes={routes} />, root); }"}</Text>} />
           <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="edit" label={t("modelLook.edit")} command="/demo/src/app.ts" state="completed" expanded diff={<DiffBlock detail={diffDetail} palette={palette} styles={styles} />} />
           <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="search" label={t("modelLook.search")} command="vivid preview coverage" state="completed" />
           {failuresMode ? (
-            <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={shellCommandNode} state="failed" expanded errorLine={<Text style={failedErrorStyle}>{t("ui.error")}: Exit code 1</Text>} />
+            <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={shellCommandNode} state="failed" expanded errorLine={<><Text style={failedErrorStyle}>{t("ui.error")}: Exit code 1</Text><Text style={[failedErrorStyle, { flexShrink: wrapOutput ? 1 : 0 }]}>{"error: command failed after 3 retries — ELIFECYCLE Command failed with exit code 1 in ./packages/vivid-activity (webpack compile step overflow)"}</Text></>} />
           ) : (
             <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={shellCommandNode} state="completed" />
           )}
           <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_HEREDOC_COMMAND} commandNode={heredocCommandNode} state="completed" />
-          <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={runningShellNode} state="running" />
+          <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={runningShellNode} state="running" chip={followShell ? <Pill color={hue(theme, "blue", "text")} soft={hue(theme, "blue", "soft")} text={t("settings.previewFollow")} /> : null} />
           {actions.LoaderMark ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: metrics.gap, minHeight: metrics.rowMinHeight, paddingLeft: 5 }}>
               {(() => { const Mark = actions.LoaderMark; return Mark ? <Mark kind={values.loader} size={16} color={palette.statusColors.running} /> : null; })()}

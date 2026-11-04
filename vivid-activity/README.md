@@ -44,6 +44,8 @@ from Beautiful Chat and [TokenLedger](https://github.com/stv1024/token-ledger).
 - **Failures stay visible**: "Expand failed rows" starts only failed rows open, and a running row opens once
   it fails. A fold summary with failures expands by default, so the failed rows show without a tap; collapse
   it yourself to keep the segment tight.
+- **Thought tail-follow**: with "Follow the output live" on, an expanded thinking row shows the latest lines
+  (5–500, default 20) and follows the output as it streams; the per-row Expand all still shows everything.
 - **Colored commands**: the shell command in a row's title carries the theme's syntax colors — while the row
   is open (default) or always.
 - **Wrap diff lines**: keep long diff lines on one scrolling row (default) or wrap them to the available width.
@@ -84,6 +86,7 @@ The Vivid Activity settings page offers:
 | Code font | font family (web and desktop; fonts installed on the viewing device, falling back to the default stack), text size small / standard (default) / large / larger (11 to 16 px), line spacing compact / standard (default) / relaxed |
 | Command colors | when open (default), always — syntax colors for the shell command in a row's title |
 | Wrap diff lines | off (default, long lines scroll sideways), on |
+| Thinking rows | follow the output live (default off) with a 5–500 line window (default 20) |
 | Expansion | per row kind: always, newest only, failed only, collapsed |
 
 The same page opens from Paseo's **Settings → Plugins**, from the **Vivid Activity** row in the app's sidebar,

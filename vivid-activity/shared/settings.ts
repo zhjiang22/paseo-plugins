@@ -80,6 +80,9 @@ export const strengthSchema = z.enum(STRENGTH_KINDS);
 
 /** 0.11.0:「命令着色」档位（client/activity.tsx 行头段；设置页 settings.tsx 消费）。 */
 export const commandColorsSchema = z.enum(["expanded", "always"]);
+
+/** 淡出强度档位 → 行的不透明度（activity/fold-row/preview-card 共用）。 */
+export const STRENGTH_OPACITY: Record<Strength, number> = { dim: 0.3, faded: 0.45, soft: 0.65, full: 1 };
 /** 0.6.0: 「钉住本轮提问」 (shared/prompt-pin.ts). */
 export const DEFAULT_PIN_PROMPT = true;
 
@@ -109,6 +112,10 @@ export const activitySettings = defineSettings({
     diffWrap: z.enum(["on", "off"]).default("off"),
     // 0.11.0：「命令着色」行头 shell 命令的语法色（client/activity.tsx 行头段；chat-polish 同名设置）。
     commandColors: commandColorsSchema.default("expanded"),
+    // 0.11.0：「思考行实时跟随」：开 = 展开后的思考框展示最新 N 行并跟随输出；关 = 头部 20 行冻结（现状）。
+    thoughtTailFollow: z.boolean().default(false),
+    // 0.11.0：尾窗大小（块模式=行数，步骤模式=步数）。UI 层钳制 5–500 后才保存。
+    thoughtTailLines: z.number().int().min(5).max(500).default(20),
     // 0.6.0：同上，旧设置没有这一项，读出来取默认值。
     pinPrompt: z.boolean().default(DEFAULT_PIN_PROMPT),
     // 0.8.0：同上。

@@ -87,8 +87,9 @@ describe("client mobile bundle compatibility", () => {
     // 0.11.0: 372 → 373 KiB for the strength setting reaching the fold rows (the quiet predicate, hover state and the
     // strength read) and the settings screen's own ScrollView. 373 → 374 KiB for the failures expansion mode (the
     // resolver branch, the failed flag at the call sites) and the wrap-diff/command-colors settings reads; the command
-    // coloring itself lives in the fx chunk, not here.
-    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(374 * 1024);
+    // coloring itself lives in the fx chunk, not here. 374 → 375 KiB for the thought tail-follow window (the schema
+    // scalars and the windowed render in ReasoningText).
+    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(375 * 1024);
     expect(bundle).toContain("function ChangeStat");
     expect(bundle).toContain("function TurnTokens");
     expect(bundle).not.toMatch(/function (?:RunningLoader|LoaderFrame|FoldChanges|sparkleStops|shiftStops)\b/);

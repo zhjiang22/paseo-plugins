@@ -92,6 +92,7 @@ beforeAll(async () => {
     // 0.6.0-local.5: the reasoning body lives in the lazy details chunk, the styles stay with the resident rows.
     `export { useActivityStyles } from ${JSON.stringify(path.join(here, "activity.tsx"))};`,
     `export { ReasoningMarkdown } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
+    `export { ReasoningText } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
     `export { VividHeader, resolveVividPalette, useVividText } from ${JSON.stringify(path.join(here, "vivid.tsx"))};`,
     `export { PiSubagentLifecycleSummary } from ${JSON.stringify(path.join(here, "pi-subagent-summary.tsx"))};`,
     `export { densityMetrics } from ${JSON.stringify(path.join(here, "density.ts"))};`,
@@ -108,8 +109,10 @@ beforeAll(async () => {
     `export { ChangeStat, TurnTokens } from ${JSON.stringify(path.join(here, "fold-row.tsx"))};`,
     `export { FoldRow } from ${JSON.stringify(path.join(here, "fold-row.tsx"))};`,
     `export { DiffBlock } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
+    `export { PreviewCard, previewDiffStyles } from ${JSON.stringify(path.join(here, "preview-card.tsx"))};`,
     `export { CommandTokens } from ${JSON.stringify(path.join(here, "command-tokens.tsx"))};`,
     `export { configureFx } from ${JSON.stringify(path.join(here, "fx.ts"))};`,
+    `export { paletteFor } from ${JSON.stringify(path.join(here, "activity.tsx"))};`,
     `export { stillCells } from ${JSON.stringify(path.join(here, "../shared/loaders.ts"))};`,
     `export { fileId } from ${JSON.stringify(path.join(here, "../shared/changes.ts"))};`,
   ].join("\n"));
@@ -532,5 +535,132 @@ describe("0.11.0: diff 折行与命令着色", () => {
     // 展开时（默认 expanded 档）也着色。
     const expandedDefault = spans(shell(ready({ expansion: { shell: "always" } })));
     expect(expandedDefault.length).toBeGreaterThan(1);
+  });
+});
+
+describe("0.11.0: 思考行尾随窗口", () => {
+  const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
+  const palette = () => ui.resolveVividPalette(fullTheme);
+  const styles = () => ui.useActivityStyles(fullTheme, palette(), ui.densityMetrics("compact", true, true));
+  const ready = (values: Record<string, unknown>) => ({ status: "ready", values: { expansion: {}, density: "compact", ...values }, revision: 1 });
+  const withSettings = (settings: unknown, draw: () => Host[]) => {
+    (globalThis as { __vividSettings?: unknown }).__vividSettings = settings;
+    try {
+      return draw();
+    } finally {
+      (globalThis as { __vividSettings?: unknown }).__vividSettings = undefined;
+    }
+  };
+  const draw = (text: string, settings: unknown) => withSettings(settings, () => render({ type: ui.ReasoningText, props: { text, phase: "complete", theme: fullTheme, palette: palette(), styles: styles() } }));
+  const outputOf = (nodes: Host[]) => nodes.map(textOf).join("\n");
+  const expandButton = (nodes: Host[]) => nodes.flatMap(nodesOf).find((node) => node.type === "Text" && textOf(node).startsWith("展开全部"));
+
+  it("keeps the head frozen by default: new lines stay out until 展开全部 is pressed", () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `第${index + 1}行`);
+    const out = outputOf(draw(lines.join("\n"), undefined));
+    expect(out).toContain("第1行");
+    expect(out).not.toContain("第40行");
+    expect(expandButton(draw(lines.join("\n"), undefined))).toBeDefined();
+  });
+
+  it("follows the tail in block mode: the newest lines are in and the head is out", () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `第${index + 1}行`);
+    const out = outputOf(draw(lines.join("\n"), ready({ thoughtTailFollow: true, thoughtTailLines: 10 })));
+    expect(out).not.toContain("第1行");
+    expect(out).toContain("第40行");
+    expect(out).toContain("第31行");
+    expect(out).not.toContain("第30行");
+    // 窗口装不下全量时，「展开全部」仍在。
+    expect(expandButton(draw(lines.join("\n"), ready({ thoughtTailFollow: true, thoughtTailLines: 10 })))).toBeDefined();
+  });
+
+  it("windows whole steps and keeps their original numbers", () => {
+    const paragraphs = Array.from({ length: 12 }, (_, index) => `第${index + 1}步的内容`);
+    const out = outputOf(draw(paragraphs.join("\n\n"), ready({ thoughtTailFollow: true, thoughtTailLines: 5 })));
+    // 无粗体标题的步骤只显示「第 N 步」标签（ui.step），正文单独渲染。
+    expect(out).toContain("第 8 步");
+    expect(out).toContain("第8步的内容");
+    expect(out).toContain("第 12 步");
+    expect(out).toContain("第12步的内容");
+    // 只渲染尾窗 5 步：头部步骤的正文与越界序号都不得出现。
+    expect(out).not.toContain("第1步的内容");
+    expect(out).not.toContain("第7步的内容");
+    expect(out).not.toContain("第 7 步");
+    expect(out).not.toContain("第 19 步");
+  });
+
+  it("marks the newest global step active while streaming, never an older windowed one", () => {
+    const paragraphs = Array.from({ length: 12 }, (_, index) => `第${index + 1}步的内容`);
+    const drawAt = (phase: "streaming" | "complete", settings: unknown) => withSettings(settings, () => render({ type: ui.ReasoningText, props: { text: paragraphs.join("\n\n"), phase, theme: fullTheme, palette: palette(), styles: styles() } }));
+    // active 步骤 = 空心呼吸点（transparent 底）。
+    const subtreeHasActiveDot = (node: Host): boolean => {
+      if ("text" in node) return false;
+      const style = flatten(node.props.style);
+      if (style.borderRadius === 7 && style.backgroundColor === "transparent" && Number(style.width) === 14) return true;
+      return node.children.some((child) => subtreeHasActiveDot(child));
+    };
+    const stepActive = (nodes: Host[], marker: string, notMarker: string) => {
+      // 只看「含本步、不含相邻步」的最小子树（整卡会同时含所有步骤的文本）。
+      const rows = nodes.flatMap(nodesOf).filter((node) => !("text" in node) && textOf(node).includes(marker) && !textOf(node).includes(notMarker));
+      return rows.some(subtreeHasActiveDot);
+    };
+    const streaming = drawAt("streaming", ready({ thoughtTailFollow: true, thoughtTailLines: 5 }));
+    expect(stepActive(streaming, "第12步的内容", "第11步")).toBe(true);
+    expect(stepActive(streaming, "第5步的内容", "第4步")).toBe(false);
+  });
+
+  it("shows everything when the window holds the whole text", () => {
+    const lines = Array.from({ length: 8 }, (_, index) => `第${index + 1}行`);
+    const out = outputOf(draw(lines.join("\n"), ready({ thoughtTailFollow: true, thoughtTailLines: 20 })));
+    expect(out).toContain("第1行");
+    expect(out).toContain("第8行");
+    expect(expandButton(draw(lines.join("\n"), ready({ thoughtTailFollow: true, thoughtTailLines: 20 })))).toBeUndefined();
+  });
+});
+
+describe("0.11.0: 设置预览卡", () => {
+  const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
+  const ready = (values: Record<string, unknown>) => ({ status: "ready", values: { expansion: {}, density: "compact", ...values }, revision: 1 });
+  const withSettings = (settings: unknown, draw: () => Host[]) => {
+    (globalThis as { __vividSettings?: unknown }).__vividSettings = settings;
+    try {
+      return draw();
+    } finally {
+      (globalThis as { __vividSettings?: unknown }).__vividSettings = undefined;
+    }
+  };
+  const draw = (settings: unknown) => withSettings(settings, () => render({ type: ui.PreviewCard, props: { theme: fullTheme, paletteFor: ui.paletteFor } }));
+  const viewsWithOpacity = (nodes: Host[]): number[] => nodes.flatMap(nodesOf).flatMap((node) => {
+    if (node.type !== "View") return [];
+    const opacity = flatten(node.props.style).opacity;
+    return typeof opacity === "number" ? [opacity] : [];
+  });
+  const scrollsHorizontally = (nodes: Host[]) => nodes.flatMap(nodesOf).some((node) => node.type === "ScrollView" && node.props.horizontal === true);
+  const swatches = (nodes: Host[]) => nodes.flatMap(nodesOf).filter((node) => typeof node.props.accessibilityLabel === "string" && /^(?:cat|status)-/.test(node.props.accessibilityLabel));
+
+  it("renders a strength sample at every tier, dimmed by its own opacity", () => {
+    const opacities = viewsWithOpacity(draw(ready({ strength: "faded" })));
+    expect(opacities).toEqual(expect.arrayContaining([0.3, 0.45, 0.65, 1]));
+  });
+
+  it("mirrors the wrap diff lines setting in the diff sample", () => {
+    expect(scrollsHorizontally(draw(ready({ diffWrap: "off" })))).toBe(true);
+    expect(scrollsHorizontally(draw(ready({ diffWrap: "on" })))).toBe(false);
+  });
+
+  it("renders category and status swatches from the palette", () => {
+    const dots = swatches(draw(ready({ palette: "vivid" })));
+    // 类别色 + 状态色，随调色板实现走；只要求成组且不重复。
+    expect(dots.length).toBeGreaterThanOrEqual(10);
+    expect(new Set(dots.map((node) => node.props.accessibilityLabel)).size).toBe(dots.length);
+  });
+
+  it("keeps the preview diff styles aligned with the real activity styles (drift guard)", () => {
+    const palette = ui.resolveVividPalette(fullTheme);
+    const real = ui.useActivityStyles(fullTheme, palette, ui.densityMetrics("compact", false, false));
+    const preview = ui.previewDiffStyles(fullTheme, palette);
+    for (const key of ["section", "detailLabel", "diffLine", "diffMarker", "diffText", "diffAdded", "diffRemoved", "diffMeta", "diffSurface", "codeLine", "empty", "codeScroll", "showMoreButton", "showMoreText"] as const) {
+      expect(preview[key]).toMatchObject(real[key]);
+    }
   });
 });

@@ -12,7 +12,7 @@ import { githubToolKind } from "../shared/github";
 import { parseInlineMarkdown, parseReasoningMarkdown, type ReasoningMarkdownBlock } from "../shared/markdown";
 import { isOmpFindTool } from "../shared/omp-find";
 import { parsePiSubagentCall, piSubagentOperation } from "../shared/pi-subagents";
-import { askContent, compactText, diffLinesForDetail, editDiffContentSize, effectiveUnifiedDiff, extractCodeInput, fileIconForPath, formatUnknownValue, hasMeaningfulUnknownValue, isAskTool, isBgWaitTool, isOmpWaitTool, isOpencodeSubagentTool, isSkillTool, isSubagentSupervisorTool, isTodoTool, MAX_DIFF_CHARS, notInHeader, outputView, parseOpencodeSearchContent, parsePiLsOutput, paseoToolLeafName, PREVIEW_LINES, previewText, readErrorMessage, relativeToRoot, resolveSearchCounts, skillNameForDetail, splitReasoningSteps, splitStepTitle, stripAnsi, subAgentLogFullyShown, type ActivityPalette, type AskContent, type DiffLine } from "../shared/presentation";
+import { askContent, compactText, diffLinesForDetail, editDiffContentSize, effectiveUnifiedDiff, extractCodeInput, fileIconForPath, formatUnknownValue, hasMeaningfulUnknownValue, isAskTool, isBgWaitTool, isOmpWaitTool, isOpencodeSubagentTool, isSkillTool, isSubagentSupervisorTool, isTodoTool, MAX_DIFF_CHARS, notInHeader, outputView, parseOpencodeSearchContent, parsePiLsOutput, paseoToolLeafName, PREVIEW_LINES, previewText, readErrorMessage, relativeToRoot, resolveSearchCounts, skillNameForDetail, splitReasoningSteps, splitStepTitle, stripAnsi, subAgentLogFullyShown, tailLinesOf, type ActivityPalette, type AskContent, type DiffLine } from "../shared/presentation";
 import { readImageRpc, shouldAttemptImageLoad } from "../shared/read-image";
 import { noticeSections, type NoticeState } from "../shared/notice";
 import { PI_NOTICE_BODY_CHARS, type PiNoticeData, type ReasoningItemData, type ToolCallItemData } from "../shared/timeline";
@@ -380,10 +380,17 @@ function ReadImageBlock({
   );
 }
 
-/** 0.11.0：「折行 diff 行」。off（默认）= 单行横滚；on = 折到可用宽度。 */
+/** 0.11.0:「折行 diff 行」。off（默认）= 单行横滚；on = 折到可用宽度。 */
 function useDiffWrap(): boolean {
   const settings = useSettings(activitySettings);
   return settings.status === "ready" ? settings.values.diffWrap === "on" : false;
+}
+
+/** 0.11.0:「思考行实时跟随」：开 = 展开后的思考框展示最新 N 行并跟随输出（shared/settings.ts thoughtTail*）。 */
+function useThoughtTail(): { follow: boolean; lines: number } {
+  const settings = useSettings(activitySettings);
+  if (settings.status !== "ready") return { follow: false, lines: 20 };
+  return { follow: settings.values.thoughtTailFollow, lines: settings.values.thoughtTailLines };
 }
 
 export function DiffBlock({
@@ -1273,10 +1280,26 @@ export function ReasoningText({
   styles: ReturnType<typeof useActivityStyles>;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const tail = useThoughtTail();
   const preview = useMemo(() => previewText(text), [text]);
-  const targetText = showAll ? text : preview.text;
+  // 跟随模式吃全量文本（头部预览截断会让「尾窗」错切到头 20 行的尾巴）；窗口只裁剪渲染。
+  const targetText = showAll || tail.follow ? text : preview.text;
   const revealedText = useRevealedText(targetText, phase);
-  const steps = useMemo(() => splitReasoningSteps(revealedText), [revealedText]);
+  const allSteps = useMemo(() => splitReasoningSteps(revealedText), [revealedText]);
+  // 0.11.0:「思考行实时跟随」：窗口只裁剪渲染，揭示与打字机始终吃全量。步骤模式按步保号，块模式按行；
+  // 用户点开的「展开全部」（showAll）压过窗口。流式时 revealedText 每 tick 变化，窗口随之滑动。
+  const windowed = tail.follow && !showAll
+    ? allSteps.length > 1
+      ? { kind: "steps" as const, steps: allSteps.slice(Math.max(0, allSteps.length - tail.lines)), start: Math.max(0, allSteps.length - tail.lines) }
+      : { kind: "block" as const, block: tailLinesOf(revealedText, tail.lines) }
+    : null;
+  const stepStart = windowed?.kind === "steps" ? windowed.start : 0;
+  const shownSteps = windowed?.kind === "steps" ? windowed.steps : allSteps;
+  const blockText = windowed?.kind === "block" ? windowed.block : revealedText;
+  // 窗口确实裁掉了内容（或用户已展开）才给按钮；OFF 时沿用头部预览的截断判定。
+  const windowTruncated = tail.follow && !showAll && (allSteps.length > 1 ? allSteps.length > tail.lines : revealedText.split("\n").length > tail.lines);
+  console.log("TAILPROBE:", JSON.stringify({ follow: tail.follow, lines: tail.lines, showAll, phase, steps: allSteps.length, windowedKind: windowed?.kind ?? null, start: windowed && "start" in windowed ? windowed.start : null }));
+  const showExpandButton = showAll || windowTruncated || (!tail.follow && preview.truncated);
   const isStreaming = phase === "streaming";
   const scrollRef = useRef<NativeScrollView | null>(null);
   const isNearBottom = useRef(true);
@@ -1299,17 +1322,17 @@ export function ReasoningText({
         showsVerticalScrollIndicator
         style={styles.detailsScroll}
       >
-        {steps.length <= 1 ? (
-          <ReasoningMarkdown text={revealedText} theme={theme} styles={styles} />
+        {shownSteps.length <= 1 ? (
+          <ReasoningMarkdown text={blockText} theme={theme} styles={styles} />
         ) : (
           <View {...cuiViewEscape} style={styles.stepList}>
-            {steps.map((step, index) => (
+            {shownSteps.map((step, index) => (
               <ReasoningStep
-                key={`step-${index}`}
-                index={index}
+                key={`step-${stepStart + index}`}
+                index={stepStart + index}
                 text={step}
-                active={isStreaming && index === steps.length - 1}
-                last={index === steps.length - 1}
+                active={isStreaming && stepStart + index === allSteps.length - 1}
+                last={stepStart + index === allSteps.length - 1}
                 theme={theme}
                 palette={palette}
                 styles={styles}
@@ -1318,7 +1341,7 @@ export function ReasoningText({
           </View>
         )}
       </ScrollView>
-      {preview.truncated ? (
+      {showExpandButton ? (
         <Pressable
           accessibilityRole="button"
           {...aria({ expanded: showAll })}

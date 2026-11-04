@@ -25,7 +25,10 @@ in the Command Center — all three show the same page:
 - Code font: family (web, desktop), size, line spacing.
 - Command colors: when open (default) or always — the shell command in a row's title carries the theme's syntax colors.
 - Wrap diff lines: off by default (long diff lines scroll sideways); on wraps them to the width.
+- Thinking rows: follow the output live (default off) with a 5–500 line window (default 20); the per-row Expand all still shows everything.
 - Expansion for each kind of row: always, newest only, failed only, or collapsed. A fold summary with failures starts expanded.
+
+A preview card at the top of the settings page shows sample rows that follow the strength, palette and wrap settings live.
 
 Settings live on the daemon and apply to every connected device. Agent output, prompts and paths keep their original text.
 

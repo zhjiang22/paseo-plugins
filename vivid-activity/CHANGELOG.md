@@ -2,6 +2,13 @@
 
 ## 0.11.0 (2026-11-02)
 
+- **Thought tail-follow**: a new "Thinking rows" section. With "Follow the output live" on, an expanded thinking
+  row shows the latest lines and follows the output as it streams, instead of freezing on its first 20 lines
+  (up to 4,000 characters);
+  the window holds 5–500 lines (steps in the step view) and defaults to 20. The per-row Expand all still shows
+  everything, and a segment you collapsed yourself stays collapsed.
+- **Live preview**: the settings page opens with a preview card — one mini row header per strength tier dimmed by
+  its own opacity, a real diff sample that mirrors the wrap setting, and the palette's category and status colors.
 - **Expand failed rows**: a new "Expand failed rows" choice in Expansion lets only failed rows start open; a running
   row opens once it fails (thinking rows and task lists treat the choice like collapsed).
 - **Failed folds open themselves**: a fold summary whose steps include failures now starts expanded, so the failed

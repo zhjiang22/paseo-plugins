@@ -11,7 +11,8 @@ import { foldAccessibilityLabel, foldCountParts, foldTitle, formatFoldDuration }
 import type { WireTurnTokens } from "../shared/fold-index";
 import type { FoldItemData } from "../shared/timeline";
 import { looks, type LookKey, type RowStatus } from "../shared/vivid-model";
-import { QUIET, usePalette, useStrength } from "./activity";
+import { usePalette, useStrength } from "./activity";
+import { STRENGTH_OPACITY } from "../shared/settings";
 import { densityMetrics, useDensity, useFoldRow } from "./density";
 import { foldRuntime } from "./fold-runtime";
 import { aria, compactNumber, hue, isDarkTheme, withAlpha, type Hue } from "./kit";
@@ -190,7 +191,7 @@ export function FoldRow({ agentId, item, theme, layout, timestamp }: PluginTimel
   const indent = (layout.compact ? 6 : 8) + metrics.tile + metrics.gap;
 
   return (
-    <View {...pmonoViewEscape} style={[card, quiet ? { opacity: QUIET[strength] } : null]}>
+    <View {...pmonoViewEscape} style={[card, quiet ? { opacity: STRENGTH_OPACITY[strength] } : null]}>
       {pin ? <PinnedPrompt agentId={agentId} pin={pin} theme={theme} mode={palette.mode} metrics={metrics} /> : null}
       <Pressable accessibilityRole="button" accessibilityLabel={label} {...aria({ expanded: data.expanded })} onPress={toggle} onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} style={row}>
         <FoldTile theme={theme} tone={tone} size={metrics.tile} pulse={changes} />

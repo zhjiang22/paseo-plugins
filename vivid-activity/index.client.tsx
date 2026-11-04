@@ -14,7 +14,7 @@ import { FX_CHUNK } from "./shared/generated/fx-chunk-manifest";
 import { PI_CHUNK } from "./shared/generated/pi-chunk-manifest";
 import { UI_CHUNK } from "./shared/generated/ui-chunk-manifest";
 import { ActivityIndicator } from "react-native";
-import { ColorfulReasoning, ColorfulToolCall } from "./client/activity";
+import { ColorfulReasoning, ColorfulToolCall, paletteFor } from "./client/activity";
 import { FoldRow } from "./client/fold-row";
 import { configureFx } from "./client/fx";
 import { LoaderMark } from "./client/vivid";
@@ -86,7 +86,7 @@ export default function contribute(client: PluginClientContext) {
   const details = { DetailBody: surface("detail"), ReasoningText: surface("reasoning") };
   const LazySettings = surface("settings");
   const actions = { onFoldSettings: foldRuntime.setSettings, onTakeover: applyTakeover, LoaderMark };
-  const ActivitySettings = (props: any) => <LazySettings {...props} actions={actions} />;
+  const ActivitySettings = (props: any) => <LazySettings {...props} actions={actions} paletteFor={paletteFor} />;
   const ReasoningRow = (props: any) => <ActivityDetailsContext.Provider value={details}><ColorfulReasoning {...props} /></ActivityDetailsContext.Provider>;
   const ToolRow = (props: any) => <ActivityDetailsContext.Provider value={details}><ColorfulToolCall {...props} /></ActivityDetailsContext.Provider>;
   const removeFonts = installColorfulFonts();
@@ -104,7 +104,7 @@ export default function contribute(client: PluginClientContext) {
     // flex:1），设置面比一屏长时必须自带滚动（照 observatory 分析屏的 ScrollView 模式）。host 设置页
     // 挂的仍是不带滚动的 ActivitySettings，避免双层滚动。
     <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
-      <LazySettings {...props} actions={actions} />
+      <LazySettings {...props} actions={actions} paletteFor={paletteFor} />
     </ScrollView>
   );
   const stopScreen = client.addScreen({ id: "settings", title: () => t("boot.name"), Component: ScreenSettings });

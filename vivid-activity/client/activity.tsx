@@ -11,8 +11,8 @@ import type { z } from "zod";
 import { parsePiSubagentCall, piSubagentOperation } from "../shared/pi-subagents";
 import { compactText, estimateReasoningTokens, expansionTargetForToolCall, formatReasoningMeta, hasMeaningfulToolCallDetail, isAskTool, isTodoTool, MAX_VISIBLE_SUBAGENT_ACTIONS, parseSubAgentActionLog, relativeToRoot, resolveActivityPalette, resolveSubAgentActionPresentation, splitFileDisplay, splitReasoningSteps, stripAnsi, stripLeadingCwdCd, toolCallHasBody, truncateDirFront, type ActivityPalette, type ActivityThemeColors } from "../shared/presentation";
 import { noticeSections } from "../shared/notice";
-import type { ExpansionMode, ExpansionTarget, Strength } from "../shared/settings";
-import { activitySettings, DEFAULT_EXPANSION, DEFAULT_PALETTE_MODE, DEFAULT_STRENGTH } from "../shared/settings";
+import type { ExpansionMode, ExpansionTarget, PaletteMode, Strength } from "../shared/settings";
+import { activitySettings, DEFAULT_EXPANSION, DEFAULT_PALETTE_MODE, DEFAULT_STRENGTH, STRENGTH_OPACITY } from "../shared/settings";
 import { formatDuration } from "../shared/timing";
 import { isLatestTaskUpdate, resolveExpansion, resolveTaskUpdateExpansion, toolCallItemDataSchema, type ReasoningItemData, type TaskUpdateExpansionOverride, type ToolCallItemData, } from "../shared/timeline";
 import { useActivityDetails } from "./activity-lazy";
@@ -134,18 +134,18 @@ function useExpansionMode(target: ExpansionTarget): ExpansionMode {
   return DEFAULT_EXPANSION[target];
 }
 
+/** 0.11.0:预览等非 hook 场景的调色板解析（usePalette 的纯函数内核；经 props 传给 ui chunk 的预览卡）。 */
+export function paletteFor(theme: Theme, mode: PaletteMode): ActivityPalette {
+  return mode === "vivid" ? resolveVividPalette(theme) : resolveActivityPalette(mode === "theme" ? "vivid" : mode, theme.colors as ActivityThemeColors);
+}
+
 export function usePalette(theme: Theme): ActivityPalette {
   const settings = useSettings(activitySettings);
   const mode = settings.status === "ready" ? settings.values.palette : DEFAULT_PALETTE_MODE;
-  return useMemo(
-    () => (mode === "vivid" ? resolveVividPalette(theme) : resolveActivityPalette(mode === "theme" ? "vivid" : mode, theme.colors as ActivityThemeColors)),
-    [mode, theme],
-  );
+  return useMemo(() => paletteFor(theme, mode), [mode, theme]);
 }
 
-/** 「淡出强度」的档位 → 行的不透明度（0.11.0）。 */
-export const QUIET: Record<Strength, number> = { dim: 0.3, faded: 0.45, soft: 0.65, full: 1 };
-
+/** 「淡出强度」的档位 → 不透明度改由 shared/settings 的 STRENGTH_OPACITY 提供（preview/fold-row 共用）。 */
 export function useStrength(): Strength {
   const settings = useSettings(activitySettings);
   return settings.status === "ready" ? settings.values.strength : DEFAULT_STRENGTH;
@@ -1157,7 +1157,7 @@ export function ColorfulReasoning({
     setUserExpanded(!expanded);
   }, [expanded]);
   return (
-    <View ref={rootRef} {...pmonoViewEscape} style={[styles.card, isLiveTail ? styles.cardTail : null, quiet ? { opacity: QUIET[strength] } : null]}>
+    <View ref={rootRef} {...pmonoViewEscape} style={[styles.card, isLiveTail ? styles.cardTail : null, quiet ? { opacity: STRENGTH_OPACITY[strength] } : null]}>
       {pin ? <PinnedPrompt agentId={agentId} pin={pin} theme={theme} mode={palette.mode} metrics={metrics} /> : null}
       <ActivityHeader
         icon="Sparkles"
@@ -1299,7 +1299,7 @@ export function ColorfulToolCall({
       <CommandTokens text={headerSummary} theme={theme} />
     ) : null;
   return (
-    <View ref={rootRef} {...pmonoViewEscape} style={[styles.card, isLiveTail ? styles.cardTail : null, quiet ? { opacity: QUIET[strength] } : null]}>
+    <View ref={rootRef} {...pmonoViewEscape} style={[styles.card, isLiveTail ? styles.cardTail : null, quiet ? { opacity: STRENGTH_OPACITY[strength] } : null]}>
       {pin ? <PinnedPrompt agentId={agentId} pin={pin} theme={theme} mode={palette.mode} metrics={metrics} /> : null}
       <ActivityHeader
         icon={item.data.presentation.icon}

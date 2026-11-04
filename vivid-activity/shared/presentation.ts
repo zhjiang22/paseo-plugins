@@ -1578,6 +1578,16 @@ export function previewText(
   };
 }
 
+/**
+ * 0.11.0:「思考行实时跟随」的尾窗：取文本的最后 n 行（不足 n 行返回原文）。与 previewText（头部预览）相对；
+ * 消费方 client/activity-details.tsx ReasoningText。渲染量恒定 ≤ n 行。
+ */
+export function tailLinesOf(text: string, n: number): string {
+  const lines = text.split("\n");
+  if (lines.length <= n) return text;
+  return lines.slice(-n).join("\n");
+}
+
 /*
  * 0.5.0：终端输出里的 ANSI 转义序列。命令输出、日志、终端截取常带颜色、光标移动、窗口标题和超链接（OSC 8），
  * 原样显示就是 `[0m`、`[2K`、`]8;;https://…` 这类乱码，手机上尤其难看。思路借鉴 Tidy Timeline（github.com/jegork/paseo-tidy-timeline，

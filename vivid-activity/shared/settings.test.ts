@@ -91,4 +91,15 @@ describe("activity settings", () => {
     expect(activitySettings.schema.parse({ commandColors: "always" }).commandColors).toBe("always");
     expect(activitySettings.schema.safeParse({ commandColors: "never" }).success).toBe(false);
   });
+
+  it("keeps the thought tail window off at 20 lines by default, clamped to 5–500", () => {
+    const parsed = activitySettings.schema.parse({});
+    expect(parsed.thoughtTailFollow).toBe(false);
+    expect(parsed.thoughtTailLines).toBe(20);
+    expect(activitySettings.schema.parse({ thoughtTailFollow: true, thoughtTailLines: 5 }).thoughtTailLines).toBe(5);
+    expect(activitySettings.schema.parse({ thoughtTailLines: 500 }).thoughtTailLines).toBe(500);
+    expect(activitySettings.schema.safeParse({ thoughtTailLines: 4 }).success).toBe(false);
+    expect(activitySettings.schema.safeParse({ thoughtTailLines: 501 }).success).toBe(false);
+    expect(activitySettings.schema.safeParse({ thoughtTailLines: 20.5 }).success).toBe(false);
+  });
 });

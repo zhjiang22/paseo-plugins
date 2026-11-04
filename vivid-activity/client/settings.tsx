@@ -1,5 +1,6 @@
 import { LanguageSettings } from "./language-settings";
 import { t } from "../shared/text";
+import { PreviewCard } from "./preview-card";
 import { useMemo, useState, type ComponentType } from "react";
 import { Text } from "react-native";
 import {
@@ -30,6 +31,8 @@ import {
 } from "../shared/settings";
 import type { Density, ExpansionMode, ExpansionTarget, LoaderKind, Strength, TakeoverScope } from "../shared/settings";
 import { LOADER_KINDS } from "../shared/settings";
+import type { ActivityPalette } from "../shared/presentation";
+import type { PaletteMode } from "../shared/settings";
 import { toneColor } from "./kit";
 import { cmonoTextEscape } from "./web";
 import { LoaderPreview, loaderLabels } from "./loader-preview";
@@ -418,6 +421,51 @@ function DiffControls({ settings }: { settings: ReadySettings }) {
   );
 }
 
+/** 0.11.0：思考行实时跟随（thoughtTailFollow 开关 + thoughtTailLines 尾窗大小；client/activity-details.tsx 消费）。 */
+function ThoughtControls({ settings }: { settings: ReadySettings }) {
+  const saved = settings.values.thoughtTailLines;
+  const [draft, setDraft] = useState(String(saved));
+  const [shown, setShown] = useState(String(saved));
+  // 外部保存（本端或其他设备）后，草稿跟随存储值重置。
+  if (shown !== String(saved)) {
+    setShown(String(saved));
+    setDraft(String(saved));
+  }
+  const parsed = /^\d+$/.test(draft.trim()) ? Number.parseInt(draft.trim(), 10) : null;
+  const valid = parsed !== null && parsed >= 5 && parsed <= 500;
+  const changeFollow = (value: boolean) => {
+    if (value === settings.values.thoughtTailFollow) return;
+    void settings.save({ ...settings.values, thoughtTailFollow: value }, settings.revision);
+  };
+  const applyLines = () => {
+    if (!valid || parsed === saved) return;
+    void settings.save({ ...settings.values, thoughtTailLines: parsed }, settings.revision);
+  };
+  const error = valid || !draft.trim() ? null : t("settings.tailLinesInvalid");
+  return (
+    <SettingsSection title={t("settings.thoughtRows")}>
+      <SettingsCard>
+        <SettingsSwitch label={t("settings.tailFollow")} hint={t("settings.tailFollowHint")} value={settings.values.thoughtTailFollow} disabled={settings.saving} onValueChange={changeFollow} />
+        <SettingsInput
+          key={String(saved)}
+          label={t("settings.tailLines")}
+          hint={t("settings.tailLinesHint")}
+          error={error}
+          initialValue={String(saved)}
+          disabled={settings.saving || !settings.values.thoughtTailFollow}
+          onChangeText={setDraft}
+        />
+        <SettingsAction
+          label={t("settings.applyTailLines")}
+          actionLabel={t("settings.apply")}
+          disabled={settings.saving || !settings.values.thoughtTailFollow || !valid || parsed === saved}
+          onPress={applyLines}
+        />
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
 function DisplaySettings({ theme, actions }: PluginSurfaceProps & { actions: SettingsActions }) {
   const settings = useSettings(activitySettings);
   const textStyle = useMemo(() => ({ color: theme.colors.foreground }), [theme.colors.foreground]);
@@ -443,6 +491,7 @@ function DisplaySettings({ theme, actions }: PluginSurfaceProps & { actions: Set
     <>
       <TakeoverControls settings={settings} actions={actions} />
       <FoldControls settings={settings} actions={actions} />
+      <ThoughtControls settings={settings} />
       <PaletteControls settings={settings} theme={theme} actions={actions} />
       <FontControls settings={settings} theme={theme} />
       <DiffControls settings={settings} />
@@ -452,6 +501,18 @@ function DisplaySettings({ theme, actions }: PluginSurfaceProps & { actions: Set
 }
 
 
-export function ActivitySettings(props: PluginSurfaceProps & { actions: SettingsActions }) {
-  return <><LanguageSettings /><DisplaySettings {...props} /></>;
+export function ActivitySettings(props: PluginSurfaceProps & { actions: SettingsActions; paletteFor: (theme: PluginSurfaceProps["theme"], mode: PaletteMode) => ActivityPalette }) {
+  return <><LanguageSettings /><PreviewSection theme={props.theme} paletteFor={props.paletteFor} /><DisplaySettings {...props} /></>;
+}
+
+/** 0.11.0：设置顶部的实时预览卡（client/preview-card.tsx）。 */
+function PreviewSection({ theme, paletteFor }: { theme: PluginSurfaceProps["theme"]; paletteFor: (theme: PluginSurfaceProps["theme"], mode: PaletteMode) => ActivityPalette }) {
+  if (!theme) return null;
+  return (
+    <SettingsSection title={t("settings.preview")}>
+      <SettingsCard>
+        <PreviewCard theme={theme} paletteFor={paletteFor} />
+      </SettingsCard>
+    </SettingsSection>
+  );
 }

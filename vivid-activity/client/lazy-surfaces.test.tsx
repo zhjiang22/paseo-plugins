@@ -5,12 +5,18 @@ import { activitySettings } from "../shared/settings";
 const host = vi.hoisted(() => ({ settings: {} as any }));
 vi.mock("@getpaseo/plugin/client", () => ({ useSettings: () => host.settings }));
 vi.mock("@getpaseo/plugin/client/ui", () => ({ SettingsAction: "SettingsAction", SettingsCard: "SettingsCard", SettingsInput: "SettingsInput", SettingsRow: "SettingsRow", SettingsSection: "SettingsSection", SettingsSelect: "SettingsSelect", SettingsSwitch: "SettingsSwitch" }));
-vi.mock("react-native", () => ({ Text: "Text" }));
+vi.mock("react-native", () => ({
+  Text: "Text",
+  // 0.11.0: the preview card renders a real DiffBlock, whose module graph reaches use-foreground (AppState).
+  AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) },
+}));
 vi.mock("./language-settings", () => ({ LanguageSettings: () => null }));
 vi.mock("./i18n-client", () => ({ useI18n: () => undefined }));
 vi.mock("./kit", () => ({ toneColor: () => "#ffffff" }));
 // 0.8.0: the running animations preview draws live loaders (fx code); the settings logic is what this test covers.
 vi.mock("./loader-preview", () => ({ LoaderPreview: () => null, loaderLabels: { spinner: "转圈", sparkle: "星芒", orb: "光球", snake: "点阵 · 蛇形", matrix: "点阵 · 闪烁" } }));
+// 0.11.0: same for the preview card (its render is covered in native-rows.test with the fuller react-native stand-ins).
+vi.mock("./preview-card", () => ({ PreviewCard: () => null }));
 vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(), useMemo: (compute: () => unknown) => compute(), useState: (value: unknown) => [value, () => undefined] }));
 vi.mock("./typography", async (original) => ({ ...await original<typeof import("./typography")>(), useTypography: () => ({ scale: 1, line: 1 }) }));
 
@@ -70,7 +76,7 @@ describe("lazy activity surfaces", () => {
     expect(host.settings.save).toHaveBeenCalledWith(expect.objectContaining({ textSize: "large", monoFont: '"JetBrains Mono"' }), "revision-1");
     host.settings.values = { ...host.settings.values, monoFont: "Mono; } body {" };
     rendered = renderSettings();
-    expect(rendered.find((entry) => "initialValue" in entry.props)!.props.error).toBe("只能填字体名（字母、数字、空格和 . _ + -），用逗号分隔，最多 200 个字符。");
+    expect(rendered.find((entry) => entry.props.label === "字体" && "initialValue" in entry.props)!.props.error).toBe("只能填字体名（字母、数字、空格和 . _ + -），用逗号分隔，最多 200 个字符。");
     expect(apply().props.disabled).toBe(true);
   });
 

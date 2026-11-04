@@ -4,7 +4,8 @@
   },
   "boot": {
     "name": "彩色活动行",
-    "piNotice": "Pi 通知"
+    "piNotice": "Pi 通知",
+    "openSettings": "打开彩色活动行设置"
   },
   "modelLook": {
     "think": "思考",
@@ -718,9 +719,14 @@
     "takeoverScope": "接管范围",
     "pinThisTurnSPrompt": "钉住本轮提问",
     "rowDensity": "行密度",
+    "strength": "淡出强度",
+    "strengthDim": "30%：只剩淡淡的轮廓；悬停、聚焦或展开即可看清。",
+    "strengthFaded": "45%：明显变淡，仍可辨认。",
+    "strengthSoft": "65%：轻微变淡。",
+    "strengthFull": "不淡化，所有行保持原样。",
     "foldConsecutiveThinkingAndTool": "完成后折叠连续的思考与工具行",
     "foldingSpacingAndPrompts": "折叠、行距与提问",
-    "takeoverIsOffFoldingAnd": "接管已关闭，折叠和行密度在重新打开接管后生效。",
+    "takeoverIsOffFoldingAnd": "接管已关闭，折叠、行密度和淡出强度在重新打开接管后生效。",
     "onlyThinkingRowsAreTaken": "现在只接管思考行：只有相邻的思考行会折叠；工具行由 Paseo 显示，可用「设置 → 聊天 → 工具调用显示 → 摘要」合并。",
     "theSameRowHeightAnd": "行高和行距与之前的版本相同，行与行之间留 10px。",
     "shorterRowsWith4Px": "行更矮，行与行之间只留 4px（抵掉 Paseo 给每条插件行加的 16px 间距）；同样一屏，手机多放约两成、桌面多放约四成。",

@@ -23,10 +23,11 @@ import {
   expansionModeSchema,
   loaderSchema,
   paletteModeSchema,
+  strengthSchema,
   takeoverScopeSchema,
   visibleExpansionTargets,
 } from "../shared/settings";
-import type { Density, ExpansionMode, ExpansionTarget, LoaderKind, TakeoverScope } from "../shared/settings";
+import type { Density, ExpansionMode, ExpansionTarget, LoaderKind, Strength, TakeoverScope } from "../shared/settings";
 import { LOADER_KINDS } from "../shared/settings";
 import { toneColor } from "./kit";
 import { cmonoTextEscape } from "./web";
@@ -133,6 +134,21 @@ const densityDescriptions: Record<Density, string> = {
   get standard() { return t("settings.theSameRowHeightAnd"); },
 };
 
+/** 档位标签用百分比，各语言通用；说明走文案。 */
+const strengthOptions = [
+  { value: "dim", label: "30%" },
+  { value: "faded", label: "45%" },
+  { value: "soft", label: "65%" },
+  { value: "full", label: "100%" },
+];
+
+const strengthDescriptions: Record<Strength, string> = {
+  get dim() { return t("settings.strengthDim"); },
+  get faded() { return t("settings.strengthFaded"); },
+  get soft() { return t("settings.strengthSoft"); },
+  get full() { return t("settings.strengthFull"); },
+};
+
 
 
 function foldScopeNote(scope: TakeoverScope): string | null {
@@ -155,6 +171,12 @@ function FoldControls({ settings, actions }: { settings: ReadySettings; actions:
     const parsed = densitySchema.safeParse(value);
     if (!parsed.success || parsed.data === density) return;
     void settings.save({ ...settings.values, density: parsed.data }, settings.revision);
+  };
+  const strength = settings.values.strength;
+  const changeStrength = (value: string) => {
+    const parsed = strengthSchema.safeParse(value);
+    if (!parsed.success || parsed.data === strength) return;
+    void settings.save({ ...settings.values, strength: parsed.data }, settings.revision);
   };
   const pinPrompt = settings.values.pinPrompt;
   const changePin = (value: boolean) => {
@@ -179,6 +201,17 @@ function FoldControls({ settings, actions }: { settings: ReadySettings; actions:
           disabled={settings.saving}
           onValueChange={changeDensity}
         />
+        {/* 接管关闭时插件不画任何行，淡出强度无从谈起，因此不列出（折叠与行密度仍显示，恢复接管后生效）。 */}
+        {settings.values.takeover !== "off" ? (
+          <SettingsSelect
+            label={t("settings.strength")}
+            hint={strengthDescriptions[strength]}
+            value={strength}
+            options={strengthOptions}
+            disabled={settings.saving}
+            onValueChange={changeStrength}
+          />
+        ) : null}
         <SettingsSwitch
           label={t("settings.pinThisTurnSPrompt")}
           hint={t("settings.pinHint")}

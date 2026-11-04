@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.11.0 (2026-11-02)
+
+- **Strength**: a new setting under Folding, spacing, and prompts lets finished thinking and tool rows sit at
+  65%, 45% or 30% opacity until you hover, focus or expand them; full strength (no fading) stays the default.
+  Finished fold summaries fade too: expanding or hovering one restores it, and a running segment's header
+  (「N earlier steps」) stays full. Running, waiting and asking rows keep their full color, the newest row of a
+  run stays bright, and rows without expandable content stay at full strength, since hovering them restores
+  nothing. Hidden from the settings page while takeover is off.
+- **Settings from the sidebar**: the settings page now also opens from a Vivid Activity row in the app's sidebar
+  and from "Open Vivid Activity settings" in the Command Center, next to the existing Settings → Plugins page;
+  all three show the same settings. Screen and sidebar titles follow the chosen language without reloading.
+- Maintainers: the client-chunk build script ships with the package now — `npm run build:chunks` rebuilds the
+  served chunks after any client-side change, and `npm run check` rejects stale artifacts.
+
 ## 0.10.0 (2026-10-28)
 
 - **A sub-agent that waits for you or failed says so**: the live activity card of a sub-agent shows "Waiting for you" or "Asking you" in amber (with a breathing dot) and a line saying to open its chat; a sub-agent that stopped with an error shows the first line of the error in red (at most 150 characters, common token shapes masked first: `sk-`, `ghp_` and friends, `glpat-`, `xox?-`, JWTs, and values after `Bearer`, `token=`, `api_key=`). Read from the pending requests and error Paseo already reports, with no extra session reads; older servers send neither and the card is unchanged.

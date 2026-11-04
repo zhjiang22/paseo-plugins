@@ -11,8 +11,8 @@ import type { z } from "zod";
 import { parsePiSubagentCall, piSubagentOperation } from "../shared/pi-subagents";
 import { compactText, estimateReasoningTokens, expansionTargetForToolCall, formatReasoningMeta, hasMeaningfulToolCallDetail, isAskTool, isTodoTool, MAX_VISIBLE_SUBAGENT_ACTIONS, parseSubAgentActionLog, relativeToRoot, resolveActivityPalette, resolveSubAgentActionPresentation, splitFileDisplay, splitReasoningSteps, stripAnsi, stripLeadingCwdCd, toolCallHasBody, truncateDirFront, type ActivityPalette, type ActivityThemeColors } from "../shared/presentation";
 import { noticeSections } from "../shared/notice";
-import type { ExpansionMode, ExpansionTarget } from "../shared/settings";
-import { activitySettings, DEFAULT_EXPANSION, DEFAULT_PALETTE_MODE } from "../shared/settings";
+import type { ExpansionMode, ExpansionTarget, Strength } from "../shared/settings";
+import { activitySettings, DEFAULT_EXPANSION, DEFAULT_PALETTE_MODE, DEFAULT_STRENGTH } from "../shared/settings";
 import { formatDuration } from "../shared/timing";
 import { isLatestTaskUpdate, resolveExpansion, resolveTaskUpdateExpansion, toolCallItemDataSchema, type ReasoningItemData, type TaskUpdateExpansionOverride, type ToolCallItemData, } from "../shared/timeline";
 import { useActivityDetails } from "./activity-lazy";
@@ -140,6 +140,14 @@ export function usePalette(theme: Theme): ActivityPalette {
     () => (mode === "vivid" ? resolveVividPalette(theme) : resolveActivityPalette(mode === "theme" ? "vivid" : mode, theme.colors as ActivityThemeColors)),
     [mode, theme],
   );
+}
+
+/** 「淡出强度」的档位 → 行的不透明度（0.11.0）。 */
+export const QUIET: Record<Strength, number> = { dim: 0.3, faded: 0.45, soft: 0.65, full: 1 };
+
+export function useStrength(): Strength {
+  const settings = useSettings(activitySettings);
+  return settings.status === "ready" ? settings.values.strength : DEFAULT_STRENGTH;
 }
 
 export function useActivityStyles(theme: Theme, palette: ActivityPalette, metrics: DensityMetrics) {
@@ -973,6 +981,7 @@ function ActivityHeader({
   stats,
   expanded,
   onPress,
+  onHover,
   expandable = true,
   styles,
   vivid,
@@ -988,6 +997,7 @@ function ActivityHeader({
   stats?: ToolCallData["presentation"]["diffStats"];
   expanded: boolean;
   onPress: () => void;
+  onHover?: (hovering: boolean) => void;
   expandable?: boolean;
   styles: ReturnType<typeof useActivityStyles>;
 }) {
@@ -1020,6 +1030,10 @@ function ActivityHeader({
             {...aria({ expanded: open })}
             disabled={disabled}
             onPress={press}
+            onHoverIn={() => onHover?.(true)}
+            onHoverOut={() => onHover?.(false)}
+            onFocus={() => onHover?.(true)}
+            onBlur={() => onHover?.(false)}
             style={[styles.headerButton, style]}
           >
             {children}
@@ -1077,6 +1091,10 @@ function ActivityHeader({
       accessibilityRole="button"
       {...aria({ expanded })}
       onPress={onPress}
+      onHoverIn={() => onHover?.(true)}
+      onHoverOut={() => onHover?.(false)}
+      onFocus={() => onHover?.(true)}
+      onBlur={() => onHover?.(false)}
       style={styles.headerButton}
     >
       {content}
@@ -1111,6 +1129,10 @@ export function ColorfulReasoning({
   const pin = usePromptPin(agentId, { key: isStreaming ? undefined : item.data.fold });
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
   const expanded = resolveExpansion(useExpansionMode("thinking"), isLatest, userExpanded);
+  const [hovered, setHovered] = useState(false);
+  const strength = useStrength();
+  // 「淡出强度」：已完成的思考行退后；流式、展开、悬停/聚焦与本轮末行保持原样。
+  const quiet = strength !== "full" && !isStreaming && !expanded && !isLiveTail && !hovered;
   const meta = useMemo(
     () =>
       formatReasoningMeta(
@@ -1123,7 +1145,7 @@ export function ColorfulReasoning({
     setUserExpanded(!expanded);
   }, [expanded]);
   return (
-    <View ref={rootRef} {...pmonoViewEscape} style={[styles.card, isLiveTail ? styles.cardTail : null]}>
+    <View ref={rootRef} {...pmonoViewEscape} style={[styles.card, isLiveTail ? styles.cardTail : null, quiet ? { opacity: QUIET[strength] } : null]}>
       {pin ? <PinnedPrompt agentId={agentId} pin={pin} theme={theme} mode={palette.mode} metrics={metrics} /> : null}
       <ActivityHeader
         icon="Sparkles"
@@ -1132,6 +1154,7 @@ export function ColorfulReasoning({
         summary={palette.mode === "vivid" ? undefined : meta}
         expanded={expanded}
         onPress={toggle}
+        onHover={setHovered}
         styles={styles}
         vivid={palette.mode === "vivid" ? { theme, compact: layout.compact, look: "think", meta, live: isStreaming, metrics } : undefined}
       />
@@ -1201,6 +1224,11 @@ export function ColorfulToolCall({
   const hasBody = Boolean(item.data.notice || item.data.pi) || toolCallHasBody(item.data.name, detail, item.data.presentation.summary);
   const expandable = hasBody || Boolean(item.data.errorText);
   const expanded = expandable ? baseExpanded : false;
+  const [hovered, setHovered] = useState(false);
+  const strength = useStrength();
+  // 「淡出强度」：已完成的工具行退后（失败行同样淡出、保留红色状态）；运行中、等待批准、提问、展开、悬停/聚焦与本轮末行保持原样。
+  // 没有正文的行（expandable=false）不淡：disabled Pressable 上 hover/focus 不触发，淡了就没有恢复全强度的途径。
+  const quiet = strength !== "full" && expandable && !isRunning && !expanded && !isLiveTail && !hovered;
   const toggle = useCallback(() => {
     if (isTaskUpdate) {
       setTaskUpdateOverride({ expanded: !expanded, latestTimestamp: latestTaskUpdateTimestamp });
@@ -1249,7 +1277,7 @@ export function ColorfulToolCall({
       : rowStatus === "failed" ? failureText(detail, item.data.errorText) : undefined;
   const vivid = palette.mode === "vivid";
   return (
-    <View ref={rootRef} {...pmonoViewEscape} style={[styles.card, isLiveTail ? styles.cardTail : null]}>
+    <View ref={rootRef} {...pmonoViewEscape} style={[styles.card, isLiveTail ? styles.cardTail : null, quiet ? { opacity: QUIET[strength] } : null]}>
       {pin ? <PinnedPrompt agentId={agentId} pin={pin} theme={theme} mode={palette.mode} metrics={metrics} /> : null}
       <ActivityHeader
         icon={item.data.presentation.icon}
@@ -1263,6 +1291,7 @@ export function ColorfulToolCall({
         stats={item.data.presentation.diffStats}
         expanded={expanded}
         onPress={toggle}
+        onHover={setHovered}
         expandable={expandable}
         styles={styles}
         vivid={vivid ? { theme, compact: layout.compact, look, status: headerStatus, statusText, icon: notice || pi ? item.data.presentation.icon : item.data.presentation.fileIcon, metrics, timing: notice ? noticeTime : durationText } : undefined}

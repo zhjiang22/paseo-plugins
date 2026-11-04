@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activitySettings, DEFAULT_EXPANSION, EXPANSION_TARGETS, foldFromValues, visibleExpansionTargets } from "./settings";
+import { activitySettings, DEFAULT_EXPANSION, DEFAULT_STRENGTH, EXPANSION_TARGETS, foldFromValues, visibleExpansionTargets } from "./settings";
 
 describe("activity settings", () => {
   it("stays on version 1 so stored settings need no migration", () => {
@@ -69,5 +69,13 @@ describe("activity settings", () => {
     expect(foldFromValues({})).toEqual({ enabled: true, scope: "all" });
     expect(foldFromValues({ fold: false, takeover: "reasoning" })).toEqual({ enabled: false, scope: "reasoning" });
     expect(foldFromValues({ fold: "yes" })).toBeNull();
+  });
+
+  it("keeps finished rows at full strength by default, also for settings stored before 0.11.0", () => {
+    expect(DEFAULT_STRENGTH).toBe("full");
+    expect(activitySettings.schema.parse({}).strength).toBe("full");
+    expect(activitySettings.schema.parse({ fold: false }).strength).toBe("full");
+    expect(activitySettings.schema.parse({ strength: "soft" }).strength).toBe("soft");
+    expect(activitySettings.schema.safeParse({ strength: "half" }).success).toBe(false);
   });
 });

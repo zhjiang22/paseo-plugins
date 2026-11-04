@@ -4,7 +4,8 @@
   },
   "boot": {
     "name": "Vivid Activity",
-    "piNotice": "Pi notices"
+    "piNotice": "Pi notices",
+    "openSettings": "Open Vivid Activity settings"
   },
   "modelLook": {
     "think": "Thinking",
@@ -793,9 +794,14 @@
     "takeoverScope": "Takeover scope",
     "pinThisTurnSPrompt": "Pin this turn's prompt",
     "rowDensity": "Row density",
+    "strength": "Strength",
+    "strengthDim": "30% — a faint outline; hover, focus or expand a row to read it.",
+    "strengthFaded": "45% — clearly faded but readable.",
+    "strengthSoft": "65% — slightly faded.",
+    "strengthFull": "No fading. Every row stays at full strength.",
     "foldConsecutiveThinkingAndTool": "Fold consecutive thinking and tool rows when finished",
     "foldingSpacingAndPrompts": "Folding, spacing, and prompts",
-    "takeoverIsOffFoldingAnd": "Takeover is off. Folding and row density apply when takeover is turned on again.",
+    "takeoverIsOffFoldingAnd": "Takeover is off. Folding, row density and strength apply when takeover is turned on again.",
     "onlyThinkingRowsAreTaken": "Only thinking rows are taken over: adjacent thinking rows can fold. Paseo displays tool rows, which can be grouped using \"Settings → Chat → Tool call display → Summary\".",
     "theSameRowHeightAnd": "The same row height and spacing as previous versions, with 10 px gaps.",
     "shorterRowsWith4Px": "Shorter rows with 4 px gaps, offsetting Paseo's 16 px spacing for plugin rows. About 20% more fits on a phone and 40% more on a desktop.",

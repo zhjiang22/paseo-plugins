@@ -98,13 +98,15 @@ beforeAll(async () => {
     `export { PinnedPromptView } from ${JSON.stringify(path.join(here, "prompt-pin.tsx"))};`,
     // 0.6.0-local.5 (codex-vivid-merge-F2): a whole tool row, and the Pi notice data it draws.
     `export { ColorfulToolCall, PiReaderRetry } from ${JSON.stringify(path.join(here, "activity.tsx"))};`,
+    `export { ColorfulReasoning } from ${JSON.stringify(path.join(here, "activity.tsx"))};`,
     `export { retryPiNotices } from ${JSON.stringify(path.join(here, "transform.ts"))};`,
-    `export { createToolCallData, setPiNoticePhase, setPiNoticeReader } from ${JSON.stringify(path.join(here, "../shared/timeline.ts"))};`,
+    `export { createToolCallData, setPiNoticePhase, setPiNoticeReader, createReasoningData } from ${JSON.stringify(path.join(here, "../shared/timeline.ts"))};`,
     `export { readPiNotice } from ${JSON.stringify(path.join(here, "../shared/pi-notice.ts"))};`,
     // 0.8.0: running animations, the change list of an expanded summary, and the summary's diffstat and turn tokens.
     `export { LoaderFrame } from ${JSON.stringify(path.join(here, "loaders.tsx"))};`,
     `export { FoldChanges } from ${JSON.stringify(path.join(here, "fold-changes.tsx"))};`,
     `export { ChangeStat, TurnTokens } from ${JSON.stringify(path.join(here, "fold-row.tsx"))};`,
+    `export { FoldRow } from ${JSON.stringify(path.join(here, "fold-row.tsx"))};`,
     `export { stillCells } from ${JSON.stringify(path.join(here, "../shared/loaders.ts"))};`,
     `export { fileId } from ${JSON.stringify(path.join(here, "../shared/changes.ts"))};`,
   ].join("\n"));
@@ -407,5 +409,61 @@ describe("0.8.0: running animations, the change summary and the turn's tokens", 
     expect(text).toContain("$ npm test -- --run");
     expect(text).toContain("退出码 1");
     expect(text).not.toContain("退出码 2");
+  });
+});
+
+describe("0.11.0: 淡出强度 (strength)", () => {
+  // 非 vivid 调色板读 host 主题的状态色（与上面的 Pi 用例同一个完整主题）。
+  const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
+  const ready = (strength: string) => ({ status: "ready", values: { expansion: {}, density: "compact", strength }, revision: 1 });
+  const withSettings = (settings: unknown, draw: () => Host[]) => {
+    (globalThis as { __vividSettings?: unknown }).__vividSettings = settings;
+    try {
+      return draw();
+    } finally {
+      (globalThis as { __vividSettings?: unknown }).__vividSettings = undefined;
+    }
+  };
+  const cardStyle = (nodes: Host[]) => {
+    const card = nodes[0] as HostNode; // render() 的首节点是卡片外层 View
+    return flatten(card.props.style);
+  };
+  const tool = (status: string, settings: unknown) =>
+    withSettings(settings, () => render({ type: ui.ColorfulToolCall, props: { agentId: "a-strength", item: { kind: "colorful-tool-call", data: ui.createToolCallData({ type: "tool_call", callId: "t1", name: "Bash", status, error: null, detail: { type: "shell", command: "npm test" } }) }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } }));
+  const think = (phase: "streaming" | "complete", settings: unknown) =>
+    withSettings(settings, () => render({ type: ui.ColorfulReasoning, props: { agentId: "a-strength", item: { kind: "colorful-reasoning", data: ui.createReasoningData({ type: "reasoning", text: "two steps" }, phase) }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } }));
+
+  it("fades a finished row at the chosen strength, failures included", () => {
+    expect(cardStyle(tool("completed", ready("faded"))).opacity).toBe(0.45);
+    expect(cardStyle(tool("completed", ready("dim"))).opacity).toBe(0.3);
+    expect(cardStyle(tool("completed", ready("soft"))).opacity).toBe(0.65);
+    expect(cardStyle(tool("failed", ready("dim"))).opacity).toBe(0.3);
+    expect(cardStyle(think("complete", ready("faded"))).opacity).toBe(0.45);
+  });
+
+  it("keeps running and streaming rows at full strength", () => {
+    expect(cardStyle(tool("running", ready("dim"))).opacity).toBeUndefined();
+    expect(cardStyle(think("streaming", ready("dim"))).opacity).toBeUndefined();
+  });
+
+  it("stays at full strength on 「全强度」, when settings are unread, and keeps expandable-only fading consistent", () => {
+    expect(cardStyle(tool("completed", ready("full"))).opacity).toBeUndefined();
+    // Settings still loading: the default is full, nothing fades.
+    expect(cardStyle(tool("completed", undefined)).opacity).toBeUndefined();
+  });
+
+  it("never fades a row without expandable content: its hover and focus cannot restore it (disabled Pressable swallows them)", () => {
+    const bare = withSettings(ready("dim"), () => render({ type: ui.ColorfulToolCall, props: { agentId: "a-strength", item: { kind: "colorful-tool-call", data: ui.createToolCallData({ type: "tool_call", callId: "t1", name: "PaseoStatus", status: "completed", error: null, detail: { type: "unknown", output: "" } }) }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } }));
+    expect(cardStyle(bare).opacity).toBeUndefined();
+  });
+
+  it("fades a finished fold summary too; the expanded one and a running segment header stay full", () => {
+    const foldRow = (over: Record<string, unknown>, settings: unknown) =>
+      withSettings(settings, () => render({ type: ui.FoldRow, props: { agentId: "a-strength", item: { kind: "colorful-fold", data: { segment: "s1", mode: "done", expanded: false, steps: 4, hidden: 0, counts: [["shell", 2], ["think", 2]], failed: 0, canceled: 0, durationMs: 38000, ...over } }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } }));
+    expect(cardStyle(foldRow({}, ready("dim"))).opacity).toBe(0.3);
+    expect(cardStyle(foldRow({ expanded: true }, ready("dim"))).opacity).toBeUndefined();
+    // 运行中的段头（「前面 N 步」）代表还在进行的活动：不淡。
+    expect(cardStyle(foldRow({ mode: "earlier", durationMs: null }, ready("dim"))).opacity).toBeUndefined();
+    expect(cardStyle(foldRow({}, ready("full"))).opacity).toBeUndefined();
   });
 });

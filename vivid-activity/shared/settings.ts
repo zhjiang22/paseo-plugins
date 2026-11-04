@@ -66,6 +66,17 @@ export const densitySchema = z.enum(["compact", "standard"]);
 export type Density = z.output<typeof densitySchema>;
 export const DEFAULT_DENSITY: Density = "compact";
 export const DEFAULT_FOLD = true;
+
+/**
+ * 0.11.0: 「淡出强度」, how far a finished row steps back until you hover, focus or expand it. Running, waiting,
+ * asking and live-tail rows always sit at full strength, as do rows with nothing to expand. Finished fold
+ * summaries fade too; expanding or hovering one restores it, and a running segment's header stays full
+ * (shared: client/activity.tsx, client/fold-row.tsx).
+ */
+export const STRENGTH_KINDS = ["dim", "faded", "soft", "full"] as const;
+export type Strength = (typeof STRENGTH_KINDS)[number];
+export const DEFAULT_STRENGTH: Strength = "full";
+export const strengthSchema = z.enum(STRENGTH_KINDS);
 /** 0.6.0: 「钉住本轮提问」 (shared/prompt-pin.ts). */
 export const DEFAULT_PIN_PROMPT = true;
 
@@ -89,6 +100,8 @@ export const activitySettings = defineSettings({
     // 本地补丁：「完成后折叠连续的思考与工具行」。旧设置没有这两项，读出来取默认值，所以版本号不变。
     fold: z.boolean().default(DEFAULT_FOLD),
     density: densitySchema.default(DEFAULT_DENSITY),
+    // 0.11.0：同上，旧设置读出来取默认值。
+    strength: strengthSchema.default(DEFAULT_STRENGTH),
     // 0.6.0：同上，旧设置没有这一项，读出来取默认值。
     pinPrompt: z.boolean().default(DEFAULT_PIN_PROMPT),
     // 0.8.0：同上。

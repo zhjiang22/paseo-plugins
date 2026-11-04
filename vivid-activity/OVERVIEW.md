@@ -10,12 +10,15 @@ Expanding a row shows highlighted commands with output and exit code, file reads
 
 ## Settings
 
-No setup is needed. Requires Paseo 0.11.1 or later. Open the Vivid Activity settings page:
+No setup is needed. Requires Paseo 0.11.1 or later. Open the Vivid Activity settings page from Paseo's
+Settings → Plugins, from the Vivid Activity row in the app's sidebar, or from "Open Vivid Activity settings"
+in the Command Center — all three show the same page:
 
 - Language: the device language by default, English, Simplified Chinese, or your own translation in `~/.paseo/plugin-data/vivid-activity/locales/`.
 - Takeover: all rows (default), thinking rows only, or off.
 - Fold finished thinking and tool steps: on by default.
 - Row density: compact (default, 4 px gaps) or standard (10 px).
+- Strength: full (default), 65%, 45% or 30% — finished rows sit back at that opacity until you hover, focus or expand them; rows with nothing to expand stay at full strength. Finished fold summaries dim too; expand or hover one to restore it.
 - Pin this turn's question: on by default.
 - Palette: vivid (default), follow the theme accent, soft, or high contrast.
 - Running animation: spinner (default), sparkle, orb, or a dot grid as a snake or a twinkle, with live previews.

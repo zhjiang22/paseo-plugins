@@ -84,7 +84,9 @@ describe("client mobile bundle compatibility", () => {
     // 0.8.0: 360 → 368 KiB for what every collapsed summary shows (the change stat with its uncounted changes, the turn's
     // tokens and their store) and exact-only diff counts on rows; the running animations and the expanded change list
     // wait in the fx chunk. 0.9.0: 368 → 372 KiB for the code font setting every row reads (shared/typography.ts).
-    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(372 * 1024);
+    // 0.11.0: 372 → 373 KiB for the strength setting reaching the fold rows (the quiet predicate, hover state and the
+    // strength read) and the settings screen's own ScrollView.
+    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(373 * 1024);
     expect(bundle).toContain("function ChangeStat");
     expect(bundle).toContain("function TurnTokens");
     expect(bundle).not.toMatch(/function (?:RunningLoader|LoaderFrame|FoldChanges|sparkleStops|shiftStops)\b/);

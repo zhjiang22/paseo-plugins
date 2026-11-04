@@ -3,7 +3,9 @@ import { boot as bootEn } from "./shared/locales/en.json";
 import { boot as bootZh } from "./shared/locales/zh-CN.json";
 import { t } from "./shared/text";
 import { settingsRpc } from "@getpaseo/plugin";
-import type { PluginClientContext } from "@getpaseo/plugin/client";
+import type { PluginClientContext, PluginScreenProps, PluginSidebarItemProps } from "@getpaseo/plugin/client";
+import { SidebarRow } from "@getpaseo/plugin/client/ui";
+import { ScrollView } from "@getpaseo/plugin/client/react-native";
 import { z } from "zod";
 import { createChunkLoader, lazySurfaces } from "./client/lazy-chunk";
 import { ActivityDetailsContext, PlainDetail } from "./client/activity-lazy";
@@ -73,6 +75,11 @@ function watchSettings(client: PluginClientContext, changed: () => void): () => 
 
 const NudgeRow = () => null;
 
+/** 0.11.0：侧边栏入口。label 省略，随注册标题走（语言切换时由 i18n.localized 重挂）。 */
+function SettingsSidebarItem({ currentScreen, openScreen }: PluginSidebarItemProps) {
+  return <SidebarRow icon="Activity" active={currentScreen?.screenId === "settings"} onPress={() => openScreen({ screenId: "settings" })} />;
+}
+
 export default function contribute(client: PluginClientContext) {
   const i18n = createClientI18n(client, { pluginId: "vivid-activity", boot: { "zh-CN": { boot: bootZh }, en: { boot: bootEn } } });
   const surface = lazySurfaces(client, { rpc: getClientChunk, manifest: UI_CHUNK, label: () => t("boot.name"), text: i18n, fallback: (id, props) => id === "settings" ? <ActivityIndicator color={props.theme?.colors.foregroundMuted} /> : <PlainDetail {...props} /> });
@@ -89,6 +96,31 @@ export default function contribute(client: PluginClientContext) {
     icon: "Palette",
     Component: ActivitySettings,
   });
+  // 0.11.0：侧边栏与命令面板的第二个设置入口，指向同一份设置面。screen 只注册一次、标题用函数随语言变
+  // （重挂会把正停在页面上的用户带走的坑，见 observatory 的 settings screen 注释）；侧边栏项和命令标题是
+  // 注册时的字符串，语言切换时由 i18n.localized 重挂。
+  const ScreenSettings = (props: PluginScreenProps) => (
+    // 独立 screen 不在 host 设置页里：host 的 screen 容器定高裁剪（宿主自家 Tasks 屏同样在根节点自管
+    // flex:1），设置面比一屏长时必须自带滚动（照 observatory 分析屏的 ScrollView 模式）。host 设置页
+    // 挂的仍是不带滚动的 ActivitySettings，避免双层滚动。
+    <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
+      <LazySettings {...props} actions={actions} />
+    </ScrollView>
+  );
+  const stopScreen = client.addScreen({ id: "settings", title: () => t("boot.name"), Component: ScreenSettings });
+  const stopSidebar = i18n.localized(() => [
+    client.addSidebarHeaderItem({ id: "settings", title: t("boot.name"), Component: SettingsSidebarItem }),
+    client.addCommandCenterItem({
+      id: "open-settings",
+      title: t("boot.openSettings"),
+      icon: "Palette",
+      keywords: [t("boot.name")],
+      context: "global",
+      onSelect({ openScreen }) {
+        openScreen({ screenId: "settings" });
+      },
+    }),
+  ]);
   // 计划（ExitPlanMode / plan_approval）和任务清单（TodoWrite）不注册转换器，始终由 Paseo 显示。
   client.addTimelineRenderer({
     kind: REASONING_RENDERER_KIND,
@@ -167,6 +199,8 @@ export default function contribute(client: PluginClientContext) {
   }, i18n.isReady() ? DEFAULT_TAKEOVER : "off");
   setLiveTakeover(takeover);
   return () => {
+    stopScreen();
+    stopSidebar();
     stopText();
     i18n.dispose();
     setLiveTakeover(null);

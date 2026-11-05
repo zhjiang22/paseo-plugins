@@ -487,7 +487,8 @@ export function ColorfulToolCall({
   const pin = usePromptPin(agentId, { key: item.data.fold, part: item.data.part });
   const detail = asToolCallDetail(item.data.detail);
   // 0.11.0:「跟随最新输出」矩阵：展开明细区流式更新时回底（域按明细类型映射；思考行走 thoughtTail*，折叠明细无内滚容器不在矩阵内）。
-  const followArea = detail?.type === "shell" ? "shell" : isTodoTool(item.data.name) ? "todo" : "logs";
+  const browserTool = /browser/i.test(item.data.name);
+  const followArea = browserTool ? "browser" : detail?.type === "shell" ? "shell" : isTodoTool(item.data.name) ? "todo" : "logs";
   const follow = useFollowOutput(followArea) && isRunning;
   const detailScrollRef = useRef<NativeScrollView | null>(null);
   const detailNearBottom = useRef(true);

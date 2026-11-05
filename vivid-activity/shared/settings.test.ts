@@ -7,12 +7,12 @@ describe("activity settings", () => {
     expect(activitySettings.migrate).toBeUndefined();
     const parsed = activitySettings.schema.parse({ takeover: "all", diffWrap: "on" });
     expect(parsed.wrapLines).toEqual({ diff: false, code: false, output: false });
-    expect(parsed.followOutput).toEqual({ shell: true, logs: true, todo: true });
+    expect(parsed.followOutput).toEqual({ shell: true, logs: true, todo: true, browser: true });
   });
 
   it("defaults both matrices when nothing is stored", () => {
     const parsed = activitySettings.schema.parse({});
-    expect(parsed.followOutput).toEqual({ shell: true, logs: true, todo: true });
+    expect(parsed.followOutput).toEqual({ shell: true, logs: true, todo: true, browser: true });
     expect(parsed.wrapLines).toEqual({ diff: false, code: false, output: false });
   });
 

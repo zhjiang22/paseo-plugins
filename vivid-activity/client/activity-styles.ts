@@ -173,6 +173,14 @@ export function buildActivityStyles(
         paddingHorizontal: 8,
         paddingVertical: 6,
       } satisfies ViewStyle,
+      // 0.11.0:「长行折行」分支的容器：有界列向——行方向/ minWidth:100% 会让行容器随内容变宽，
+      // flexShrink 永不触发、长行不折；折行时必须有界，文字才折到可用宽度。
+      frameBodyWrap: {
+        minWidth: 0,
+        width: "100%",
+        paddingHorizontal: 8,
+        paddingVertical: 6,
+      } satisfies ViewStyle,
       gutter: {
         alignItems: "flex-end",
         marginRight: 10,

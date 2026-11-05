@@ -8,6 +8,7 @@ vi.mock("@getpaseo/plugin/client/ui", () => ({ SettingsAction: "SettingsAction",
 vi.mock("react-native", () => ({
   Text: "Text",
   View: "View",
+  ScrollView: "ScrollView",
   // 0.11.0: the preview card renders a real DiffBlock, whose module graph reaches use-foreground (AppState).
   AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) },
 }));

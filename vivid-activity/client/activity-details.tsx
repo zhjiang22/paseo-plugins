@@ -195,7 +195,7 @@ function HighlightedCodeBlock({
         <OutputCopyButtons clean={clean} raw={code} label={copyLabel} theme={theme} styles={styles} />
       </View>
       {wrap ? (
-        <View style={styles.frameBody}>
+        <View style={styles.frameBodyWrap}>
           {tokens ? (
             <TokenizedLines lines={tokens} styles={styles} numbersFrom={lineStart} wrapLines />
           ) : codeLines ? (
@@ -301,7 +301,7 @@ function TerminalBlock({
         <CopyButton value={command} label={t("ui.copyCommand")} theme={theme} styles={styles} />
       </View>
       {wrap ? (
-        <View style={styles.frameBody}>
+        <View style={styles.frameBodyWrap}>
           {commandTokens ? (
             <TokenizedLines lines={commandTokens} styles={styles} wrapLines />
           ) : (
@@ -322,7 +322,7 @@ function TerminalBlock({
             <OutputCopyButtons clean={clean} raw={output} label={t("ui.copyOutput")} theme={theme} styles={styles} />
           </View>
           {wrap ? (
-            <View style={styles.frameBody}>
+            <View style={styles.frameBodyWrap}>
               {outputTokens && !isError ? (
                 <TokenizedLines lines={outputTokens} styles={styles} wrapLines />
               ) : (

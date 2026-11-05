@@ -36,6 +36,7 @@ export const EXPANSION_TARGETS = [
   { key: "ask", get label() { return t("settings.ask"); }, default: "never" },
   { key: "speak", get label() { return t("settings.readAloud"); }, default: "latest" },
   { key: "todo", get label() { return t("settings.taskListTools"); }, default: "latest" },
+  { key: "browser", get label() { return t("settings.browserTools"); }, default: "latest" },
   { key: "unknown", get label() { return t("settings.otherTools"); }, default: "latest" },
 ] as const satisfies readonly { key: string; label: string; default: ExpansionMode; hidden?: boolean }[];
 
@@ -110,8 +111,9 @@ export const activitySettings = defineSettings({
         shell: z.boolean().default(true),
         logs: z.boolean().default(true),
         todo: z.boolean().default(true),
+        browser: z.boolean().default(true),
       })
-      .default({ shell: true, logs: true, todo: true }),
+      .default({ shell: true, logs: true, todo: true, browser: true }),
     // 0.11.0：长行折行矩阵（原 diffWrap 扩围，migrate 迁移旧值）。off = 单行横滚（0.11.0 前的现状）。
     wrapLines: z
       .object({

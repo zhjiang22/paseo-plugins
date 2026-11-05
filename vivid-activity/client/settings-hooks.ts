@@ -17,7 +17,7 @@ export function useWrapLines(area: "diff" | "code" | "output"): boolean {
 }
 
 /** 「跟随最新输出」矩阵（shared/settings.ts followOutput；思考行走 thoughtTail*，不在此）。 */
-export function useFollowOutput(area: "shell" | "logs" | "todo"): boolean {
+export function useFollowOutput(area: "shell" | "logs" | "todo" | "browser"): boolean {
   const settings = useSettings(activitySettings);
   if (settings.status !== "ready") return true;
   return settings.values.followOutput?.[area] ?? true;

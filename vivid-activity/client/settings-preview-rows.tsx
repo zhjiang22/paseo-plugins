@@ -2,7 +2,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { useSettings } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import type { ReactNode } from "react";
-import { Text, View, type TextStyle, type ViewStyle } from "react-native";
+import { ScrollView, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { STRENGTH_OPACITY, activitySettings, type LoaderKind, type PaletteMode } from "../shared/settings";
 import { PIN_COLLAPSED_LINES } from "../shared/prompt-pin";
 import { densityMetrics, type DensityMetrics } from "../shared/density";
@@ -203,13 +203,14 @@ function ToolReplica({ theme, styles, palette, values, metrics, look, label, com
 
 /** 折叠摘要副本：done 段（绿 tile/勾/时长），跟随淡出档位；含失败 → 自动展开明细（全强度）。
  * 明细字号走 typeset（与真实 FoldChangeList 的 mono 同基，随字号/行距缩放）。 */
-function FoldReplica({ theme, styles, values, palette, metrics, failed, type }: { theme: PluginTheme; styles: ActivityStyles; values: PreviewValues; palette: ActivityPalette; metrics: DensityMetrics; failed: boolean; type: Typography }) {
+function FoldReplica({ theme, styles, values, palette, metrics, failed, type, wrapOutput }: { theme: PluginTheme; styles: ActivityStyles; values: PreviewValues; palette: ActivityPalette; metrics: DensityMetrics; failed: boolean; type: Typography; wrapOutput?: boolean }) {
   if (!values.fold) return null;
   const expanded = failed;
   const opacity = values.strength === "full" || expanded ? null : STRENGTH_OPACITY[values.strength];
   const green = hue(theme, "green");
   const noteStyle = typesetStyle<TextStyle>({ color: theme.colors.foregroundMuted, fontFamily: "monospace", fontSize: 12, lineHeight: 16 }, type);
-  const failedStyle = typesetStyle<TextStyle>({ color: hue(theme, "red", "text"), fontFamily: "monospace", fontSize: 11, lineHeight: 16, fontWeight: "700" }, type);
+  // 失败命令行随「长行折行·命令行与输出」折/省略（与真实 FoldChangeList 同规则）。
+  const failedStyle = typesetStyle<TextStyle>({ color: hue(theme, "red", "text"), fontFamily: "monospace", fontSize: 11, lineHeight: 16, fontWeight: "700", ...(wrapOutput ? { flexShrink: 1 } : null) }, type);
   return card(
     <>
       <View style={styles.headerButton}>
@@ -225,7 +226,7 @@ function FoldReplica({ theme, styles, values, palette, metrics, failed, type }: 
       {expanded ? (
         <View style={styles.details}>
           <Text style={noteStyle}>{t("settings.previewFoldAuto")}</Text>
-          <Text style={failedStyle}>npm test — Exit code 1</Text>
+          <Text numberOfLines={wrapOutput ? undefined : 1} style={failedStyle}>npm ci --omit=dev && npm run lint && npm test -- --watch=false && npm run build && pnpm -r --filter @app/web e2e --headed — Exit code 1</Text>
         </View>
       ) : null}
     </>,
@@ -299,8 +300,19 @@ export function PreviewPanel({ theme, paletteFor, actions, compact, native }: Pr
   const wrapCode = values.wrapLines?.code ?? false;
   const wrapOutput = values.wrapLines?.output ?? false;
   const followShell = values.followOutput?.shell ?? true;
-  // 「长行折行」演示行：开=折入面板，关=单行溢出裁切（与真实横滚/折行行为对齐的静态示意）。
-  const longLineStyle = { color: theme.colors.foregroundMuted, fontFamily: "monospace", fontSize: 11, lineHeight: 16, flexShrink: wrapCode || wrapOutput ? 1 : 0 };
+  // 「长行折行」演示：样本约两倍面板宽，开=有界折行（明显多行），关=真实单行横滚（与 DetailBody 同构），
+  // 差异在任何面板宽度下都一目了然。
+  const longCode = "export function renderApp(root: HTMLElement) { mount(<Application theme={theme} routes={routes} store={store} middlewares={[logger, router]} />, root); } // app bootstrap entry point";
+  const longOutput = "error: command failed after 3 retries — ELIFECYCLE Command failed with exit code 1 in ./packages/vivid-activity (webpack compile step overflow) at runCommand (node:internal/cli/run.ts:214:5)";
+  const longSnapshot = "page snapshot: heading vivid-activity · button new workspace · button settings · textbox window size · button reload · link pull request 1 · 86 more nodes...";
+  const monoMuted = { color: theme.colors.foregroundMuted, fontFamily: "monospace", fontSize: 11, lineHeight: 16 };
+  const longLine = (text: string, wrap: boolean, extra?: TextStyle) => wrap ? (
+    <Text selectable style={[monoMuted, { flexShrink: 1 }, extra]}>{text}</Text>
+  ) : (
+    <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
+      <Text selectable style={monoMuted}>{text}</Text>
+    </ScrollView>
+  );
   // 运行中行的着色与真实行同规则（activity.tsx:561 always 或该行展开）：shell=always/latest 时运行行是展开的。
   const runningColored = values.commandColors === "always" || shellAlways || values.expansion.shell === "latest";
   const shellCommandNode = colored ? shellSegments(SAMPLE_COMMAND, theme) : null;
@@ -325,11 +337,12 @@ export function PreviewPanel({ theme, paletteFor, actions, compact, native }: Pr
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>{t("settings.previewThinkingOnly")}</Text>
       ) : (
         <View>
-          <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="read" label={t("modelLook.read")} command="/demo/src/app.ts" state="completed" expanded expandedBody={<Text selectable style={[longLineStyle, { flexShrink: wrapCode ? 1 : 0 }]}>{"export function renderApp(root: HTMLElement) { mount(<Application theme={theme} routes={routes} />, root); }"}</Text>} />
+          <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="read" label={t("modelLook.read")} command="/demo/src/app.ts" state="completed" expanded expandedBody={longLine(longCode, wrapCode)} />
           <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="edit" label={t("modelLook.edit")} command="/demo/src/app.ts" state="completed" expanded diff={<DiffBlock detail={diffDetail} palette={palette} styles={styles} />} />
           <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="search" label={t("modelLook.search")} command="vivid preview coverage" state="completed" />
+          <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="browser" label={t("modelPaseo.navigateBrowser")} command="https://app.paseo.sh/workspace" state="completed" expanded expandedBody={longLine(longSnapshot, wrapCode)} />
           {failuresMode ? (
-            <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={shellCommandNode} state="failed" expanded errorLine={<><Text style={failedErrorStyle}>{t("ui.error")}: Exit code 1</Text><Text style={[failedErrorStyle, { flexShrink: wrapOutput ? 1 : 0 }]}>{"error: command failed after 3 retries — ELIFECYCLE Command failed with exit code 1 in ./packages/vivid-activity (webpack compile step overflow)"}</Text></>} />
+            <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={shellCommandNode} state="failed" expanded errorLine={<><Text style={failedErrorStyle}>{t("ui.error")}: Exit code 1</Text>{longLine(longOutput, wrapOutput, { color: hue(theme, "red", "text") })}</>} />
           ) : (
             <ToolReplica theme={theme} styles={styles} palette={palette} values={toolValues} metrics={metrics} look="shell" label={t("modelLook.shell")} command={SAMPLE_COMMAND} commandNode={shellCommandNode} state="completed" />
           )}
@@ -341,7 +354,7 @@ export function PreviewPanel({ theme, paletteFor, actions, compact, native }: Pr
               <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>{t("modelLook.shell")} · {SAMPLE_COMMAND}</Text>
             </View>
           ) : null}
-          <FoldReplica theme={theme} styles={styles} values={{ strength: values.strength, fold: values.fold }} palette={palette} metrics={metrics} failed={failuresMode} type={type} />
+          <FoldReplica theme={theme} styles={styles} values={{ strength: values.strength, fold: values.fold }} palette={palette} metrics={metrics} failed={failuresMode} type={type} wrapOutput={values.wrapLines?.output ?? false} />
           <TokensReplica theme={theme} indent={indent} />
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center", paddingLeft: indent, paddingTop: 6 }}>
             {Object.entries(palette.categoryColors).map(([category, color]) => <Dot key={category} color={color} size={12} />)}

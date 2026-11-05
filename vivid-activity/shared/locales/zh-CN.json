@@ -22,7 +22,8 @@
     "mcp": "MCP",
     "paseo": "Paseo",
     "skill": "技能",
-    "other": "其他"
+    "other": "其他",
+    "browser": "浏览器"
   },
   "modelRowStatus": {
     "running": "运行中",
@@ -47,7 +48,8 @@
     "mcp": "MCP",
     "paseo": "Paseo",
     "skill": "技能",
-    "other": "其他"
+    "other": "其他",
+    "browser": "浏览器"
   },
   "modelPaseo": {
     "speak": "朗读",
@@ -836,7 +838,9 @@
     "lineSpacing": "行距",
     "relaxed": "宽松",
     "codeFontPreview": "预览",
-    "applyFont": "使用上面的字体"
+    "applyFont": "使用上面的字体",
+    "followBrowser": "浏览器",
+    "browserTools": "浏览器工具"
   },
   "childSummary": {
     "activity": "动态",

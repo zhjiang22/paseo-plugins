@@ -473,6 +473,8 @@ export function expansionTargetForToolCall(toolName: string, detailType: string)
   if (isAskTool(toolName)) return "ask";
   if (toolName.trim().toLowerCase() === "speak") return "speak";
   if (isTodoTool(toolName)) return "todo";
+  // 0.11.0:Paseo 内置浏览器工具独立目标（与 lookFor 同判据的名称侧）。
+  if (/browser/i.test(toolName.trim().toLowerCase())) return "browser";
   if (piSubagentOperation(toolName)) return "sub_agent";
   if (isOpencodeSubagentTool(toolName)) return "sub_agent";
   switch (detailType) {

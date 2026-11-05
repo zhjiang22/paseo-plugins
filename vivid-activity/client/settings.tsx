@@ -433,7 +433,7 @@ function DiffControls({ settings }: { settings: ReadySettings }) {
 
 /** 0.11.0：「展开与滚动」——跟随矩阵（followOutput）与长行折行矩阵（wrapLines）的逐域开关。 */
 function ScrollControls({ settings }: { settings: ReadySettings }) {
-  const changeFollow = (area: "shell" | "logs" | "todo") => (value: boolean) => {
+  const changeFollow = (area: "shell" | "logs" | "todo" | "browser") => (value: boolean) => {
     if (value === settings.values.followOutput[area]) return;
     void settings.save({ ...settings.values, followOutput: { ...settings.values.followOutput, [area]: value } }, settings.revision);
   };
@@ -441,10 +441,11 @@ function ScrollControls({ settings }: { settings: ReadySettings }) {
     if (value === settings.values.wrapLines[area]) return;
     void settings.save({ ...settings.values, wrapLines: { ...settings.values.wrapLines, [area]: value } }, settings.revision);
   };
-  const followRows: Array<{ area: "shell" | "logs" | "todo"; label: string }> = [
+  const followRows: Array<{ area: "shell" | "logs" | "todo" | "browser"; label: string }> = [
     { area: "shell", label: t("settings.followShell") },
     { area: "logs", label: t("settings.followLogs") },
     { area: "todo", label: t("settings.followTodo") },
+    { area: "browser", label: t("settings.followBrowser") },
   ];
   const wrapRows: Array<{ area: "diff" | "code" | "output"; label: string }> = [
     { area: "diff", label: t("settings.wrapDiff") },

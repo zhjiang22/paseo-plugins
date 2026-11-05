@@ -699,8 +699,24 @@ describe("0.11.0: 设置预览面板", () => {
 
   it("mirrors the wrap diff lines setting in the diff sample", () => {
     // diff 样本挂在展开的 shell 行下：显式给 shell「总是展开」（expansion 嵌套结构与真实设置一致）。
-    expect(scrollsHorizontally(draw(ready({ wrapLines: { diff: false, code: false, output: false }, expansion: { shell: "always" } })))).toBe(true);
-    expect(scrollsHorizontally(draw(ready({ wrapLines: { diff: true, code: false, output: false }, expansion: { shell: "always" } })))).toBe(false);
+    // 断言只看 diff 行自身是否处于横滚祖先内——预览里其他域（code/output 关态）也有各自的横滚，不能全树扫。
+    // diffSurface 的特征样式（minWidth:100% + borderWidth:1 + paddingVertical:2 + overflow:hidden）：
+    // 只匹配 diff 容器节点，返回它是否处于横向 ScrollView 祖先内。
+    const diffInHScroll = (nodes: Host[], insideH: boolean): boolean | null => {
+      for (const node of nodes ?? []) {
+        if (node === null || typeof node !== "object" || !("props" in node) || "text" in node) continue;
+        const style = flatten(node.props.style);
+        const isH = node.type === "ScrollView" && node.props.horizontal === true;
+        if (style.minWidth === "100%" && style.borderWidth === 1 && style.paddingVertical === 2 && style.overflow === "hidden") return insideH;
+        const child = diffInHScroll(node.children as Host[], insideH || isH);
+        if (child !== null) return child;
+      }
+      return null;
+    };
+    const drawDiff = (settings: unknown) => diffInHScroll(draw(ready(settings)), false);
+    writeFileSync("/tmp/vivid-preview-tree.txt", JSON.stringify(draw(ready({ wrapLines: { diff: false, code: false, output: false }, expansion: { shell: "always" } })), (_k, v) => (typeof v === "function" ? "fn" : v)));
+    expect(drawDiff({ wrapLines: { diff: false, code: false, output: false }, expansion: { shell: "always" } })).toBe(true);
+    expect(drawDiff({ wrapLines: { diff: true, code: false, output: false }, expansion: { shell: "always" } })).toBe(false);
   });
 
   it("draws the mock turn: pinned question, thinking, tools, fold summary and tokens", () => {

@@ -519,7 +519,7 @@ export function PaseoCodeBlock({
         <OutputCopyButtons clean={clean} raw={code} label={t("ui.copy", { label: title })} theme={theme} styles={styles} />
       </View>
       {wrap ? (
-        <View style={styles.codeSurface}>
+        <View style={[styles.codeSurface, { minWidth: 0, width: "100%" }]}>
           {tokens ? (
             <TokenizedLines lines={tokens} styles={styles} wrapLines />
           ) : (

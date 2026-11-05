@@ -22,7 +22,8 @@
     "mcp": "MCP",
     "paseo": "Paseo",
     "skill": "Skill",
-    "other": "Other"
+    "other": "Other",
+    "browser": "Browser"
   },
   "modelRowStatus": {
     "running": "Running",
@@ -47,7 +48,8 @@
     "mcp": "MCP",
     "paseo": "Paseo",
     "skill": "Skill",
-    "other": "Other"
+    "other": "Other",
+    "browser": "Browser"
   },
   "modelPaseo": {
     "speak": "Speak",
@@ -911,7 +913,9 @@
     "lineSpacing": "Line spacing",
     "relaxed": "Relaxed",
     "codeFontPreview": "Preview",
-    "applyFont": "Use the fonts above"
+    "applyFont": "Use the fonts above",
+    "followBrowser": "Browser",
+    "browserTools": "Browser tools"
   },
   "childSummary": {
     "activity": "Activity",

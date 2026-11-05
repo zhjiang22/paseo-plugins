@@ -267,6 +267,16 @@ function PanelLabel({ theme, children }: { theme: PluginTheme; children: string 
   return <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10, letterSpacing: 0.5 }}>{children.toUpperCase()}</Text>;
 }
 
+/** 0.11.0:「跟随最新输出」状态行的域清单（预览跟随徽标与设置矩阵共用同一判定）。 */
+export function followStatusDomains(values: { followOutput?: Record<string, boolean> }): Array<{ area: string; label: string; on: boolean }> {
+  return [
+    { area: "shell", label: t("settings.followShell"), on: values.followOutput?.shell ?? true },
+    { area: "logs", label: t("settings.followLogs"), on: values.followOutput?.logs ?? true },
+    { area: "todo", label: t("settings.followTodo"), on: values.followOutput?.todo ?? true },
+    { area: "browser", label: t("settings.followBrowser"), on: values.followOutput?.browser ?? true },
+  ];
+}
+
 export function PreviewPanel({ theme, paletteFor, actions, compact, native }: PreviewPanelProps) {
   const settings = useSettings(activitySettings);
   const type = useTypography();
@@ -354,6 +364,25 @@ export function PreviewPanel({ theme, paletteFor, actions, compact, native }: Pr
               <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>{t("modelLook.shell")} · {SAMPLE_COMMAND}</Text>
             </View>
           ) : null}
+          {/* 「跟随最新输出」状态行：每个域一枚徽标，随各自开关即时出现/消失（全关时整行隐藏）。 */}
+          {(() => {
+            const domains: Array<{ area: "shell" | "logs" | "todo" | "browser"; label: string; on: boolean }> = [
+              { area: "shell", label: t("settings.followShell"), on: values.followOutput?.shell ?? true },
+              { area: "logs", label: t("settings.followLogs"), on: values.followOutput?.logs ?? true },
+              { area: "todo", label: t("settings.followTodo"), on: values.followOutput?.todo ?? true },
+              { area: "browser", label: t("settings.followBrowser"), on: values.followOutput?.browser ?? true },
+            ];
+            const active = domains.filter((domain) => domain.on);
+            if (active.length === 0) return null;
+            return (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6, paddingLeft: indent, paddingRight: 6, paddingTop: 6 }}>
+                <Text style={{ color: hue(theme, "blue", "text"), fontSize: 11, fontWeight: "700" }}>{t("settings.previewFollow")}:</Text>
+                {active.map((domain) => (
+                  <Pill key={domain.area} color={hue(theme, "blue", "text")} soft={hue(theme, "blue", "soft")} text={domain.label} />
+                ))}
+              </View>
+            );
+          })()}
           <FoldReplica theme={theme} styles={styles} values={{ strength: values.strength, fold: values.fold }} palette={palette} metrics={metrics} failed={failuresMode} type={type} wrapOutput={values.wrapLines?.output ?? false} />
           <TokensReplica theme={theme} indent={indent} />
           <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", alignItems: "center", paddingLeft: indent, paddingTop: 6 }}>

@@ -251,7 +251,7 @@ function shellExitCode(detail: { exitCode?: number | null }, errorText: string |
 }
 
 /** 本地补丁（吸收 beautiful-chat）：终端框。标题栏：程序色标、退出码、复制命令；`$ 命令` 高亮；输出在下层。 */
-function TerminalBlock({
+export function TerminalBlock({
   command,
   output: rawOutput,
   errorOutput,

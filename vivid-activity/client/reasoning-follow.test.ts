@@ -50,6 +50,7 @@ export const ScrollView = (props) => { globalThis.__vividHostScroll = props; ret
 export const Modal = "Modal";
 export const TextInput = "TextInput";
 export const useRevealedText = (text) => text;
+export const useHighlightTokens = () => null;
 export const copyText = async () => {};
 export const useToast = () => ({ error() {} });
 export const useSettings = () => globalThis.__vividSettings ?? ({ status: "loading" });
@@ -82,7 +83,8 @@ beforeAll(async () => {
   const entry = path.join(dir, "entry.ts");
   writeFileSync(entry, [
     `import ${JSON.stringify(path.join(here, "../tests/i18n-setup.ts"))};`,
-    `export { ReasoningText } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
+    `export { ReasoningText, TerminalBlock } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
+    `export { followStatusDomains } from ${JSON.stringify(path.join(here, "settings-preview-rows.tsx"))};`,
     `export { __refsReset, __refsClear } from "react";`,
   ].join("\n"));
   const result = await esbuild.build({
@@ -150,6 +152,40 @@ function draw(text: string) {
   expect(typeof scroll!.onContentSizeChange).toBe("function");
   return { scroll: scroll! };
 }
+
+describe("terminal wrap (0.11.0 长行折行·命令行与输出)", () => {
+  const theme = { colors: { surface0: "#101114", surface1: "#17181c", foreground: "#ececf1", foregroundMuted: "#9a9aa5", border: "#2c2d33", accent: "#20744a" } };
+  const styles = () => ({ frameBody: { flexDirection: "row", minWidth: "100%" }, frameBodyWrap: { minWidth: 0, width: "100%" }, codeScroll: { maxWidth: "100%" }, codeLine: {}, details: {}, detailLabel: {}, copyText: {}, termOutput: {}, termOutputHeader: {}, showMoreButton: {}, showMoreText: {}, section: {}, frame: {} });
+  const palette = () => ({ mode: "vivid", statusColors: { failed: "#ff0000", completed: "#00ff00" } });
+  const hasHScroll = (nodes: any[]): boolean => nodes.some((node: any) => { if (typeof node !== "object" || node === null) return false; if (node.props?.horizontal === true) return true; const kids = node.props?.children; return hasHScroll(Array.isArray(kids) ? kids : kids != null ? [kids] : []); });
+  const draw = (wrap: boolean) => {
+    (globalThis as unknown as { __vividSettings?: unknown }).__vividSettings = { status: "ready", values: { wrapLines: { output: wrap } }, revision: 1 };
+    return render({ type: ui.TerminalBlock, props: { command: "npm ci --omit=dev && npm test -- --watch=false", output: "ok 5 files changed", errorOutput: undefined, exitCode: null, theme, palette: palette(), styles: styles() } });
+  };
+  it("wrap on: bounded body, no horizontal ScrollView", () => {
+    expect(hasHScroll(draw(true))).toBe(false);
+  });
+  it("wrap off: horizontal scroll like before", () => {
+    expect(hasHScroll(draw(false))).toBe(true);
+  });
+});
+
+describe("follow status domains (0.11.0 跟随矩阵)", () => {
+  it("lists a domain per scope with the switch state", () => {
+    const domains = (ui.followStatusDomains as (v: { followOutput?: Record<string, boolean> }) => Array<{ area: string; on: boolean; label: string }>)({ followOutput: { shell: true, logs: false, todo: true, browser: false } });
+    const byArea = Object.fromEntries(domains.map((d) => [d.area, d]));
+    expect(domains.map((d) => d.area)).toEqual(["shell", "logs", "todo", "browser"]);
+    expect(byArea.shell?.on).toBe(true);
+    expect(byArea.logs?.on).toBe(false);
+    expect(byArea.todo?.on).toBe(true);
+    expect(byArea.browser?.on).toBe(false);
+    expect(byArea.shell?.label.length).toBeGreaterThan(0);
+  });
+  it("defaults every domain on when the matrix is missing", () => {
+    const domains = (ui.followStatusDomains as (v: { followOutput?: Record<string, boolean> }) => Array<{ area: string; on: boolean; label: string }>)({});
+    expect(domains.every((d) => d.on)).toBe(true);
+  });
+});
 
 describe("reasoning live follow (0.11.0 tail-follow)", () => {
   it("scrolls to the bottom when the tail window content changes, even at constant height", () => {

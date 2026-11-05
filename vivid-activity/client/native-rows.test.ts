@@ -713,8 +713,7 @@ describe("0.11.0: 设置预览面板", () => {
       }
       return null;
     };
-    const drawDiff = (settings: unknown) => diffInHScroll(draw(ready(settings)), false);
-    writeFileSync("/tmp/vivid-preview-tree.txt", JSON.stringify(draw(ready({ wrapLines: { diff: false, code: false, output: false }, expansion: { shell: "always" } })), (_k, v) => (typeof v === "function" ? "fn" : v)));
+    const drawDiff = (settings: Record<string, unknown>) => diffInHScroll(draw(ready(settings)), false);
     expect(drawDiff({ wrapLines: { diff: false, code: false, output: false }, expansion: { shell: "always" } })).toBe(true);
     expect(drawDiff({ wrapLines: { diff: true, code: false, output: false }, expansion: { shell: "always" } })).toBe(false);
   });

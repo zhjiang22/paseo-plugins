@@ -489,7 +489,8 @@ export function ColorfulToolCall({
   // 0.11.0:「跟随最新输出」矩阵：展开明细区流式更新时回底（域按明细类型映射；思考行走 thoughtTail*，折叠明细无内滚容器不在矩阵内）。
   const browserTool = /browser/i.test(item.data.name);
   const followArea = browserTool ? "browser" : detail?.type === "shell" ? "shell" : isTodoTool(item.data.name) ? "todo" : "logs";
-  const follow = useFollowOutput(followArea) && isRunning;
+  const followScope = useFollowOutput(followArea);
+  const follow = followScope && isRunning;
   const detailScrollRef = useRef<NativeScrollView | null>(null);
   const detailNearBottom = useRef(true);
   // 共享回底钩子（client/settings-hooks.ts）。内容键 = 明细 JSON 长度：宿主流式更新会原地改 detail
@@ -606,7 +607,7 @@ export function ColorfulToolCall({
         <View {...cmonoViewEscape} style={styles.details}>
           <ScrollView ref={detailScrollRef} style={styles.detailsScroll} contentContainerStyle={styles.detailsContent} nestedScrollEnabled showsVerticalScrollIndicator onScroll={onDetailScroll} onContentSizeChange={onDetailContentSizeChange} scrollEventThrottle={16}>
             {hasBody ? (
-              <DetailBody data={item.data} agentId={agentId} theme={theme} palette={palette} styles={styles} />
+              <DetailBody data={item.data} agentId={agentId} theme={theme} palette={palette} styles={styles} follow={followScope} />
             ) : null}
             {pi?.reader === "failed" ? <PiReaderRetry theme={theme} /> : null}
             {item.data.errorText && !(detail?.type === "shell" && !detail.output) ? (

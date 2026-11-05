@@ -151,6 +151,7 @@ function HighlightedCodeBlock({
   lineStart,
   extra,
   copyLabel = t("ui.copyCode"),
+  follow,
 }: {
   code: string;
   language: string;
@@ -164,6 +165,8 @@ function HighlightedCodeBlock({
   lineStart?: number;
   extra?: ReactNode;
   copyLabel?: string;
+  /** 0.11.0:「跟随最新输出」——跟随域开启时输出块显示尾窗（最后 N 行），最新行始终可见。 */
+  follow?: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
   // 0.11.0:「长行折行·代码与文件」：折行时去掉横向滚动、行号内联到行首（悬挂语义，行号仍对逻辑行）。
@@ -177,6 +180,9 @@ function HighlightedCodeBlock({
   const tokens = useHighlightTokens(view.highlight, language, language === "bash" ? { ...theme.colors, ...vividSyntaxColors(theme) } : theme.colors);
   const lineCount = useMemo(() => (lineStart === undefined ? 0 : displayCode.split("\n").length), [displayCode, lineStart]);
   const codeLines = useMemo(() => (wrap ? displayCode.split("\n") : null), [wrap, displayCode]);
+  // 0.11.0:「跟随最新输出」尾窗：跟随域开启且内容被截断时，显示最后 PREVIEW_LINES 行（最新行始终可见），
+  // 行号跟随偏移；「展开全部」仍可看到全部。非跟随域维持头部预览（现状）。
+  const tailStart = follow && !showAll && preview.truncated ? Math.max(0, lineCount - PREVIEW_LINES) : 0;
 
   return (
     <View {...cmonoViewEscape} style={styles.frame}>
@@ -197,12 +203,12 @@ function HighlightedCodeBlock({
       {wrap ? (
         <View style={styles.frameBodyWrap}>
           {tokens ? (
-            <TokenizedLines lines={tokens} styles={styles} numbersFrom={lineStart} wrapLines />
+            <TokenizedLines lines={tailStart ? tokens.slice(tailStart) : tokens} styles={styles} numbersFrom={lineStart !== undefined ? lineStart + tailStart : undefined} wrapLines />
           ) : codeLines ? (
-            codeLines.map((line, index) => (
+            codeLines.slice(tailStart).map((line, index) => (
               <Text key={`code-${index}`} selectable style={[styles.codeLine, { flexShrink: 1 }]}>
                 {lineStart !== undefined ? (
-                  <Text style={styles.gutterText}>{String(lineStart + index)} </Text>
+                  <Text style={styles.gutterText}>{String(lineStart + tailStart + index)} </Text>
                 ) : null}
                 {line || " "}
               </Text>
@@ -212,13 +218,13 @@ function HighlightedCodeBlock({
       ) : (
         <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
           <View style={styles.frameBody}>
-            {lineStart !== undefined ? <LineGutter start={lineStart} count={lineCount} styles={styles} /> : null}
+            {lineStart !== undefined ? <LineGutter start={lineStart + tailStart} count={lineCount - tailStart} styles={styles} /> : null}
             <View>
               {tokens ? (
-                <TokenizedLines lines={tokens} styles={styles} />
+                <TokenizedLines lines={tailStart ? tokens.slice(tailStart) : tokens} styles={styles} />
               ) : (
                 <Text selectable style={styles.codeLine}>
-                  {displayCode || " "}
+                  {displayCode.split("\n").slice(tailStart).join("\n") || " "}
                 </Text>
               )}
             </View>
@@ -259,6 +265,7 @@ export function TerminalBlock({
   theme,
   palette,
   styles,
+  follow,
 }: {
   command: string;
   output: string | undefined;
@@ -268,6 +275,8 @@ export function TerminalBlock({
   theme: Theme;
   palette: ActivityPalette;
   styles: ReturnType<typeof useActivityStyles>;
+  /** 0.11.0:「跟随最新输出」——跟随域开启时输出尾窗（最后 N 行），最新行始终可见。 */
+  follow?: boolean;
 }) {
   const brand = useMemo(() => commandBadge(command), [command]);
   const commandTokens = useHighlightTokens(`$ ${command}`, "bash", theme.colors);
@@ -280,6 +289,9 @@ export function TerminalBlock({
   const clean = useMemo(() => stripAnsi(output ?? ""), [output]);
   const view = useMemo(() => outputView(output ?? "", clean, showAll, !isError), [clean, isError, output, showAll]);
   const { preview, shown: shownOutput } = view;
+  // 0.11.0:「跟随最新输出」尾窗：跟随域开启且截断时显示最后 PREVIEW_LINES 行（最新行始终可见）。
+  const outputTotalLines = shownOutput.split("\n").length;
+  const outputTailStart = follow && !showAll && preview.truncated ? Math.max(0, outputTotalLines - PREVIEW_LINES) : 0;
   const outputTokens = useHighlightTokens(isError ? "" : view.highlight, "ansi", theme.colors);
   const failed = exitCode !== null && exitCode !== 0;
   const failedColor = palette.statusColors.failed;
@@ -324,18 +336,18 @@ export function TerminalBlock({
           {wrap ? (
             <View style={styles.frameBodyWrap}>
               {outputTokens && !isError ? (
-                <TokenizedLines lines={outputTokens} styles={styles} wrapLines />
+                <TokenizedLines lines={outputTailStart ? outputTokens.slice(outputTailStart) : outputTokens} styles={styles} wrapLines />
               ) : (
-                <Text selectable style={[isError ? { ...styles.codeLine, color: failedColor } : styles.codeLine, { flexShrink: 1 }]}>{shownOutput || " "}</Text>
+                <Text selectable style={[isError ? { ...styles.codeLine, color: failedColor } : styles.codeLine, { flexShrink: 1 }]}>{shownOutput.split("\n").slice(outputTailStart).join("\n") || " "}</Text>
               )}
             </View>
           ) : (
             <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
               <View style={styles.frameBody}>
                 {outputTokens && !isError ? (
-                  <TokenizedLines lines={outputTokens} styles={styles} />
+                  <TokenizedLines lines={outputTailStart ? outputTokens.slice(outputTailStart) : outputTokens} styles={styles} />
                 ) : (
-                  <Text selectable style={isError ? { ...styles.codeLine, color: failedColor } : styles.codeLine}>{shownOutput || " "}</Text>
+                  <Text selectable style={isError ? { ...styles.codeLine, color: failedColor } : styles.codeLine}>{shownOutput.split("\n").slice(outputTailStart).join("\n") || " "}</Text>
                 )}
               </View>
             </ScrollView>
@@ -776,12 +788,15 @@ export function DetailBody({
   theme,
   palette,
   styles,
+  follow,
 }: {
   data: ToolCallData;
   agentId: string;
   theme: Theme;
   palette: ActivityPalette;
   styles: ReturnType<typeof useActivityStyles>;
+  /** 0.11.0:「跟随最新输出」：该行的跟随域开启且在流式中（输出块显示尾窗）。 */
+  follow?: boolean;
 }) {
   const detail = asToolCallDetail(data.detail);
   const cwd = useAgent(agentId, (agent) => agent.cwd);
@@ -812,6 +827,7 @@ export function DetailBody({
       return (
         <>
           <TerminalBlock
+            follow={follow}
             command={detail.command}
             output={detail.output}
             errorOutput={data.errorText}
@@ -947,7 +963,7 @@ export function DetailBody({
         <>
           <Text style={styles.detailText}>{t("ui.branchValue", { value: detail.branchName })}</Text>
           <Text style={styles.mutedText}>{t("ui.pathValue", { value: detail.worktreePath })}</Text>
-          {detail.log ? <HighlightedCodeBlock code={detail.log} language="ansi" label={t("ui.setupLog")} styles={styles} theme={theme} /> : null}
+          {detail.log ? <HighlightedCodeBlock code={detail.log} language="ansi" label={t("ui.setupLog")} styles={styles} theme={theme} follow={follow} /> : null}
         </>
       );
     case "sub_agent":
@@ -961,7 +977,7 @@ export function DetailBody({
           {notInHeader(detail.subAgentType, data.presentation.summary) ? <Text style={styles.detailText}>{detail.subAgentType}</Text> : null}
           {notInHeader(detail.description, data.presentation.summary) ? <Text style={styles.mutedText}>{detail.description}</Text> : null}
           {detail.childSessionId ? <Text style={styles.mutedText}>{t("ui.sessionValue", { value: detail.childSessionId })}</Text> : null}
-          {detail.log && !subAgentLogFullyShown(detail) ? <HighlightedCodeBlock code={detail.log} language="ansi" label={t("ui.activityLog")} styles={styles} theme={theme} /> : null}
+          {detail.log && !subAgentLogFullyShown(detail) ? <HighlightedCodeBlock code={detail.log} language="ansi" label={t("ui.activityLog")} styles={styles} theme={theme} follow={follow} /> : null}
         </>
       );
     case "plain_text":
@@ -1124,6 +1140,7 @@ export function DetailBody({
                 label={t("ui.output")}
                 styles={styles}
                 theme={theme}
+                follow={follow}
               />
             ) : data.status === "running" ? (
               <PendingOutput styles={styles} />

@@ -23,6 +23,8 @@ export const useRef = (value) => { if (__refIdx >= __refSlots.length) __refSlots
 export const __refsReset = () => { __refIdx = 0; };
 export const __refsClear = () => { __refSlots = []; __refIdx = 0; };
 export const useEffect = (fn) => { fn(); };
+export const setTimeout = (fn, ms) => globalThis.setTimeout(fn, ms);
+export const clearTimeout = (id) => globalThis.clearTimeout(id);
 export const useSyncExternalStore = (subscribe, snapshot) => snapshot();
 export const createContext = (value) => ({ Provider: "ContextProvider", _value: value });
 export const useContext = (context) => context._value;
@@ -188,7 +190,7 @@ describe("follow status domains (0.11.0 跟随矩阵)", () => {
 });
 
 describe("reasoning live follow (0.11.0 tail-follow)", () => {
-  it("scrolls to the bottom when the tail window content changes, even at constant height", () => {
+  it("scrolls to the bottom when the tail window content changes, even at constant height", async () => {
     const { scroll } = draw(steps(5));
     let calls = 0;
     const scrollToEnd = () => { calls += 1; };
@@ -197,10 +199,11 @@ describe("reasoning live follow (0.11.0 tail-follow)", () => {
     const grown = draw(steps(6));
     expect(grown.scroll.ref).toBeTruthy();
     (grown.scroll.ref as { current: unknown }).current = { scrollToEnd };
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(calls).toBeGreaterThan(0);
   });
 
-  it("does not yank the viewport when the user scrolled away from the bottom", () => {
+  it("does not yank the viewport when the user scrolled away from the bottom", async () => {
     const { scroll } = draw(steps(5));
     let calls = 0;
     const scrollToEnd = () => { calls += 1; };
@@ -208,10 +211,11 @@ describe("reasoning live follow (0.11.0 tail-follow)", () => {
     // 用户向上滚离底部（handleScroll 置假），随后的内容变化不再回底。
     scroll.onScroll?.({ nativeEvent: { contentOffset: { y: 0, x: 0 }, contentSize: { height: 2000, width: 400 }, layoutMeasurement: { height: 300, width: 400 } } });
     draw(steps(6));
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(calls).toBe(0);
   });
 
-  it("keeps following through a sustained 40-tick stream while near the bottom (long content)", () => {
+  it("keeps following through a sustained 40-tick stream while near the bottom (long content)", async () => {
     // 长内容持续输出的真实形态：窗口早已饱和（40 步 > 20），每个 tick 高度近似不变——
     // 回底必须逐 tick 触发，停摆一次就算失败（修复前该场景为 0 次调用）。
     const { scroll } = draw(steps(20));
@@ -220,9 +224,11 @@ describe("reasoning live follow (0.11.0 tail-follow)", () => {
     (scroll.ref as { current: unknown }).current = { scrollToEnd };
     for (let count = 21; count <= 60; count += 1) {
       draw(steps(count));
+      await new Promise((resolve) => setTimeout(resolve, 1));
       if (calls < count - 20) break;
     }
-    expect(calls).toBe(40);
+    // 挂载那次会计入 1 次（同样合法）；关键是 40 个 tick 一次都不停摆。
+    expect(calls).toBeGreaterThanOrEqual(40);
   });
 
   it("keeps the content-size growth path working (unsaturated window)", () => {

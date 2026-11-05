@@ -45,7 +45,12 @@ export function useFollowBottom(
     nearBottomRef.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - 32;
   }, []);
   useEffect(() => {
-    if (enabled) scrollToEnd();
+    if (!enabled) return;
+    // 延迟一帧：scrollToEnd 在 React 提交后立即调用时 Yoga 布局尚未落地，会读到旧尺寸而滚不到位。
+    const timer = setTimeout(() => {
+      if (nearBottomRef.current) scrollRef.current?.scrollToEnd({ animated: false });
+    }, 0);
+    return () => clearTimeout(timer);
   }, [contentKey, enabled, scrollToEnd]);
   return { onScroll, onContentSizeChange: scrollToEnd };
 }

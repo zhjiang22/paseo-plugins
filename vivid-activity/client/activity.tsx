@@ -492,8 +492,10 @@ export function ColorfulToolCall({
   const follow = useFollowOutput(followArea) && isRunning;
   const detailScrollRef = useRef<NativeScrollView | null>(null);
   const detailNearBottom = useRef(true);
-  // 共享回底钩子（client/settings-hooks.ts）：明细对象随宿主更新换新（即内容键），每次更新回底。
-  const { onScroll: onDetailScroll, onContentSizeChange: onDetailContentSizeChange } = useFollowBottom(detailScrollRef, detailNearBottom, item.data.detail, follow);
+  // 共享回底钩子（client/settings-hooks.ts）。内容键 = 明细 JSON 长度：宿主流式更新会原地改 detail
+  // （对象身份不变），长度签名才能随内容增长变化，让跟随 effect 逐 tick 重跑。
+  const detailContentKey = JSON.stringify(item.data.detail ?? {}).length;
+  const { onScroll: onDetailScroll, onContentSizeChange: onDetailContentSizeChange } = useFollowBottom(detailScrollRef, detailNearBottom, detailContentKey, follow);
   const isTaskUpdate = isTodoTool(item.data.name);
   const itemTimestamp = timestamp.getTime();
   const latestTaskUpdateTimestamp = useLatestTaskUpdateTimestamp(agentId, timestamp, isTaskUpdate);

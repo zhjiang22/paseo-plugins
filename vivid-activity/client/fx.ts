@@ -23,12 +23,12 @@ export function configureFx(next: FxLoader | null): void {
   failedAt = -Infinity;
 }
 
-/** The fx chunk's views once loaded; the first caller asks for the chunk. */
-export function useFx(): Surfaces | null {
+/** The fx chunk's views once loaded; the first caller asks for the chunk. `enabled=false` 只读已下载的，不触发下载。 */
+export function useFx(enabled = true): Surfaces | null {
   const current = loader;
   const [ready, setReady] = useState<Surfaces | null>(() => current?.peek() ?? null);
   useEffect(() => {
-    if (ready || !current || Date.now() - failedAt < RETRY_MS) return;
+    if (!enabled || ready || !current || Date.now() - failedAt < RETRY_MS) return;
     let live = true;
     current.load().then(
       (surfaces) => {
@@ -41,7 +41,7 @@ export function useFx(): Surfaces | null {
     return () => {
       live = false;
     };
-  }, [current, ready]);
+  }, [enabled, current, ready]);
   return ready ?? current?.peek() ?? null;
 }
 

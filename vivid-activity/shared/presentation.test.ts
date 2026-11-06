@@ -8,6 +8,7 @@ import {
   editDiffContentSize,
   effectiveUnifiedDiff,
   fileIconForPath,
+  tailLinesOf,
   formatReasoningText,
   hasEditDiffContent,
   languageForFilePath,
@@ -1756,5 +1757,18 @@ describe("reasoning step titles (local patch)", () => {
     expect(splitStepTitle("**只有标题**")).toEqual({ title: "只有标题", body: "" });
     expect(splitStepTitle("没有标题的一段。")).toEqual({ title: null, body: "没有标题的一段。" });
     expect(splitStepTitle("**a** b")).toEqual({ title: null, body: "**a** b" });
+  });
+});
+
+describe("tailLinesOf", () => {
+  it("returns the text whole when it fits the window", () => {
+    expect(tailLinesOf("a\nb\nc", 5)).toBe("a\nb\nc");
+    expect(tailLinesOf("", 5)).toBe("");
+    expect(tailLinesOf("a\nb", 2)).toBe("a\nb");
+  });
+
+  it("returns exactly the last n lines when it does not fit", () => {
+    expect(tailLinesOf(["l1", "l2", "l3", "l4", "l5"].join("\n"), 2)).toBe("l4\nl5");
+    expect(tailLinesOf(["l1", "l2", "l3"].join("\n"), 3)).toBe("l1\nl2\nl3");
   });
 });

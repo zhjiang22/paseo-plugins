@@ -13,15 +13,20 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  */
 const here = path.dirname(fileURLToPath(import.meta.url));
 const STANDINS: Record<string, string> = {
-  react: `export const Fragment = Symbol.for("standin.fragment");
+  react: `let __hooks = 0;
+const __hookLog = [];
+export const __hooksCount = () => __hooks;
+export const __hooksReset = () => { __hooks = 0; __hookLog.length = 0; };
+export const __hooksLog = () => __hookLog;
+export const Fragment = Symbol.for("standin.fragment");
 export const createElement = (type, props, ...children) => ({ type, props: { ...(props ?? {}), ...(children.length ? { children: children.length === 1 ? children[0] : children } : {}) } });
-export const useState = (value) => [typeof value === "function" ? value() : value, () => {}];
-export const useMemo = (factory) => factory();
-export const useCallback = (callback) => callback;
-export const useRef = (value) => ({ current: value });
-export const useEffect = () => {};
-export const useLayoutEffect = () => {};
-export const useSyncExternalStore = (_subscribe, snapshot) => snapshot();
+export const useState = (value) => { __hooks++; __hookLog.push("state"); return [typeof value === "function" ? value() : value, () => {}]; };
+export const useMemo = (factory, deps) => { __hooks++; __hookLog.push("memo"); return factory(); };
+export const useCallback = (callback, deps) => { __hooks++; __hookLog.push("callback"); return callback; };
+export const useRef = (value) => { __hooks++; __hookLog.push("ref"); return { current: value }; };
+export const useEffect = (fn, deps) => { __hooks++; __hookLog.push("effect"); };
+export const useLayoutEffect = (fn, deps) => { __hooks++; __hookLog.push("layout"); };
+export const useSyncExternalStore = (subscribe, snapshot) => { __hooks++; __hookLog.push("store"); return snapshot(); };
 export const createContext = (value) => ({ Provider: "ContextProvider", _value: value });
 export const useContext = (context) => context._value;
 export default { Fragment, createElement, useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect, useSyncExternalStore, createContext, useContext };`,
@@ -48,7 +53,15 @@ export const useRpc = () => async () => ({});
 export const useSettings = () => globalThis.__vividSettings ?? ({ status: "loading" });
 export const defineRpc = (contract) => contract;
 export const defineSettings = (definition) => definition;
-export const settingsRpc = () => ({ read: {} });`,
+export const settingsRpc = () => ({ read: {} });
+export const SettingsSection = "SettingsSection";
+export const SettingsCard = "SettingsCard";
+export const SettingsRow = "SettingsRow";
+export const SettingsSelect = "SettingsSelect";
+export const SettingsSwitch = "SettingsSwitch";
+export const SettingsInput = "SettingsInput";
+export const SettingsAction = "SettingsAction";
+export const SettingsGroup = "SettingsGroup";`,
 };
 const HOST_SPECIFIERS = ["@getpaseo/plugin", "@getpaseo/plugin/client", "@getpaseo/plugin/client/react-native", "@getpaseo/plugin/client/ui"];
 
@@ -92,19 +105,30 @@ beforeAll(async () => {
     // 0.6.0-local.5: the reasoning body lives in the lazy details chunk, the styles stay with the resident rows.
     `export { useActivityStyles } from ${JSON.stringify(path.join(here, "activity.tsx"))};`,
     `export { ReasoningMarkdown } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
+    `export { ReasoningText } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
     `export { VividHeader, resolveVividPalette, useVividText } from ${JSON.stringify(path.join(here, "vivid.tsx"))};`,
     `export { PiSubagentLifecycleSummary } from ${JSON.stringify(path.join(here, "pi-subagent-summary.tsx"))};`,
     `export { densityMetrics } from ${JSON.stringify(path.join(here, "density.ts"))};`,
     `export { PinnedPromptView } from ${JSON.stringify(path.join(here, "prompt-pin.tsx"))};`,
     // 0.6.0-local.5 (codex-vivid-merge-F2): a whole tool row, and the Pi notice data it draws.
     `export { ColorfulToolCall, PiReaderRetry } from ${JSON.stringify(path.join(here, "activity.tsx"))};`,
+    `export { ColorfulReasoning } from ${JSON.stringify(path.join(here, "activity.tsx"))};`,
     `export { retryPiNotices } from ${JSON.stringify(path.join(here, "transform.ts"))};`,
-    `export { createToolCallData, setPiNoticePhase, setPiNoticeReader } from ${JSON.stringify(path.join(here, "../shared/timeline.ts"))};`,
+    `export { createToolCallData, setPiNoticePhase, setPiNoticeReader, createReasoningData } from ${JSON.stringify(path.join(here, "../shared/timeline.ts"))};`,
     `export { readPiNotice } from ${JSON.stringify(path.join(here, "../shared/pi-notice.ts"))};`,
     // 0.8.0: running animations, the change list of an expanded summary, and the summary's diffstat and turn tokens.
     `export { LoaderFrame } from ${JSON.stringify(path.join(here, "loaders.tsx"))};`,
     `export { FoldChanges } from ${JSON.stringify(path.join(here, "fold-changes.tsx"))};`,
     `export { ChangeStat, TurnTokens } from ${JSON.stringify(path.join(here, "fold-row.tsx"))};`,
+    `export { FoldRow } from ${JSON.stringify(path.join(here, "fold-row.tsx"))};`,
+    `export { DiffBlock } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
+    `export { PreviewPanel } from ${JSON.stringify(path.join(here, "settings-preview-rows.tsx"))};`,
+    `export { DisplaySettings } from ${JSON.stringify(path.join(here, "settings.tsx"))};`,
+    `export { activitySettings } from ${JSON.stringify(path.join(here, "../shared/settings.ts"))};`,
+    `export { CommandTokens } from ${JSON.stringify(path.join(here, "command-tokens.tsx"))};`,
+    `export { configureFx } from ${JSON.stringify(path.join(here, "fx.ts"))};`,
+    `export { __hooksCount, __hooksReset, __hooksLog } from "react";`,
+    `export { paletteFor } from ${JSON.stringify(path.join(here, "activity.tsx"))};`,
     `export { stillCells } from ${JSON.stringify(path.join(here, "../shared/loaders.ts"))};`,
     `export { fileId } from ${JSON.stringify(path.join(here, "../shared/changes.ts"))};`,
   ].join("\n"));
@@ -407,5 +431,345 @@ describe("0.8.0: running animations, the change summary and the turn's tokens", 
     expect(text).toContain("$ npm test -- --run");
     expect(text).toContain("退出码 1");
     expect(text).not.toContain("退出码 2");
+  });
+});
+
+describe("0.11.0: 淡出强度 (strength)", () => {
+  // 命令着色的组件在 fx 懒加载块：测试里用同步 loader 直接供给（peek 不经下载）。
+  beforeAll(() => {
+    const surfaces = { CommandTokens: ui.CommandTokens };
+    ui.configureFx({ peek: () => surfaces, load: async () => surfaces });
+  });
+  // 非 vivid 调色板读 host 主题的状态色（与上面的 Pi 用例同一个完整主题）。
+  const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
+  const ready = (strength: string) => ({ status: "ready", values: { expansion: {}, density: "compact", strength }, revision: 1 });
+  const withSettings = (settings: unknown, draw: () => Host[]) => {
+    (globalThis as { __vividSettings?: unknown }).__vividSettings = settings;
+    try {
+      return draw();
+    } finally {
+      (globalThis as { __vividSettings?: unknown }).__vividSettings = undefined;
+    }
+  };
+  const cardStyle = (nodes: Host[]) => {
+    const card = nodes[0] as HostNode; // render() 的首节点是卡片外层 View
+    return flatten(card.props.style);
+  };
+  const tool = (status: string, settings: unknown) =>
+    withSettings(settings, () => render({ type: ui.ColorfulToolCall, props: { agentId: "a-strength", item: { kind: "colorful-tool-call", data: ui.createToolCallData({ type: "tool_call", callId: "t1", name: "Bash", status, error: null, detail: { type: "shell", command: "npm test" } }) }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } }));
+  const think = (phase: "streaming" | "complete", settings: unknown) =>
+    withSettings(settings, () => render({ type: ui.ColorfulReasoning, props: { agentId: "a-strength", item: { kind: "colorful-reasoning", data: ui.createReasoningData({ type: "reasoning", text: "two steps" }, phase) }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } }));
+
+  it("fades a finished row at the chosen strength, failures included", () => {
+    expect(cardStyle(tool("completed", ready("faded"))).opacity).toBe(0.45);
+    expect(cardStyle(tool("completed", ready("dim"))).opacity).toBe(0.3);
+    expect(cardStyle(tool("completed", ready("soft"))).opacity).toBe(0.65);
+    expect(cardStyle(tool("failed", ready("dim"))).opacity).toBe(0.3);
+    expect(cardStyle(think("complete", ready("faded"))).opacity).toBe(0.45);
+  });
+
+  it("keeps running and streaming rows at full strength", () => {
+    expect(cardStyle(tool("running", ready("dim"))).opacity).toBeUndefined();
+    expect(cardStyle(think("streaming", ready("dim"))).opacity).toBeUndefined();
+  });
+
+  it("stays at full strength on 「全强度」, when settings are unread, and keeps expandable-only fading consistent", () => {
+    expect(cardStyle(tool("completed", ready("full"))).opacity).toBeUndefined();
+    // Settings still loading: the default is full, nothing fades.
+    expect(cardStyle(tool("completed", undefined)).opacity).toBeUndefined();
+  });
+
+  it("never fades a row without expandable content: its hover and focus cannot restore it (disabled Pressable swallows them)", () => {
+    const bare = withSettings(ready("dim"), () => render({ type: ui.ColorfulToolCall, props: { agentId: "a-strength", item: { kind: "colorful-tool-call", data: ui.createToolCallData({ type: "tool_call", callId: "t1", name: "PaseoStatus", status: "completed", error: null, detail: { type: "unknown", output: "" } }) }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } }));
+    expect(cardStyle(bare).opacity).toBeUndefined();
+  });
+
+  it("fades a finished fold summary too; the expanded one and a running segment header stay full", () => {
+    const foldRow = (over: Record<string, unknown>, settings: unknown) =>
+      withSettings(settings, () => render({ type: ui.FoldRow, props: { agentId: "a-strength", item: { kind: "colorful-fold", data: { segment: "s1", mode: "done", expanded: false, steps: 4, hidden: 0, counts: [["shell", 2], ["think", 2]], failed: 0, canceled: 0, durationMs: 38000, ...over } }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } }));
+    expect(cardStyle(foldRow({}, ready("dim"))).opacity).toBe(0.3);
+    expect(cardStyle(foldRow({ expanded: true }, ready("dim"))).opacity).toBeUndefined();
+    // 运行中的段头（「前面 N 步」）代表还在进行的活动：不淡。
+    expect(cardStyle(foldRow({ mode: "earlier", durationMs: null }, ready("dim"))).opacity).toBeUndefined();
+    expect(cardStyle(foldRow({}, ready("full"))).opacity).toBeUndefined();
+  });
+});
+
+describe("0.11.0: diff 折行与命令着色", () => {
+  // 命令着色的组件在 fx 懒加载块：测试里用同步 loader 直接供给（peek 不经下载）。
+  const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
+  const ready = (values: Record<string, unknown>) => ({ status: "ready", values: { expansion: {}, density: "compact", ...values }, revision: 1 });
+  const withSettings = (settings: unknown, draw: () => Host[]) => {
+    (globalThis as { __vividSettings?: unknown }).__vividSettings = settings;
+    try {
+      return draw();
+    } finally {
+      (globalThis as { __vividSettings?: unknown }).__vividSettings = undefined;
+    }
+  };
+  beforeAll(() => {
+    const surfaces = { CommandTokens: ui.CommandTokens };
+    ui.configureFx({ peek: () => surfaces, load: async () => surfaces });
+  });
+
+  it("keeps diff lines on one scrolling row by default and wraps them to the width when asked", () => {
+    const detail = { type: "edit", filePath: "/demo/src/app.ts", oldString: `const a = ${"很长的一行。".repeat(30)}\nconst b = 1;`, newString: "const a = 1;\nconst b = 2;" };
+    const diffStyles = () => ui.useActivityStyles(fullTheme, ui.resolveVividPalette(fullTheme), ui.densityMetrics("compact", true, true));
+    const draw = (settings: unknown) => withSettings(settings, () => render({
+      type: ui.DiffBlock,
+      props: { detail, palette: ui.resolveVividPalette(fullTheme), styles: diffStyles() },
+    }));
+    const scrollsHorizontally = (nodes: Host[]) => nodes.flatMap(nodesOf).some((node) => node.type === "ScrollView" && node.props.horizontal === true);
+    // marker（「+」）是独立 Text；行内容 Text 紧随其后。
+    const lineText = (nodes: Host[]) => {
+      const flat = nodes.flatMap(nodesOf);
+      const marker = flat.findIndex((node) => node.type === "Text" && textOf(node) === "+");
+      return marker >= 0 ? (flat[marker + 1] as HostNode) : undefined;
+    };
+    // 默认 off：diff 行单行横滚（ScrollView horizontal），文字不折（flexShrink 0）。
+    expect(scrollsHorizontally(draw(undefined))).toBe(true);
+    expect(flatten(lineText(draw(undefined))!.props.style).flexShrink).toBe(0);
+    // on：不再横滚，diff 文字折行（flexShrink 1 + minWidth 0）。
+    const on = ready({ wrapLines: { diff: true, code: false, output: false } });
+    expect(scrollsHorizontally(draw(on))).toBe(false);
+    expect(flatten(lineText(draw(on))!.props.style)).toMatchObject({ flexShrink: 1, minWidth: 0 });
+  });
+
+  it("colors the shell command in the title when always, leaves it plain while collapsed by default", () => {
+    const shell = (settings: unknown) => withSettings(settings, () => render({ type: ui.ColorfulToolCall, props: { agentId: "a-strength", item: { kind: "colorful-tool-call", data: ui.createToolCallData({ type: "tool_call", callId: "t1", name: "Bash", status: "completed", error: null, detail: { type: "shell", command: "npm ci --omit=dev && npm test" } }) }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } }));
+    // 非前景/弱化色（语法 token 色）的 Text = 着色段；计数、计时等常规文本用 foregroundMuted，不算。
+    const spans = (nodes: Host[]) => nodes.flatMap(nodesOf).filter((node) => {
+      if (node.type !== "Text") return false;
+      const style = flatten(node.props.style);
+      const color = style.color as string | undefined;
+      return !!color && color !== fullTheme.colors.foreground && color !== fullTheme.colors.foregroundMuted;
+    });
+    const collapsedDefault = spans(shell(ready({ expansion: { shell: "never" } })));
+    expect(collapsedDefault).toHaveLength(0);
+    const always = spans(shell(ready({ expansion: { shell: "never" }, commandColors: "always" })));
+    expect(always.length).toBeGreaterThan(1);
+    // 展开时（默认 expanded 档）也着色。
+    const expandedDefault = spans(shell(ready({ expansion: { shell: "always" } })));
+    expect(expandedDefault.length).toBeGreaterThan(1);
+  });
+});
+
+describe("0.11.0: 工具明细区只在运行中跟随（跟随矩阵）", () => {
+  const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
+  const ready = (values: Record<string, unknown>) => ({ status: "ready", values: { expansion: { shell: "always" }, density: "compact", ...values }, revision: 1 });
+  const output = Array.from({ length: 120 }, (_, index) => `line ${index + 1}`).join("\n");
+  /** Draws an expanded shell row and fires its detail ScrollView's onContentSizeChange (RN fires it on first layout too). */
+  const scrollsOnLayout = (status: string, values: Record<string, unknown> = {}) => {
+    (globalThis as { __vividSettings?: unknown }).__vividSettings = ready(values);
+    try {
+      const nodes = render({ type: ui.ColorfulToolCall, props: { agentId: "a-follow", item: { kind: "colorful-tool-call", data: ui.createToolCallData({ type: "tool_call", callId: "f1", name: "Bash", status, error: null, detail: { type: "shell", command: "npm test", output } }) }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } });
+      const scroll = nodes.flatMap(nodesOf).find((node) => node.type === "ScrollView" && typeof node.props.onContentSizeChange === "function");
+      expect(scroll).toBeDefined();
+      let calls = 0;
+      (scroll!.props.ref as { current: unknown }).current = { scrollToEnd: () => { calls += 1; } };
+      (scroll!.props.onContentSizeChange as () => void)();
+      return calls;
+    } finally {
+      (globalThis as { __vividSettings?: unknown }).__vividSettings = undefined;
+    }
+  };
+
+  it("opens a finished row's long details at the top, with every follow switch on (the default)", () => {
+    expect(scrollsOnLayout("completed")).toBe(0);
+    expect(scrollsOnLayout("failed")).toBe(0);
+  });
+
+  it("keeps a running row's details at the bottom while its area follows, and lets the switch turn that off", () => {
+    expect(scrollsOnLayout("running")).toBe(1);
+    expect(scrollsOnLayout("running", { followOutput: { shell: false, logs: true, todo: true, browser: true } })).toBe(0);
+  });
+});
+
+describe("0.11.0: 思考行尾随窗口", () => {
+  const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
+  const palette = () => ui.resolveVividPalette(fullTheme);
+  const styles = () => ui.useActivityStyles(fullTheme, palette(), ui.densityMetrics("compact", true, true));
+  const ready = (values: Record<string, unknown>) => ({ status: "ready", values: { expansion: {}, density: "compact", ...values }, revision: 1 });
+  const withSettings = (settings: unknown, draw: () => Host[]) => {
+    (globalThis as { __vividSettings?: unknown }).__vividSettings = settings;
+    try {
+      return draw();
+    } finally {
+      (globalThis as { __vividSettings?: unknown }).__vividSettings = undefined;
+    }
+  };
+  const draw = (text: string, settings: unknown) => withSettings(settings, () => render({ type: ui.ReasoningText, props: { text, phase: "complete", theme: fullTheme, palette: palette(), styles: styles() } }));
+  const outputOf = (nodes: Host[]) => nodes.map(textOf).join("\n");
+  const expandButton = (nodes: Host[]) => nodes.flatMap(nodesOf).find((node) => node.type === "Text" && textOf(node).startsWith("展开全部"));
+
+  it("keeps the head frozen by default: new lines stay out until 展开全部 is pressed", () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `第${index + 1}行`);
+    const out = outputOf(draw(lines.join("\n"), undefined));
+    expect(out).toContain("第1行");
+    expect(out).not.toContain("第40行");
+    expect(expandButton(draw(lines.join("\n"), undefined))).toBeDefined();
+  });
+
+  it("follows the tail in block mode: the newest lines are in and the head is out", () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `第${index + 1}行`);
+    const out = outputOf(draw(lines.join("\n"), ready({ thoughtTailFollow: true, thoughtTailLines: 10 })));
+    expect(out).not.toContain("第1行");
+    expect(out).toContain("第40行");
+    expect(out).toContain("第31行");
+    expect(out).not.toContain("第30行");
+    // 窗口装不下全量时，「展开全部」仍在。
+    expect(expandButton(draw(lines.join("\n"), ready({ thoughtTailFollow: true, thoughtTailLines: 10 })))).toBeDefined();
+  });
+
+  it("windows whole steps and keeps their original numbers", () => {
+    const paragraphs = Array.from({ length: 12 }, (_, index) => `第${index + 1}步的内容`);
+    const out = outputOf(draw(paragraphs.join("\n\n"), ready({ thoughtTailFollow: true, thoughtTailLines: 5 })));
+    // 无粗体标题的步骤只显示「第 N 步」标签（ui.step），正文单独渲染。
+    expect(out).toContain("第 8 步");
+    expect(out).toContain("第8步的内容");
+    expect(out).toContain("第 12 步");
+    expect(out).toContain("第12步的内容");
+    // 只渲染尾窗 5 步：头部步骤的正文与越界序号都不得出现。
+    expect(out).not.toContain("第1步的内容");
+    expect(out).not.toContain("第7步的内容");
+    expect(out).not.toContain("第 7 步");
+    expect(out).not.toContain("第 19 步");
+  });
+
+  it("marks the newest global step active while streaming, never an older windowed one", () => {
+    const paragraphs = Array.from({ length: 12 }, (_, index) => `第${index + 1}步的内容`);
+    const drawAt = (phase: "streaming" | "complete", settings: unknown) => withSettings(settings, () => render({ type: ui.ReasoningText, props: { text: paragraphs.join("\n\n"), phase, theme: fullTheme, palette: palette(), styles: styles() } }));
+    // active 步骤 = 空心呼吸点（transparent 底）。
+    const subtreeHasActiveDot = (node: Host): boolean => {
+      if ("text" in node) return false;
+      const style = flatten(node.props.style);
+      if (style.borderRadius === 7 && style.backgroundColor === "transparent" && Number(style.width) === 14) return true;
+      return node.children.some((child) => subtreeHasActiveDot(child));
+    };
+    const stepActive = (nodes: Host[], marker: string, notMarker: string) => {
+      // 只看「含本步、不含相邻步」的最小子树（整卡会同时含所有步骤的文本）。
+      const rows = nodes.flatMap(nodesOf).filter((node) => !("text" in node) && textOf(node).includes(marker) && !textOf(node).includes(notMarker));
+      return rows.some(subtreeHasActiveDot);
+    };
+    const streaming = drawAt("streaming", ready({ thoughtTailFollow: true, thoughtTailLines: 5 }));
+    expect(stepActive(streaming, "第12步的内容", "第11步")).toBe(true);
+    expect(stepActive(streaming, "第5步的内容", "第4步")).toBe(false);
+  });
+
+  it("shows everything when the window holds the whole text", () => {
+    const lines = Array.from({ length: 8 }, (_, index) => `第${index + 1}行`);
+    const out = outputOf(draw(lines.join("\n"), ready({ thoughtTailFollow: true, thoughtTailLines: 20 })));
+    expect(out).toContain("第1行");
+    expect(out).toContain("第8行");
+    expect(expandButton(draw(lines.join("\n"), ready({ thoughtTailFollow: true, thoughtTailLines: 20 })))).toBeUndefined();
+  });
+});
+
+describe("0.11.0: 设置预览面板", () => {
+  const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
+  const ready = (values: Record<string, unknown>) => ({ status: "ready", values: { expansion: {}, density: "compact", ...values }, revision: 1 });
+  const withSettings = (settings: unknown, draw: () => Host[]) => {
+    (globalThis as { __vividSettings?: unknown }).__vividSettings = settings;
+    try {
+      return draw();
+    } finally {
+      (globalThis as { __vividSettings?: unknown }).__vividSettings = undefined;
+    }
+  };
+  const draw = (settings: unknown) => withSettings(settings, () => render({ type: ui.PreviewPanel, props: { theme: fullTheme, paletteFor: ui.paletteFor, actions: {}, compact: false } }));
+
+  it("invokes hooks in a stable sequence across loading → ready → takeover-off renders (React #310 class)", () => {
+    const firstHook = (settings: unknown) => {
+      ui.__hooksReset();
+      withSettings(settings, () => render({ type: ui.PreviewPanel, props: { theme: fullTheme, paletteFor: ui.paletteFor, actions: {}, compact: false } }));
+      return ui.__hooksLog()[0] ?? "none";
+    };
+    const loading = firstHook(undefined);
+    expect(loading).toBe("effect");
+    expect(firstHook(ready({}))).toBe(loading);
+    expect(firstHook(ready({ takeover: "off" }))).toBe(loading);
+  });
+
+  it("renders with a stable hook sequence across loading → ready re-renders (React #310 class)", () => {
+    const log = (settings: unknown) => {
+      ui.__hooksReset();
+      withSettings(settings, () => render({ type: ui.DisplaySettings, props: { theme: fullTheme, paletteFor: ui.paletteFor, actions: {}, layout: { compact: false, platform: "web" }, scroll: true } }));
+      return ui.__hooksLog().slice();
+    };
+    const loadingLog = log({ status: "loading" });
+    const readyLog = log({ status: "ready", values: ui.activitySettings.schema.parse({ strength: "faded" }), revision: 1 });
+    // loading 的 hook 序列必须是 ready 序列的前缀（hooks 在提前返回之前无条件调用）。
+    expect(readyLog.slice(0, loadingLog.length)).toEqual(loadingLog);
+  });
+  const viewsWithOpacity = (nodes: Host[]): number[] => nodes.flatMap(nodesOf).flatMap((node) => {
+    if (node.type !== "View") return [];
+    const opacity = flatten(node.props.style).opacity;
+    return typeof opacity === "number" ? [opacity] : [];
+  });
+  const scrollsHorizontally = (nodes: Host[]) => nodes.flatMap(nodesOf).some((node) => node.type === "ScrollView" && node.props.horizontal === true);
+  const text = (nodes: Host[]) => nodes.map(textOf).join("\n");
+
+  it("dims the idle samples by the chosen strength and keeps expanded and running ones full", () => {
+    const faded = viewsWithOpacity(draw(ready({ strength: "faded" })));
+    expect(faded).toEqual(expect.arrayContaining([0.45]));
+    expect(faded).not.toContain(0.3);
+    expect(viewsWithOpacity(draw(ready({ strength: "dim" })))).toContain(0.3);
+  });
+
+  it("colors the collapsed shell command only in the always mode (When open keeps it plain until expanded)", () => {
+    const summarySpans = (mode: string) => {
+      const nodes = draw(ready({ commandColors: mode, expansion: { shell: "never" }, strength: "full" }));
+      const summary = nodes.flatMap(nodesOf).find((node) => node.type === "Text" && textOf(node).includes("npm ci") && node.children && node.children.length > 0);
+      // 着色段 = 嵌套的 Text 元素 children；纯文本 = 单个字符串 children。
+      return summary && Array.isArray(summary.children) ? summary.children.filter((c) => typeof c === "object" && !("text" in c) && c.type === "Text").length : 0;
+    };
+    // Always：收起的行也带语法色段（多个嵌套 Text）；When open：收起行纯文本（展开后才着色）。
+    expect(summarySpans("always")).toBeGreaterThan(1);
+    expect(summarySpans("expanded")).toBe(0);
+  });
+
+  it("mirrors the wrap diff lines setting in the diff sample", () => {
+    // diff 样本挂在展开的 shell 行下：显式给 shell「总是展开」（expansion 嵌套结构与真实设置一致）。
+    // 断言只看 diff 行自身是否处于横滚祖先内——预览里其他域（code/output 关态）也有各自的横滚，不能全树扫。
+    // diffSurface 的特征样式（minWidth:100% + borderWidth:1 + paddingVertical:2 + overflow:hidden）：
+    // 只匹配 diff 容器节点，返回它是否处于横向 ScrollView 祖先内。
+    const diffInHScroll = (nodes: Host[], insideH: boolean): boolean | null => {
+      for (const node of nodes ?? []) {
+        if (node === null || typeof node !== "object" || !("props" in node) || "text" in node) continue;
+        const style = flatten(node.props.style);
+        const isH = node.type === "ScrollView" && node.props.horizontal === true;
+        if (style.minWidth === "100%" && style.borderWidth === 1 && style.paddingVertical === 2 && style.overflow === "hidden") return insideH;
+        const child = diffInHScroll(node.children as Host[], insideH || isH);
+        if (child !== null) return child;
+      }
+      return null;
+    };
+    const drawDiff = (settings: Record<string, unknown>) => diffInHScroll(draw(ready(settings)), false);
+    expect(drawDiff({ wrapLines: { diff: false, code: false, output: false }, expansion: { shell: "always" } })).toBe(true);
+    expect(drawDiff({ wrapLines: { diff: true, code: false, output: false }, expansion: { shell: "always" } })).toBe(false);
+  });
+
+  it("draws the mock turn: pinned question, thinking, tools, fold summary and tokens", () => {
+    const out = text(draw(ready({ pinPrompt: true, strength: "faded", fold: true })));
+    expect(out).toContain("把登录模块");
+    expect(out).toContain("第 1 步：先找到超时配置的来源。");
+    expect(out).toContain("npm ci --omit=dev");
+    expect(out).toContain("4 步");
+    expect(out).toContain("本轮 输入 12k");
+  });
+
+  it("renders the mock turn without negative card margins (the panel has no Paseo spacing to offset, so negatives would overlap rows)", () => {
+    const negative = draw(ready({ strength: "faded" })).flatMap(nodesOf).filter((node) => {
+      if (node.type !== "View") return false;
+      const style = flatten(node.props.style);
+      return (typeof style.marginTop === "number" && style.marginTop < 0) || (typeof style.marginBottom === "number" && style.marginBottom < 0);
+    });
+    expect(negative).toHaveLength(0);
+  });
+
+  it("says there is nothing to preview while takeover is off", () => {
+    const out = text(draw(ready({ takeover: "off" })));
+    expect(out).toContain("接管已关闭");
+    expect(out).not.toContain("npm ci --omit=dev");
   });
 });

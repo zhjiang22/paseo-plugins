@@ -10,19 +10,28 @@ Expanding a row shows highlighted commands with output and exit code, file reads
 
 ## Settings
 
-No setup is needed. Requires Paseo 0.11.1 or later. Open the Vivid Activity settings page:
+No setup is needed. Requires Paseo 0.11.1 or later. Open the Vivid Activity settings page from Paseo's
+Settings → Plugins, from the Vivid Activity row in the app's sidebar, or from "Open Vivid Activity settings"
+in the Command Center — all three show the same page:
 
 - Language: the device language by default, English, Simplified Chinese, or your own translation in `~/.paseo/plugin-data/vivid-activity/locales/`.
 - Takeover: all rows (default), thinking rows only, or off.
 - Fold finished thinking and tool steps: on by default.
 - Row density: compact (default, 4 px gaps) or standard (10 px).
+- Strength: full (default), 65%, 45% or 30% — finished rows sit back at that opacity until you hover, focus or expand them; rows with nothing to expand stay at full strength. Finished fold summaries dim too; expand or hover one to restore it.
 - Pin this turn's question: on by default.
 - Palette: vivid (default), follow the theme accent, soft, or high contrast.
 - Running animation: spinner (default), sparkle, orb, or a dot grid as a snake or a twinkle, with live previews.
 - Code font: family (web, desktop), size, line spacing.
-- Expansion for each kind of row: always, newest only, or collapsed.
+- Command colors: when open (default) or always — the shell command in a row's title carries the theme's syntax colors.
+- Wrap diff lines: off by default (long diff lines scroll sideways); on wraps them to the width.
+- Thinking rows: follow the output live (default off) with a 5–500 line window (default 20); the per-row Expand all still shows everything.
+- Follow new output: one switch per area (command output, worktree and sub-agent logs, task lists, browser), on by default. While a row is still running, its open details stay at the newest output and long output shows its latest 20 lines; finished rows open at the top.
+- Expansion for each kind of row: always, newest only, failed only, or collapsed. A fold summary with failures starts expanded.
 
-Settings live on the daemon and apply to every connected device. Agent output, prompts and paths keep their original text.
+A preview card at the top of the settings page shows sample rows that follow the strength, palette and wrap settings live.
+
+Settings live on the daemon and apply to every connected device; settings saved by earlier versions carry over when you upgrade. Agent output, prompts and paths keep their original text.
 
 ## Data and permissions
 

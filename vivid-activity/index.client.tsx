@@ -3,7 +3,9 @@ import { boot as bootEn } from "./shared/locales/en.json";
 import { boot as bootZh } from "./shared/locales/zh-CN.json";
 import { t } from "./shared/text";
 import { settingsRpc } from "@getpaseo/plugin";
-import type { PluginClientContext } from "@getpaseo/plugin/client";
+import type { PluginClientContext, PluginScreenProps, PluginSidebarItemProps } from "@getpaseo/plugin/client";
+import { SidebarRow } from "@getpaseo/plugin/client/ui";
+import { ScrollView } from "@getpaseo/plugin/client/react-native";
 import { z } from "zod";
 import { createChunkLoader, lazySurfaces } from "./client/lazy-chunk";
 import { ActivityDetailsContext, PlainDetail } from "./client/activity-lazy";
@@ -12,7 +14,7 @@ import { FX_CHUNK } from "./shared/generated/fx-chunk-manifest";
 import { PI_CHUNK } from "./shared/generated/pi-chunk-manifest";
 import { UI_CHUNK } from "./shared/generated/ui-chunk-manifest";
 import { ActivityIndicator } from "react-native";
-import { ColorfulReasoning, ColorfulToolCall } from "./client/activity";
+import { ColorfulReasoning, ColorfulToolCall, paletteFor } from "./client/activity";
 import { FoldRow } from "./client/fold-row";
 import { configureFx } from "./client/fx";
 import { LoaderMark } from "./client/vivid";
@@ -73,13 +75,18 @@ function watchSettings(client: PluginClientContext, changed: () => void): () => 
 
 const NudgeRow = () => null;
 
+/** 0.11.0：侧边栏入口。label 省略，随注册标题走（语言切换时由 i18n.localized 重挂）。 */
+function SettingsSidebarItem({ currentScreen, openScreen }: PluginSidebarItemProps) {
+  return <SidebarRow icon="Activity" active={currentScreen?.screenId === "settings"} onPress={() => openScreen({ screenId: "settings" })} />;
+}
+
 export default function contribute(client: PluginClientContext) {
   const i18n = createClientI18n(client, { pluginId: "vivid-activity", boot: { "zh-CN": { boot: bootZh }, en: { boot: bootEn } } });
   const surface = lazySurfaces(client, { rpc: getClientChunk, manifest: UI_CHUNK, label: () => t("boot.name"), text: i18n, fallback: (id, props) => id === "settings" ? <ActivityIndicator color={props.theme?.colors.foregroundMuted} /> : <PlainDetail {...props} /> });
   const details = { DetailBody: surface("detail"), ReasoningText: surface("reasoning") };
   const LazySettings = surface("settings");
   const actions = { onFoldSettings: foldRuntime.setSettings, onTakeover: applyTakeover, LoaderMark };
-  const ActivitySettings = (props: any) => <LazySettings {...props} actions={actions} />;
+  const ActivitySettings = (props: any) => <LazySettings {...props} actions={actions} paletteFor={paletteFor} />;
   const ReasoningRow = (props: any) => <ActivityDetailsContext.Provider value={details}><ColorfulReasoning {...props} /></ActivityDetailsContext.Provider>;
   const ToolRow = (props: any) => <ActivityDetailsContext.Provider value={details}><ColorfulToolCall {...props} /></ActivityDetailsContext.Provider>;
   const removeFonts = installColorfulFonts();
@@ -88,6 +95,59 @@ export default function contribute(client: PluginClientContext) {
     title: t("boot.name"),
     icon: "Palette",
     Component: ActivitySettings,
+  });
+  // 0.11.0：侧边栏与命令面板的第二个设置入口，指向同一份设置面。screen 只注册一次、标题用函数随语言变
+  // （重挂会把正停在页面上的用户带走的坑，见 observatory 的 settings screen 注释）；侧边栏项和命令标题是
+  // 注册时的字符串，语言切换时由 i18n.localized 重挂。
+  const ScreenSettings = (props: PluginScreenProps) => (
+    // 独立 screen：分栏布局自带左右滚动（client/settings.tsx DisplaySettings 的 scroll 分支），
+    // 这里不再包外层 ScrollView——避免双层滚动。
+    <LazySettings {...props} actions={actions} paletteFor={paletteFor} scroll />
+  );
+  const stopScreen = client.addScreen({ id: "settings", title: () => t("boot.name"), Component: ScreenSettings });
+  // 0.11.0：侧边栏入口开关（settings.sidebar）。挂/摘走同一 handle：设置初读与任意设备的改动都触发
+  // syncSidebarItem；语言切换时 remove-then-add 顺带刷新标题。命令面板入口不受此开关影响。
+  let stopSidebarItem: (() => void) | null = null;
+  let sidebarVisible = true;
+  const removeSidebarItem = () => {
+    if (!stopSidebarItem) return;
+    stopSidebarItem();
+    stopSidebarItem = null;
+  };
+  const syncSidebarItem = () => {
+    removeSidebarItem();
+    if (sidebarVisible) stopSidebarItem = client.addSidebarHeaderItem({ id: "settings", title: t("boot.name"), Component: SettingsSidebarItem });
+  };
+  const applySidebarValues = (values: unknown) => {
+    const parsed = activitySettings.schema.safeParse(values ?? {});
+    sidebarVisible = parsed.success ? parsed.data.sidebar : true;
+    syncSidebarItem();
+  };
+  const stopSidebar = i18n.localized(() => {
+    const stopCommand = client.addCommandCenterItem({
+      id: "open-settings",
+      title: t("boot.openSettings"),
+      icon: "Palette",
+      keywords: [t("boot.name")],
+      context: "global",
+      onSelect({ openScreen }) {
+        openScreen({ screenId: "settings" });
+      },
+    });
+    syncSidebarItem();
+    return () => {
+      stopCommand();
+      removeSidebarItem();
+    };
+  });
+  const sidebarRead = settingsRpc(activitySettings.id).read;
+  void client.rpc(sidebarRead, {}).then((result) => {
+    if (result.status === "ready") applySidebarValues(result.values);
+  }).catch(() => undefined);
+  const stopSidebarWatch = watchSettings(client, () => {
+    void client.rpc(sidebarRead, {}).then((result) => {
+      if (result.status === "ready") applySidebarValues(result.values);
+    }).catch(() => undefined);
   });
   // 计划（ExitPlanMode / plan_approval）和任务清单（TodoWrite）不注册转换器，始终由 Paseo 显示。
   client.addTimelineRenderer({
@@ -167,6 +227,10 @@ export default function contribute(client: PluginClientContext) {
   }, i18n.isReady() ? DEFAULT_TAKEOVER : "off");
   setLiveTakeover(takeover);
   return () => {
+    stopScreen();
+    stopSidebar();
+    stopSidebarWatch();
+    removeSidebarItem();
     stopText();
     i18n.dispose();
     setLiveTakeover(null);

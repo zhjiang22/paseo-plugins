@@ -6,7 +6,7 @@ import { DEFAULT_LINE_SPACING, DEFAULT_TEXT_SIZE, LINE_SPACINGS, MONO_FONT_MAX, 
 export const paletteModeSchema = z.enum(["vivid", "soft", "high_contrast", "theme"]);
 export type PaletteMode = z.output<typeof paletteModeSchema>;
 
-export const expansionModeSchema = z.enum(["always", "latest", "never"]);
+export const expansionModeSchema = z.enum(["always", "latest", "never", "failures"]);
 export type ExpansionMode = z.output<typeof expansionModeSchema>;
 
 /**
@@ -36,6 +36,7 @@ export const EXPANSION_TARGETS = [
   { key: "ask", get label() { return t("settings.ask"); }, default: "never" },
   { key: "speak", get label() { return t("settings.readAloud"); }, default: "latest" },
   { key: "todo", get label() { return t("settings.taskListTools"); }, default: "latest" },
+  { key: "browser", get label() { return t("settings.browserTools"); }, default: "latest" },
   { key: "unknown", get label() { return t("settings.otherTools"); }, default: "latest" },
 ] as const satisfies readonly { key: string; label: string; default: ExpansionMode; hidden?: boolean }[];
 
@@ -66,6 +67,23 @@ export const densitySchema = z.enum(["compact", "standard"]);
 export type Density = z.output<typeof densitySchema>;
 export const DEFAULT_DENSITY: Density = "compact";
 export const DEFAULT_FOLD = true;
+
+/**
+ * 0.11.0: 「淡出强度」, how far a finished row steps back until you hover, focus or expand it. Running, waiting,
+ * asking and live-tail rows always sit at full strength, as do rows with nothing to expand. Finished fold
+ * summaries fade too; expanding or hovering one restores it, and a running segment's header stays full
+ * (shared: client/activity.tsx, client/fold-row.tsx).
+ */
+export const STRENGTH_KINDS = ["dim", "faded", "soft", "full"] as const;
+export type Strength = (typeof STRENGTH_KINDS)[number];
+export const DEFAULT_STRENGTH: Strength = "full";
+export const strengthSchema = z.enum(STRENGTH_KINDS);
+
+/** 0.11.0:「命令着色」档位（client/activity.tsx 行头段；设置页 settings.tsx 消费）。 */
+export const commandColorsSchema = z.enum(["expanded", "always"]);
+
+/** 淡出强度档位 → 行的不透明度（activity/fold-row/preview-card 共用）。 */
+export const STRENGTH_OPACITY: Record<Strength, number> = { dim: 0.3, faded: 0.45, soft: 0.65, full: 1 };
 /** 0.6.0: 「钉住本轮提问」 (shared/prompt-pin.ts). */
 export const DEFAULT_PIN_PROMPT = true;
 
@@ -78,17 +96,49 @@ export type LoaderKind = (typeof LOADER_KINDS)[number];
 export const DEFAULT_LOADER: LoaderKind = "spinner";
 export const loaderSchema = z.enum(LOADER_KINDS);
 
+// 版本号保持 1：0.11.0 的新字段都有默认值，0.10.x 及更早的 v1 存档按本 schema 原样解析。宿主（Paseo ≥0.11.1
+// packages/server/src/server/plugins/settings）遇到存档版本 ≠ 定义版本且无 migrate 时读出 invalid、保存被拒，
+// 所以不能只升版本号（shared/settings.test.ts 按宿主的版本信封检查回归）。0.11.0 预发布构建里的 diffWrap 不迁移
+// （z.object 剥离未知键，取默认）。
 export const activitySettings = defineSettings({
   id: "display",
   scope: "host",
+  // 保持 1，见上。
   version: 1,
   schema: z.object({
     takeover: takeoverScopeSchema.default(DEFAULT_TAKEOVER),
+    // 0.11.0：左侧边栏入口开关。关 = 移除设置入口（命令面板入口不受影响）；旧设置没有这一项，读出来取默认值。
+    sidebar: z.boolean().default(true),
+    // 0.11.0：跟随矩阵（思考行走 thoughtTailFollow，尾窗窗口语义独立）。按展开区域逐域开关。
+    followOutput: z
+      .object({
+        shell: z.boolean().default(true),
+        logs: z.boolean().default(true),
+        todo: z.boolean().default(true),
+        browser: z.boolean().default(true),
+      })
+      .default({ shell: true, logs: true, todo: true, browser: true }),
+    // 0.11.0：长行折行矩阵（预发布的 diffWrap 扩围，不迁移；旧设置读出来取默认值）。off = 单行横滚（0.11.0 前的现状）。
+    wrapLines: z
+      .object({
+        diff: z.boolean().default(false),
+        code: z.boolean().default(false),
+        output: z.boolean().default(false),
+      })
+      .default({ diff: false, code: false, output: false }),
     palette: paletteModeSchema.default("vivid"),
     expansion: expansionSettingsSchema.default(DEFAULT_EXPANSION),
     // 本地补丁：「完成后折叠连续的思考与工具行」。旧设置没有这两项，读出来取默认值，所以版本号不变。
     fold: z.boolean().default(DEFAULT_FOLD),
     density: densitySchema.default(DEFAULT_DENSITY),
+    // 0.11.0：同上，旧设置读出来取默认值。
+    strength: strengthSchema.default(DEFAULT_STRENGTH),
+    // 0.11.0：「命令着色」行头 shell 命令的语法色（client/activity.tsx 行头段；chat-polish 同名设置）。
+    commandColors: commandColorsSchema.default("expanded"),
+    // 0.11.0：「思考行实时跟随」：开 = 展开后的思考框展示最新 N 行并跟随输出；关 = 头部 20 行冻结（现状）。
+    thoughtTailFollow: z.boolean().default(false),
+    // 0.11.0：尾窗大小（块模式=行数，步骤模式=步数）。UI 层钳制 5–500 后才保存。
+    thoughtTailLines: z.number().int().min(5).max(500).default(20),
     // 0.6.0：同上，旧设置没有这一项，读出来取默认值。
     pinPrompt: z.boolean().default(DEFAULT_PIN_PROMPT),
     // 0.8.0：同上。

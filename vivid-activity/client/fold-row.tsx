@@ -3,7 +3,7 @@ import { t } from "../shared/text";
 import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
 import { useAgent } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Pressable, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { DiffBlocks, Glyph } from "./diffstat";
 import { useFx } from "./fx";
@@ -11,7 +11,8 @@ import { foldAccessibilityLabel, foldCountParts, foldTitle, formatFoldDuration }
 import type { WireTurnTokens } from "../shared/fold-index";
 import type { FoldItemData } from "../shared/timeline";
 import { looks, type LookKey, type RowStatus } from "../shared/vivid-model";
-import { usePalette } from "./activity";
+import { usePalette, useStrength } from "./activity";
+import { STRENGTH_OPACITY } from "../shared/settings";
 import { densityMetrics, useDensity, useFoldRow } from "./density";
 import { foldRuntime } from "./fold-runtime";
 import { aria, compactNumber, hue, isDarkTheme, withAlpha, type Hue } from "./kit";
@@ -157,6 +158,10 @@ export function FoldRow({ agentId, item, theme, layout, timestamp }: PluginTimel
   const tokens = useTurnTokens(agentId, data.lastOfTurn && data.turn ? data.turn : null);
   const files = data.files ?? 0;
   const uncounted = data.uncounted ?? 0;
+  const [hovered, setHovered] = useState(false);
+  const strength = useStrength();
+  // 「淡出强度」：已结束的折叠摘要同样退后，展开、悬停/聚焦恢复；运行中的段头（「前面 N 步」）保持全强度。
+  const quiet = strength !== "full" && done && !data.expanded && !hovered;
 
   const text = useMemo(
     () => ({
@@ -186,9 +191,9 @@ export function FoldRow({ agentId, item, theme, layout, timestamp }: PluginTimel
   const indent = (layout.compact ? 6 : 8) + metrics.tile + metrics.gap;
 
   return (
-    <View {...pmonoViewEscape} style={card}>
+    <View {...pmonoViewEscape} style={[card, quiet ? { opacity: STRENGTH_OPACITY[strength] } : null]}>
       {pin ? <PinnedPrompt agentId={agentId} pin={pin} theme={theme} mode={palette.mode} metrics={metrics} /> : null}
-      <Pressable accessibilityRole="button" accessibilityLabel={label} {...aria({ expanded: data.expanded })} onPress={toggle} style={row}>
+      <Pressable accessibilityRole="button" accessibilityLabel={label} {...aria({ expanded: data.expanded })} onPress={toggle} onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)} onFocus={() => setHovered(true)} onBlur={() => setHovered(false)} style={row}>
         <FoldTile theme={theme} tone={tone} size={metrics.tile} pulse={changes} />
         <Text {...cuiTextEscape} numberOfLines={1} style={text.title}>{foldTitle(data)}</Text>
         {!layout.compact && bar.length > 0 ? <LookBar theme={theme} mode={palette.mode} parts={bar} /> : null}

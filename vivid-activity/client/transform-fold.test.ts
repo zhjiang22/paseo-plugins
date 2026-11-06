@@ -222,7 +222,8 @@ describe("timeline transforms with folding", () => {
       for (let index = 0; index < 400; index++) {
         expect(kindsOf(transformToolCall({ item: notice("big-bash", `ok ${index}`, `task_notification_big_${index}`), phase: "complete" }))).toEqual(["colorful-tool-call"]);
       }
-      expect(performance.now() - started).toBeLessThan(400);
+      // 墙钟放宽（安静时 ~100ms）：守卫抓的是二次退化（数量级差异），并行满载下 400ms 会误报。
+      expect(performance.now() - started).toBeLessThan(2_000);
     });
   });
 

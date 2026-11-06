@@ -179,10 +179,12 @@ export type FoldItemData = z.output<typeof foldItemDataSchema>;
 export type ReasoningItemData = z.output<typeof reasoningItemDataSchema>;
 export type ToolCallItemData = z.output<typeof toolCallItemDataSchema>;
 
-export function resolveExpansion(mode: ExpansionMode, isLatest: boolean, userExpanded: boolean | null): boolean {
+export function resolveExpansion(mode: ExpansionMode, isLatest: boolean, userExpanded: boolean | null, isFailed = false): boolean {
   if (userExpanded !== null) return userExpanded;
   if (mode === "always") return true;
   if (mode === "never") return false;
+  // 0.11.0:「失败」档：只展开失败的行；运行中的行失败后即时展开（状态翻转驱动重渲染）。
+  if (mode === "failures") return isFailed;
   return isLatest;
 }
 

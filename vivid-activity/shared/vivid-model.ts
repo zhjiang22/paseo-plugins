@@ -20,7 +20,7 @@ export type Hue = "blue" | "sky" | "cyan" | "teal" | "green" | "lime" | "amber" 
 
 /** waiting: a permission request on the row (等你批准); question: the row asks you something (等你回答, 0.6.0). */
 export type RowStatus = "running" | "waiting" | "question" | "completed" | "failed" | "canceled";
-export type LookKey = "think" | "read" | "list" | "edit" | "write" | "shell" | "search" | "web" | "agent" | "plan" | "mcp" | "paseo" | "ask" | "skill" | "other";
+export type LookKey = "think" | "read" | "list" | "edit" | "write" | "shell" | "search" | "web" | "browser" | "agent" | "plan" | "mcp" | "paseo" | "ask" | "skill" | "other";
 
 /**
  * 类别色与 Agent 观测台（agent-observatory 的 laneLooks / kindLooks）一致：思考紫、读文件蓝、搜索靛、改文件绿、
@@ -36,6 +36,8 @@ export const looks: Record<LookKey, { label: string; icon: string; hue: Hue }> =
   shell: { get label() { return t("modelLook.shell"); }, icon: "SquareTerminal", hue: "orange" },
   search: { get label() { return t("modelLook.search"); }, icon: "Search", hue: "indigo" },
   web: { get label() { return t("modelLook.web"); }, icon: "Globe", hue: "cyan" },
+  // 0.11.0:Paseo 内置浏览器工具（导航/点击/输入/快照……）独立类目；与网页同青色系，计数与色带分开。
+  browser: { get label() { return t("modelLook.browser"); }, icon: "AppWindow", hue: "cyan" },
   agent: { get label() { return t("modelLook.agent"); }, icon: "Bot", hue: "fuchsia" },
   plan: { get label() { return t("modelLook.plan"); }, icon: "ListChecks", hue: "teal" },
   ask: { get label() { return t("modelLook.ask"); }, icon: "MessageCircleQuestionMark", hue: "amber" },
@@ -63,7 +65,7 @@ export const VIVID_CATEGORY_HUES = {
 /** 本地补丁：折叠摘要里的类别计数名，与行标题一致（读取、编辑、命令……）。 */
 export const COUNT_LABELS: Record<LookKey, string> = translatedTable({
   think: "modelCount.think", read: "modelCount.read", list: "modelCount.list", edit: "modelCount.edit", write: "modelCount.write", shell: "modelCount.shell", search: "modelCount.search", web: "modelCount.web",
-  agent: "modelCount.agent", plan: "modelCount.plan", ask: "modelCount.ask", mcp: "modelCount.mcp", paseo: "modelCount.paseo", skill: "modelCount.skill", other: "modelCount.other",
+  agent: "modelCount.agent", plan: "modelCount.plan", ask: "modelCount.ask", mcp: "modelCount.mcp", paseo: "modelCount.paseo", skill: "modelCount.skill", browser: "modelCount.browser", other: "modelCount.other",
 });
 
 export function isLookKey(value: string): value is LookKey {
@@ -122,6 +124,42 @@ export const PASEO_TOOL_ZH: Readonly<Record<string, string>> = translatedTable({
   "List Agent Profiles": "modelPaseo.listAgentProfiles",
   "Inspect Provider": "modelPaseo.inspectProvider",
   "List Browser Tabs": "modelPaseo.listBrowserTabs",
+  "Browser List Tabs": "modelPaseo.listBrowserTabs",
+  "Browser New Tab": "modelPaseo.createBrowserTab",
+  "Browser Close Tab": "modelPaseo.closeBrowserTab",
+  "Browser Snapshot": "modelPaseo.snapshotBrowserPage",
+  "Browser Snapshot Page": "modelPaseo.snapshotBrowserPage",
+  "Browser Click": "modelPaseo.clickBrowserElement",
+  "Browser Click Element": "modelPaseo.clickBrowserElement",
+  "Browser Fill": "modelPaseo.fillBrowserElement",
+  "Browser Fill Element": "modelPaseo.fillBrowserElement",
+  "Browser Hover": "modelPaseo.hoverBrowserElement",
+  "Browser Hover Element": "modelPaseo.hoverBrowserElement",
+  "Browser Drag": "modelPaseo.dragBrowserElement",
+  "Browser Drag Element": "modelPaseo.dragBrowserElement",
+  "Browser Select": "modelPaseo.selectBrowserOption",
+  "Browser Select Option": "modelPaseo.selectBrowserOption",
+  "Browser Wait": "modelPaseo.waitForBrowserCondition",
+  "Browser Wait for Condition": "modelPaseo.waitForBrowserCondition",
+  "Browser Type": "modelPaseo.typeIntoBrowser",
+  "Browser Type into Element": "modelPaseo.typeIntoBrowser",
+  "Browser Press Key": "modelPaseo.pressBrowserKey",
+  "Browser Press": "modelPaseo.pressBrowserKey",
+  "Browser Navigate": "modelPaseo.navigateBrowser",
+  "Browser Scroll": "modelPaseo.scrollBrowser",
+  "Browser Scroll Page": "modelPaseo.scrollBrowser",
+  "Browser Resize": "modelPaseo.resizeBrowserViewport",
+  "Browser Resize Viewport": "modelPaseo.resizeBrowserViewport",
+  "Browser Screenshot": "modelPaseo.captureBrowserScreenshot",
+  "Browser Capture Screenshot": "modelPaseo.captureBrowserScreenshot",
+  "Browser Upload": "modelPaseo.uploadFilesInBrowser",
+  "Browser Upload Files": "modelPaseo.uploadFilesInBrowser",
+  "Browser Logs": "modelPaseo.readBrowserLogs",
+  "Browser Read Logs": "modelPaseo.readBrowserLogs",
+  "Browser Console": "modelPaseo.readBrowserLogs",
+  "Browser Evaluate": "modelPaseo.evaluateBrowserJavascript",
+  "Browser Evaluate JavaScript": "modelPaseo.evaluateBrowserJavascript",
+  "Browser Key Press": "modelPaseo.pressBrowserKey",
   "Create Browser Tab": "modelPaseo.createBrowserTab",
   "Close Browser Tab": "modelPaseo.closeBrowserTab",
   "Snapshot Browser Page": "modelPaseo.snapshotBrowserPage",
@@ -205,6 +243,10 @@ export function lookFor(name: string, detail: DetailLike, presentation: { catego
   if (presentation.label === "Tasks") return "plan";
   if (presentation.label.startsWith("Paseo ")) return "paseo";
   if (presentation.label === "Exa Web Search" || presentation.label === "Exa Web Fetch") return "web";
+  // 0.11.0:浏览器工具独立类目——判据用名称本身（browser_* 及宿主标题化变体 "Browser X" 都命中），
+  // 不锚定图标表：宿主改标签名（0.15 把 Create Browser Tab 改成 Browser New Tab）也不会失效。
+  // 含 browser 的 MCP 工具也归此（它们确实是浏览器操作）。
+  if (/browser/i.test(leaf)) return "browser";
   if (/^mcp__|^mcp_|\./.test(leaf) && presentation.category === "unknown") return "mcp";
   if (presentation.category === "search") return "search";
   if (presentation.category === "agent") return "agent";

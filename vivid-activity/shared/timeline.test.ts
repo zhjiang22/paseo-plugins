@@ -147,6 +147,16 @@ describe("row expansion", () => {
     expect(resolveExpansion("latest", false, true)).toBe(true);
     expect(resolveExpansion("latest", true, false)).toBe(false);
   });
+
+  it("expands only failed rows in the failures mode, and a running row opens once it fails", () => {
+    expect(resolveExpansion("failures", true, null, true)).toBe(true);
+    expect(resolveExpansion("failures", true, null, false)).toBe(false);
+    expect(resolveExpansion("failures", false, null, true)).toBe(true);
+    expect(resolveExpansion("failures", false, null, false)).toBe(false);
+    // 用户显式开合仍优先于失败自动展开。
+    expect(resolveExpansion("failures", false, false, true)).toBe(false);
+    expect(resolveExpansion("failures", false, true, false)).toBe(true);
+  });
 });
 
 describe("task update expansion", () => {

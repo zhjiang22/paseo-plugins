@@ -263,7 +263,9 @@ describe("Claude Code task notices", () => {
     const started = performance.now();
     expect(comparableResult(lines)?.text.split("\n")).toHaveLength(13_000);
     expect(sameResult(comparableResult(lines), lines.replaceAll("\u001b[32m", "").replaceAll("\u001b[0m", ""))).toBe(true);
-    expect(performance.now() - started).toBeLessThan(100);
+    // Wall clock, generous (a quiet run parses in a few ms): the guard catches quadratic reading; the suite itself
+    // runs under parallel load, which pushed a bare 100 ms bound over the edge on every full run.
+    expect(performance.now() - started).toBeLessThan(500);
   });
 
   it("reads the ending of a long name from the end of the whole summary, then shortens the name (codex-vivid-F8)", () => {

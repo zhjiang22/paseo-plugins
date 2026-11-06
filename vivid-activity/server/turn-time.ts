@@ -58,12 +58,11 @@ export class TurnTimePublisher {
 
   /** One row for a finished turn, carrying the moment it ended. */
   async finish(event: PluginLifecycleEvents["agent.turn_ended"], context: PluginHandlerContext): Promise<void> {
+    const at = Date.now();
     await this.ready;
     if (!this.enabled || this.stopped) return;
-    // 钩子触发的时刻就是这一轮结束的时刻。
-    const at = Date.now();
     const data = turnTimeDataSchema.parse({ at, turnId: event.turnId, outcome: event.outcome.kind });
-    await this.append(context.paseo, event.agent.id, `${event.turnId ?? "turn"}-end`, data);
+    await this.append(context.paseo, event.agent.id, `${event.turnId ?? "turn"}-end-${at}`, data);
   }
 
   private async append(

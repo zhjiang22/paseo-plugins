@@ -108,6 +108,6 @@ describe("TurnTimePublisher", () => {
     await publisher.finish(ended(null), { paseo } as never);
 
     expect(appended).toHaveLength(1);
-    expect(appended[0]!.item.id).toBe("turn-end");
+    expect(appended[0]!.item.id).toBe(`turn-end-${appended[0]!.item.data.at}`);
   });
 });

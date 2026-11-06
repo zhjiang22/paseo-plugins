@@ -36,7 +36,9 @@ from Beautiful Chat and [TokenLedger](https://github.com/stv1024/token-ledger).
 - **Turn tokens**: under the last fold row of a turn you watched, `This turn in 12k · cached 80k · out 2.4k`. Codex
   turns add up while they run (the coin breathes) and freeze when they end.
 - **Timing**: every row shows its duration, running rows count up live, and the fold row shows the elapsed time
-  of the whole run.
+  of the whole run. Optional timestamps show the latest update of individual activity and folded rows in the viewer's
+  local time zone. A separate option records the end time of each new turn; existing turns are not backfilled.
+  Timeline update times are not guaranteed to be exact completion times, and a turn marker is appended asynchronously.
 - **Detail cards**: highlighted commands with output, exit code and copy buttons; file reads with a language
   badge and line numbers; colored diffs; inline previews for images the agent read; dedicated views for Paseo's
   own tools, GitHub and Exa results.
@@ -67,6 +69,7 @@ The Vivid Activity settings page offers:
 | Takeover | all rows (default), thinking rows only, off |
 | Fold finished steps | on (default), off |
 | Row density | compact (default, 4 px between rows), standard (10 px) |
+| Timestamps | turn end and activity update times, independently off by default |
 | Pin this turn's question | on (default), off |
 | Palette | vivid (default), follow theme, soft, high contrast |
 | Running animation | spinner (default), sparkle, orb, dot grid: snake, dot grid: twinkle, with live previews |
@@ -140,7 +143,7 @@ motion (the sparkle rests on ✻).
 
 ## Data access
 
-The plugin makes no network requests and starts no processes. It reads language files and writes translation templates and its language state under its plugin data folder.
+The plugin makes no network requests and starts no processes. It reads language files and writes translation templates and its language state under its plugin data folder. When enabled, turn timestamps are appended to the agent timeline.
 
 - The server part reads the projected timeline of the agent you are viewing inside the daemon and returns a
   compact fold index to the app: each row's position, end time, kind, status and category, tool call and turn ids,

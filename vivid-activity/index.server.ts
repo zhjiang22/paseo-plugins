@@ -57,6 +57,7 @@ export default function contribute(server: PluginServerContext) {
   const stopTurns = server.on("agent.turn_started", (event, context) => {
     see(context?.paseo);
     noteTurnStarted(event.agent.id, event.turnId);
+    turnTimes.started(event.agent.id);
     void usage.turnStarted(event.agent.id, event.agent.provider, event.turnId).catch(() => undefined);
   });
   const stopEnded = server.on("agent.turn_ended", (event, context) => {
@@ -74,6 +75,7 @@ export default function contribute(server: PluginServerContext) {
   const stopArchived = server.on("agent.archived", (event) => {
     forgetAgentTurns(event.agent.id);
     usage.forget(event.agent.id);
+    turnTimes.forget(event.agent.id);
   });
   return () => {
     locales.dispose();

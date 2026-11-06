@@ -6,7 +6,8 @@ import { z } from "zod";
  * Paseo 只在悬停助手消息时用 tooltip 显示结束时刻；这里把同一时刻固化成一行的常显时间，回看聊天时能直接看到
  * 每一轮是什么时候结束的。行由插件服务端在 `agent.turn_ended` 时写进 Agent 时间线，所以会随会话持久化，重开聊天也在。
  *
- * 位置定在整轮末尾的取舍见 server/turn-time.ts：时间线只能 append，一行能落在哪里完全取决于什么时候写。
+ * 时间线只能 append，行的位置由宿主提交的先后决定，通常在这一轮末尾、但不保证（见 server/turn-time.ts）；折叠索引
+ * 不收这种行（shared/fold-index.ts），所以它落在哪里都不影响折叠与计时。
  */
 export const TURN_TIME_RENDERER_KIND = "vivid-turn-time";
 export const TURN_TIME_RENDERER_VERSION = 1;
@@ -43,8 +44,9 @@ export function formatTurnTime(at: number): string {
 /**
  * 本地补丁：一条活动行的结束时刻标签。
  *
- * 时刻来自渲染器本来就拿到的 `timestamp`，也就是这一条最后一次更新时 daemon 收到事件的时间：工具行是完成事件、
- * 思考行是最后一段思考。所以它和折叠索引里的 `at` 是同一个值，不需要多读一次时间线。
+ * 时刻来自渲染器本来就拿到的 `timestamp`，也就是这一条最后一次更新时 daemon 收到事件的时间：工具行通常是完成
+ * 事件（完成后若还有更新，则是最后一次更新）、思考行是最后一段思考。它是「最近更新时间」，不保证是精确的完成时刻；
+ * 和折叠索引里的 `at` 是同一个值，不需要多读一次时间线。
  */
 export function endedStamp(at: number | Date, enabled: boolean, running: boolean): string | null {
   if (!enabled || running) return null;

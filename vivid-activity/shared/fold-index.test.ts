@@ -13,6 +13,7 @@ import {
   wirePageFromEntries,
   wireRowFromEntry,
 } from "./fold-index";
+import { TURN_TIME_RENDERER_KIND, TURN_TIME_RENDERER_VERSION } from "./turn-time";
 
 const entry = (seqStart: number, item: Record<string, unknown>, provider = "claude", timestamp = "2026-10-09T10:00:00.000Z") => ({
   provider,
@@ -42,6 +43,21 @@ describe("fold index rows", () => {
     expect(wireRowFromEntry(entry(4, { type: "todo", items: [] }))).toMatchObject({ k: "b", w: "todo" });
     expect(wireRowFromEntry({ item: { type: "assistant_message" } })).toBeNull();
     expect(wireRowFromEntry(entry(5, { type: "assistant_message", text: "x" }, "claude", "bogus"))).toMatchObject({ at: 0 });
+  });
+
+  it("leaves this plugin's turn-end time row out of the index, so it neither splits, joins nor times a run", () => {
+    const marker = { type: "plugin", pluginId: "vivid-activity", kind: TURN_TIME_RENDERER_KIND, version: TURN_TIME_RENDERER_VERSION, data: { at, turnId: "t1", outcome: "completed" } };
+    expect(wireRowFromEntry(entry(3, marker))).toBeNull();
+    // Other plugin rows stay boundaries.
+    expect(wireRowFromEntry(entry(3, { ...marker, kind: "vivid-other" }))).toMatchObject({ k: "b", w: "plugin" });
+    // On a page it is no row, and the turn the host gives it adds no turn to the table.
+    const turned = (seq: number, item: Record<string, unknown>, turnId: string) => ({ ...entry(seq, item), turnId });
+    const { rows, turns } = wirePageFromEntries(
+      [turned(1, call("Bash", { type: "shell", command: "a" }, { callId: "c1" }), "t2"), turned(2, marker, "t1"), turned(3, call("Bash", { type: "shell", command: "b" }, { callId: "c2" }), "t2")],
+      () => null,
+    );
+    expect(rows.map((row) => row.s)).toEqual([1, 3]);
+    expect(turns).toEqual([{ id: "t2", at: null }]);
   });
 
   it("keeps the tool look, status and call id, and leaves plans and spoken messages to Paseo", () => {

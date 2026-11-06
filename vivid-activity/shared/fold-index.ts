@@ -7,6 +7,7 @@ import { comparableResult, isForegroundNotice, noticeLook, readTaskNotice, rowRe
 import { piNoticeStatus, readPiNotice } from "./pi-notice";
 import { extractApplyPatchEdits, isApplyPatchTool, normalizeToolCallDetail, resolveToolCallPresentation, withMetadataEditDiff } from "./presentation";
 import { pluginCardOf } from "./plugin-cards";
+import { TURN_TIME_RENDERER_KIND } from "./turn-time";
 import { lookFor, type LookKey } from "./vivid-model";
 
 /**
@@ -247,6 +248,11 @@ export function wireRowFromEntry(entry: unknown, rowResult?: (callId: string) =>
   const parsedAt = typeof source.timestamp === "string" ? Date.parse(source.timestamp) : NaN;
   const at = Number.isFinite(parsedAt) && parsedAt > 0 ? parsedAt : 0;
   const seqEnd = typeof source.seqEnd === "number" && Number.isInteger(source.seqEnd) && source.seqEnd > seq ? source.seqEnd : null;
+  // The plugin's own turn-end time row (server/turn-time.ts) is not part of the index at all: it is appended after the
+  // turn ended, and the host may commit it among the next turn's rows. As a boundary it would split that turn's steps;
+  // as a timed row of another turn it would shift that turn's timing. Leaving it out keeps the folds and timing exactly
+  // as they are without the row, wherever it lands, also for rows written before this and after the switch is off.
+  if (type === "plugin" && item.kind === TURN_TIME_RENDERER_KIND) return null;
   const base = { s: seq, ...(seqEnd !== null ? { e: seqEnd } : {}), at };
   if (type === "reasoning") {
     return typeof item.text === "string" ? { ...base, k: "r", key: reasoningKey(item.text) } : { ...base, k: "b", w: "reasoning" };

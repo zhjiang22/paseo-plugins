@@ -6,20 +6,17 @@ type Settings = PluginSettings<typeof activitySettings.schema>;
 type Paseo = PluginHandlerContext["paseo"];
 
 /**
- * 本地补丁：每一轮结束时，在该轮末尾追加一行时间。
+ * 本地补丁：每一轮结束时，追加一行这一轮的结束时刻。
  *
- * 位置为什么定在「整轮末尾」：daemon 的时间线写入只有 append（`agent.timeline.append.request`），**没有按位置插入的
- * 接口**，一行写下去位置就定了。于是一行能落在哪里，完全取决于「什么时候写」：
+ * daemon 的时间线写入只有 append（`agent.timeline.append.request`），**没有按位置插入、也没有绑定轮次的接口**，一行落在
+ * 哪里由宿主提交的先后决定。钩子在整轮结束时触发，通常写下的行就在这一轮所有内容之后；但 lifecycle 事件是 best effort，
+ * 回调彼此可以重叠、完成顺序不保证（Paseo v0.11.1 plugins reference），`server.on` 返回的 Promise 也不会让下一轮等它。
+ * 所以这一行**不保证**紧贴这一轮末尾：
  *
- * - 想落在某段文字的正下方（它后面那些命令之前）：做不到。命令行由 Paseo 在命令**开始**时就记下了，插件收到通知时
- *   它已经在时间线里，插件只能写在它后面。
- * - 想落在「这一段的最后一条命令之后、下一段文字之前」：做不到。这要求写在「最后一条命令已记录、下一段文字还没开始」
- *   的窗口里，而这个窗口就是模型两步之间的思考时间，可能几十毫秒、也可能不存在。用定时器去赌，就会出现同一段文字
- *   有时写在第一条命令后、有时写在第二条命令后——也就是你看到的那种「插在两个命令之间」。
- * - 整轮末尾：能做到，而且是确定的。钩子在整轮结束时触发，此后这一轮不会再产生新的内容，写下的行必然落在这一轮所有
- *   内容之后。
- *
- * 所以这里每个 turn 写一行，取钩子触发的时刻，附在这一轮末尾。这也是最初的需求：每一轮后面显示这一轮的时间。
+ * - 时刻取钩子触发的那一刻（进入 `finish` 时），之后等设置、等写入都不会把时间拖后。
+ * - 等设置期间这个 Agent 已经开始了下一轮：此时再写，行会落进下一轮的内容里，于是不写（宁缺不错）。
+ * - 写入请求已经发出、宿主却先提交了下一轮的内容：插件无从避免，这一行可能出现在下一轮开头几行之后。行里带着
+ *   turnId；折叠索引（shared/fold-index.ts）完全不收这种行，所以无论它落在哪里，都不会切断下一轮的折叠、也不影响计时。
  */
 export class TurnTimePublisher {
   private readonly settings: Settings;
@@ -28,6 +25,11 @@ export class TurnTimePublisher {
   private ready: Promise<void> = Promise.resolve();
   private stopSettings: (() => void) | null = null;
   private stopped = false;
+  /** A change notification is at least as new as the first read: a read that answers after one must not undo it. */
+  private notified = false;
+  /** Per agent: a number that changes whenever one of its turns starts (`started`). */
+  private readonly starts = new Map<string, number>();
+  private startCount = 0;
 
   constructor(settings: Settings) {
     this.settings = settings;
@@ -38,11 +40,12 @@ export class TurnTimePublisher {
     this.ready = this.settings
       .read()
       .then((state) => {
-        if (!this.stopped) this.enabled = state.status === "ready" && turnTimeFromValues(state.values);
+        if (!this.stopped && !this.notified) this.enabled = state.status === "ready" && turnTimeFromValues(state.values);
       })
       .catch(() => undefined);
     try {
       this.stopSettings = this.settings.subscribe((state) => {
+        this.notified = true;
         this.enabled = state.status === "ready" && turnTimeFromValues(state.values);
       });
     } catch {
@@ -56,13 +59,27 @@ export class TurnTimePublisher {
     this.stopSettings = null;
   }
 
+  /** A turn of the agent began (`agent.turn_started`): an earlier turn's row not written yet would land inside it. */
+  started(agentId: string): void {
+    this.starts.set(agentId, ++this.startCount);
+  }
+
+  /** The agent was archived: nothing is written for it any more. */
+  forget(agentId: string): void {
+    this.starts.delete(agentId);
+  }
+
   /** One row for a finished turn, carrying the moment it ended. */
   async finish(event: PluginLifecycleEvents["agent.turn_ended"], context: PluginHandlerContext): Promise<void> {
     const at = Date.now();
+    const agentId = event.agent.id;
+    const startsBefore = this.starts.get(agentId);
     await this.ready;
     if (!this.enabled || this.stopped) return;
+    // The agent began another turn meanwhile: written now, the row would sit among that turn's rows.
+    if (this.starts.get(agentId) !== startsBefore) return;
     const data = turnTimeDataSchema.parse({ at, turnId: event.turnId, outcome: event.outcome.kind });
-    await this.append(context.paseo, event.agent.id, `${event.turnId ?? "turn"}-end-${at}`, data);
+    await this.append(context.paseo, agentId, `${event.turnId ?? "turn"}-end-${at}`, data);
   }
 
   private async append(

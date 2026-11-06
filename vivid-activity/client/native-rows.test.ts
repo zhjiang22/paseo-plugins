@@ -554,6 +554,37 @@ describe("0.11.0: diff 折行与命令着色", () => {
   });
 });
 
+describe("0.11.0: 工具明细区只在运行中跟随（跟随矩阵）", () => {
+  const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
+  const ready = (values: Record<string, unknown>) => ({ status: "ready", values: { expansion: { shell: "always" }, density: "compact", ...values }, revision: 1 });
+  const output = Array.from({ length: 120 }, (_, index) => `line ${index + 1}`).join("\n");
+  /** Draws an expanded shell row and fires its detail ScrollView's onContentSizeChange (RN fires it on first layout too). */
+  const scrollsOnLayout = (status: string, values: Record<string, unknown> = {}) => {
+    (globalThis as { __vividSettings?: unknown }).__vividSettings = ready(values);
+    try {
+      const nodes = render({ type: ui.ColorfulToolCall, props: { agentId: "a-follow", item: { kind: "colorful-tool-call", data: ui.createToolCallData({ type: "tool_call", callId: "f1", name: "Bash", status, error: null, detail: { type: "shell", command: "npm test", output } }) }, theme: fullTheme, timestamp: new Date(0), layout: { compact: false, platform: "web" } } });
+      const scroll = nodes.flatMap(nodesOf).find((node) => node.type === "ScrollView" && typeof node.props.onContentSizeChange === "function");
+      expect(scroll).toBeDefined();
+      let calls = 0;
+      (scroll!.props.ref as { current: unknown }).current = { scrollToEnd: () => { calls += 1; } };
+      (scroll!.props.onContentSizeChange as () => void)();
+      return calls;
+    } finally {
+      (globalThis as { __vividSettings?: unknown }).__vividSettings = undefined;
+    }
+  };
+
+  it("opens a finished row's long details at the top, with every follow switch on (the default)", () => {
+    expect(scrollsOnLayout("completed")).toBe(0);
+    expect(scrollsOnLayout("failed")).toBe(0);
+  });
+
+  it("keeps a running row's details at the bottom while its area follows, and lets the switch turn that off", () => {
+    expect(scrollsOnLayout("running")).toBe(1);
+    expect(scrollsOnLayout("running", { followOutput: { shell: false, logs: true, todo: true, browser: true } })).toBe(0);
+  });
+});
+
 describe("0.11.0: 思考行尾随窗口", () => {
   const fullTheme = { colors: { ...theme.colors, accentForeground: "#ffffff", statusSuccess: "#3fb950", statusWarning: "#d29922", statusDanger: "#f85149" } };
   const palette = () => ui.resolveVividPalette(fullTheme);

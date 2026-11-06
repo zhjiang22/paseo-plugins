@@ -7,6 +7,11 @@
   (up to 4,000 characters);
   the window holds 5–500 lines (steps in the step view) and defaults to 20. The per-row Expand all still shows
   everything, and a segment you collapsed yourself stays collapsed.
+- **Follow new output**: one switch per area — command output, worktree and sub-agent logs (which also covers the
+  other tool details), task lists and browser tools — all on by default. While a row is still running, its open
+  details stay at the newest output, and long command output and logs show their latest 20 lines (up to 4,000
+  characters, colors kept) instead of the first 20; scrolling up pauses the follow, and Expand all still shows
+  everything. Finished rows open at the top with the first lines, as before.
 - **Live preview**: the settings page is split — controls on the left, a live preview panel on the right (above
   the controls on phones). The preview draws a full mock turn with the plugin's own styles: pinned question,
   an expanded thinking row with the tail window, tool rows (read, shell with diff, failed, running), a fold
@@ -29,6 +34,10 @@
 - **Settings from the sidebar**: the settings page now also opens from a Vivid Activity row in the app's sidebar
   and from "Open Vivid Activity settings" in the Command Center, next to the existing Settings → Plugins page;
   all three show the same settings. Screen and sidebar titles follow the chosen language without reloading.
+- **Upgrading**: settings saved by 0.10.x and earlier carry over unchanged — the stored settings stay at schema
+  version 1 and every new setting starts at its default. Settings saved by a 0.11.0 pre-release build (stored as
+  version 2) show as invalid once; press Reset on the settings page. Going back to 0.10.x keeps the settings,
+  unless a row kind was set to "Expand failed rows", which 0.10.x reports as invalid.
 - Maintainers: the client-chunk build script ships with the package now — `npm run build:chunks` rebuilds the
   served chunks after any client-side change, and `npm run check` rejects stale artifacts. The `fx` chunk grew
   (to ~97 KiB — it now carries the shared highlight module, Prism core and the language grammars) for Command

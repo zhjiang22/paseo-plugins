@@ -1731,25 +1731,91 @@ export function ansiColourPrefix(raw: string, visible: number): string {
   return scanAnsi(raw, true, Math.max(0, visible));
 }
 
+/**
+ * 0.11.0: `stripAnsi(raw)` from visible character `from` on, `visible` characters of it, with the complete colour
+ * sequences before the window replayed (without their text, from the last full reset on) and those inside it kept:
+ * what the "ansi" highlighter colours for a tail window. Only reads as far into `raw` as it needs.
+ */
+export function ansiColourWindow(raw: string, from: number, visible: number): string {
+  const end = from + Math.max(0, visible);
+  const before: string[] = [];
+  const parts: string[] = [];
+  let shown = 0;
+  let index = 0;
+  while (index < raw.length && shown < end) {
+    if (opensEscape(raw.charCodeAt(index))) {
+      const stop = escapeEnd(raw, index);
+      if (stop < 0) {
+        const sequence = raw.slice(index, -stop);
+        if (shown >= from) parts.push(sequence);
+        else {
+          // A full reset first (ESC [ m, ESC [ 0 m, ESC [ 0 ; … m) makes every earlier colour irrelevant;
+          // a bare reset leaves nothing to replay.
+          let digit = 2;
+          while (sequence.charCodeAt(digit) === 0x30) digit += 1;
+          const after = sequence.charCodeAt(digit);
+          if (after === 0x3b || after === 0x6d) before.length = 0;
+          if (after !== 0x6d) before.push(sequence);
+        }
+        index = -stop;
+      } else index = stop;
+      continue;
+    }
+    let runEnd = index + 1;
+    while (runEnd < raw.length && !opensEscape(raw.charCodeAt(runEnd))) runEnd += 1;
+    const low = Math.max(from, shown);
+    const high = Math.min(end, shown + runEnd - index);
+    if (high > low) parts.push(raw.slice(index + low - shown, index + high - shown));
+    shown += runEnd - index;
+    index = runEnd;
+  }
+  return before.join("") + parts.join("");
+}
+
+/**
+ * 0.11.0: the last `maxLines` lines of `text`, at most `maxChars` characters of them (cut at the start, never inside a
+ * UTF-16 surrogate pair): the tail window, the counterpart of previewText's head preview.
+ */
+export function tailPreviewText(text: string, maxLines = PREVIEW_LINES, maxChars = PREVIEW_CHARS): string {
+  let tail = tailLinesOf(text, maxLines);
+  if (tail.length > maxChars) {
+    tail = tail.slice(tail.length - maxChars);
+    const first = tail.charCodeAt(0);
+    if (first >= 0xdc00 && first <= 0xdfff) tail = tail.slice(1);
+  }
+  return tail;
+}
+
 export interface OutputView {
   /** Preview of the cleaned text (its counts are of the cleaned text too). */
   preview: TextPreview;
-  /** What the box shows: the preview, or all of the cleaned text. */
+  /** What the box shows: the head preview, the tail window, or all of the cleaned text. */
   shown: string;
   /** What goes to the highlighter: `shown`, or for "ansi" the same characters with their colour sequences. */
   highlight: string;
+  /** 0.11.0: lines of the whole text before `shown` (non-zero only for a tail window), for line numbers. */
+  start: number;
 }
 
 /**
  * 0.5.0：输出框显示什么。预览和「展开全部」都从整份原文清理后的文本里取（不是把截断的预览再清理一遍），
  * 计数也按清理后的文本；`colours` 时把颜色序列留给 ansi 高亮，显示出来的字符不变。`clean` 是 `stripAnsi(raw)`。
+ * 0.11.0：`tail`（跟随最新输出、行在运行中）时截断的输出显示尾窗——同样从整份清理后的文本里取最后
+ * PREVIEW_LINES 行（至多 PREVIEW_CHARS 字符），高亮也是这一段；「展开全部」照旧显示全文。
  */
-export function outputView(raw: string, clean: string, showAll: boolean, colours: boolean, trimFinalNewline = true): OutputView {
+export function outputView(raw: string, clean: string, showAll: boolean, colours: boolean, trimFinalNewline = true, tail = false): OutputView {
   const full = trimFinalNewline ? clean.replace(/\r?\n$/, "") : clean;
   const preview = previewText(full);
+  if (tail && !showAll && preview.truncated) {
+    const shown = tailPreviewText(full);
+    const from = full.length - shown.length;
+    const start = preview.totalLines - shown.split("\n").length;
+    const highlight = colours && clean !== raw ? ansiColourWindow(raw, from, shown.length) : shown;
+    return { preview, shown, highlight, start };
+  }
   const shown = showAll ? full : preview.text;
   const highlight = colours && clean !== raw ? ansiColourPrefix(raw, shown.length) : shown;
-  return { preview, shown, highlight };
+  return { preview, shown, highlight, start: 0 };
 }
 
 function looksLikeJson(source: string): boolean {

@@ -490,6 +490,7 @@ export function ColorfulToolCall({
   const browserTool = /browser/i.test(item.data.name);
   const followArea = browserTool ? "browser" : detail?.type === "shell" ? "shell" : isTodoTool(item.data.name) ? "todo" : "logs";
   const followScope = useFollowOutput(followArea);
+  // 只在运行中跟随：已完成的行展开时停在顶部，输出块显示头部预览（与 0.10.0 相同）。
   const follow = followScope && isRunning;
   const detailScrollRef = useRef<NativeScrollView | null>(null);
   const detailNearBottom = useRef(true);
@@ -607,7 +608,7 @@ export function ColorfulToolCall({
         <View {...cmonoViewEscape} style={styles.details}>
           <ScrollView ref={detailScrollRef} style={styles.detailsScroll} contentContainerStyle={styles.detailsContent} nestedScrollEnabled showsVerticalScrollIndicator onScroll={onDetailScroll} onContentSizeChange={onDetailContentSizeChange} scrollEventThrottle={16}>
             {hasBody ? (
-              <DetailBody data={item.data} agentId={agentId} theme={theme} palette={palette} styles={styles} follow={followScope} />
+              <DetailBody data={item.data} agentId={agentId} theme={theme} palette={palette} styles={styles} follow={follow} />
             ) : null}
             {pi?.reader === "failed" ? <PiReaderRetry theme={theme} /> : null}
             {item.data.errorText && !(detail?.type === "shell" && !detail.output) ? (

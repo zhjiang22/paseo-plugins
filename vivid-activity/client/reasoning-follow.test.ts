@@ -85,8 +85,10 @@ beforeAll(async () => {
   const entry = path.join(dir, "entry.ts");
   writeFileSync(entry, [
     `import ${JSON.stringify(path.join(here, "../tests/i18n-setup.ts"))};`,
-    `export { ReasoningText, TerminalBlock } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
+    `export { DetailBody, ReasoningText, TerminalBlock } from ${JSON.stringify(path.join(here, "activity-details.tsx"))};`,
     `export { followStatusDomains } from ${JSON.stringify(path.join(here, "settings-preview-rows.tsx"))};`,
+    `export { useFollowBottom } from ${JSON.stringify(path.join(here, "settings-hooks.ts"))};`,
+    `export { createToolCallData } from ${JSON.stringify(path.join(here, "../shared/timeline.ts"))};`,
     `export { __refsReset, __refsClear } from "react";`,
   ].join("\n"));
   const result = await esbuild.build({
@@ -169,6 +171,94 @@ describe("terminal wrap (0.11.0 长行折行·命令行与输出)", () => {
   });
   it("wrap off: horizontal scroll like before", () => {
     expect(hasHScroll(draw(false))).toBe(true);
+  });
+});
+
+describe("useFollowBottom: enabled=false stops every path (0.11.0 跟随矩阵)", () => {
+  const scrolledUp = { nativeEvent: { contentOffset: { y: 0, x: 0 }, contentSize: { height: 2000, width: 400 }, layoutMeasurement: { height: 300, width: 400 } } };
+  const counter = () => {
+    const state = { calls: 0 };
+    return { state, ref: { current: { scrollToEnd: () => { state.calls += 1; } } } };
+  };
+
+  it("never scrolls a disabled area: not on content size changes (first layout included), not on content key changes", async () => {
+    const { state, ref } = counter();
+    const near = { current: true };
+    const hook = ui.useFollowBottom(ref, near, 1, false);
+    // RN / RN-web 的 ScrollView 首次布局就触发 onContentSizeChange：已完成的长明细不能因此被滚到底部。
+    hook.onContentSizeChange();
+    ui.useFollowBottom(ref, near, 2, false).onContentSizeChange();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(state.calls).toBe(0);
+  });
+
+  it("follows an enabled area near the bottom, and pauses once the user scrolls up", async () => {
+    const { state, ref } = counter();
+    const near = { current: true };
+    const hook = ui.useFollowBottom(ref, near, 1, true);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(state.calls).toBe(1); // 内容键 effect（延迟一帧）
+    hook.onContentSizeChange();
+    expect(state.calls).toBe(2);
+    hook.onScroll(scrolledUp);
+    hook.onContentSizeChange();
+    expect(state.calls).toBe(2);
+  });
+});
+
+describe("output tail window while following (0.11.0 跟随最新输出)", () => {
+  const theme = { colors: { surface0: "#101114", surface1: "#17181c", foreground: "#ececf1", foregroundMuted: "#9a9aa5", border: "#2c2d33", accent: "#20744a" } };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const styles = () => ({ frameBody: {}, frameBodyWrap: {}, codeScroll: {}, codeLine: {}, details: {}, detailLabel: {}, detailText: {}, mutedText: {}, copyText: {}, termOutput: {}, termOutputHeader: {}, showMoreButton: {}, showMoreText: {}, section: {}, frame: {}, frameHeader: {}, frameTitleRow: {}, frameTitle: {}, gutter: {}, gutterText: {} } as any);
+  const palette = () => ({ mode: "vivid", statusColors: { failed: "#ff0000", completed: "#00ff00" } });
+  const lines = Array.from({ length: 60 }, (_, index) => `LINE_${index + 1}`);
+  /** Every string the element draws, rendering function components on the way. */
+  const texts = (element: unknown): string[] => {
+    if (element === null || element === undefined || typeof element === "boolean") return [];
+    if (typeof element === "string" || typeof element === "number") return [String(element)];
+    if (Array.isArray(element)) return element.flatMap(texts);
+    const node = element as { type: unknown; props?: Record<string, unknown> };
+    if (typeof node.type === "function") return texts((node.type as (props: unknown) => unknown)(node.props ?? {}));
+    return texts(node.props?.children);
+  };
+  const shownLines = (element: unknown) => new Set(texts(element).join("\n").split("\n").filter((line) => /^LINE_\d+$/.test(line)));
+  const withWrap = <T,>(wrap: boolean, draw: () => T): T => {
+    (globalThis as unknown as { __vividSettings?: unknown }).__vividSettings = { status: "ready", values: { wrapLines: { output: wrap, code: wrap } }, revision: 1 };
+    try {
+      return draw();
+    } finally {
+      (globalThis as unknown as { __vividSettings?: unknown }).__vividSettings = undefined;
+    }
+  };
+  const terminal = (follow: boolean) => ({ type: ui.TerminalBlock, props: { command: "npm test", output: `${lines.join("\n")}\n`, errorOutput: undefined, exitCode: null, theme, palette: palette(), styles: styles(), follow } });
+
+  for (const wrap of [false, true]) {
+    it(`a following command output shows the newest 20 lines (wrap ${wrap ? "on" : "off"})`, () => {
+      const shown = withWrap(wrap, () => shownLines(terminal(true)));
+      expect(shown.has("LINE_60")).toBe(true);
+      expect(shown.has("LINE_41")).toBe(true);
+      expect(shown.has("LINE_40")).toBe(false);
+      expect(shown.has("LINE_1")).toBe(false);
+    });
+
+    it(`a command output that is not following keeps the head preview (wrap ${wrap ? "on" : "off"})`, () => {
+      const shown = withWrap(wrap, () => shownLines(terminal(false)));
+      expect(shown.has("LINE_1")).toBe(true);
+      expect(shown.has("LINE_20")).toBe(true);
+      expect(shown.has("LINE_21")).toBe(false);
+      expect(shown.has("LINE_60")).toBe(false);
+    });
+  }
+
+  it("a following worktree setup log shows its newest lines too; not following, its first", () => {
+    const data = ui.createToolCallData({ type: "tool_call", callId: "w1", name: "paseo_worktree_setup", status: "running", error: null, detail: { type: "worktree_setup", worktreePath: "/w", branchName: "b", log: lines.join("\n") } });
+    const draw = (follow: boolean) => withWrap(false, () => shownLines({ type: ui.DetailBody, props: { data, agentId: "a", theme, palette: palette(), styles: styles(), follow } }));
+    const following = draw(true);
+    expect(following.has("LINE_60")).toBe(true);
+    expect(following.has("LINE_1")).toBe(false);
+    const still = draw(false);
+    expect(still.has("LINE_1")).toBe(true);
+    expect(still.has("LINE_60")).toBe(false);
   });
 });
 

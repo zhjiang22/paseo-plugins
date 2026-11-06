@@ -46,6 +46,8 @@ from Beautiful Chat and [TokenLedger](https://github.com/stv1024/token-ledger).
   it yourself to keep the segment tight.
 - **Thought tail-follow**: with "Follow the output live" on, an expanded thinking row shows the latest lines
   (5–500, default 20) and follows the output as it streams; the per-row Expand all still shows everything.
+- **Follow new output**: while a row is still running, its open details stay at the newest output and long command
+  output and logs show their latest 20 lines; finished rows open at the top with the first lines. One switch per area.
 - **Colored commands**: the shell command in a row's title carries the theme's syntax colors — while the row
   is open (default) or always.
 - **Wrap diff lines**: keep long diff lines on one scrolling row (default) or wrap them to the available width.
@@ -87,12 +89,14 @@ The Vivid Activity settings page offers:
 | Command colors | when open (default), always — syntax colors for the shell command in a row's title |
 | Wrap diff lines | off (default, long lines scroll sideways), on |
 | Thinking rows | follow the output live (default off) with a 5–500 line window (default 20) |
+| Follow new output | per area — command output, worktree and sub-agent logs (and the other tool details), task lists, browser — on (default), off; only running rows follow |
 | Expansion | per row kind: always, newest only, failed only, collapsed |
 
 The same page opens from Paseo's **Settings → Plugins**, from the **Vivid Activity** row in the app's sidebar,
 and from "Open Vivid Activity settings" in the Command Center.
 
 Settings are stored in Paseo's plugin settings on the daemon, so every connected device uses the same ones.
+Settings saved by earlier versions carry over when you upgrade; new settings start at their defaults.
 
 ![The settings page](assets/screenshot-settings-dark.png)
 

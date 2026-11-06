@@ -96,11 +96,15 @@ export type LoaderKind = (typeof LOADER_KINDS)[number];
 export const DEFAULT_LOADER: LoaderKind = "spinner";
 export const loaderSchema = z.enum(LOADER_KINDS);
 
+// 版本号保持 1：0.11.0 的新字段都有默认值，0.10.x 及更早的 v1 存档按本 schema 原样解析。宿主（Paseo ≥0.11.1
+// packages/server/src/server/plugins/settings）遇到存档版本 ≠ 定义版本且无 migrate 时读出 invalid、保存被拒，
+// 所以不能只升版本号（shared/settings.test.ts 按宿主的版本信封检查回归）。0.11.0 预发布构建里的 diffWrap 不迁移
+// （z.object 剥离未知键，取默认）。
 export const activitySettings = defineSettings({
   id: "display",
   scope: "host",
-  // 版本 2：本地插件无分发，v1 的 diffWrap 不做迁移（读出取默认；重新拨一次即可）。
-  version: 2,
+  // 保持 1，见上。
+  version: 1,
   schema: z.object({
     takeover: takeoverScopeSchema.default(DEFAULT_TAKEOVER),
     // 0.11.0：左侧边栏入口开关。关 = 移除设置入口（命令面板入口不受影响）；旧设置没有这一项，读出来取默认值。
@@ -114,7 +118,7 @@ export const activitySettings = defineSettings({
         browser: z.boolean().default(true),
       })
       .default({ shell: true, logs: true, todo: true, browser: true }),
-    // 0.11.0：长行折行矩阵（原 diffWrap 扩围，migrate 迁移旧值）。off = 单行横滚（0.11.0 前的现状）。
+    // 0.11.0：长行折行矩阵（预发布的 diffWrap 扩围，不迁移；旧设置读出来取默认值）。off = 单行横滚（0.11.0 前的现状）。
     wrapLines: z
       .object({
         diff: z.boolean().default(false),

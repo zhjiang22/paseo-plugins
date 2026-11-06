@@ -174,15 +174,14 @@ function HighlightedCodeBlock({
   // 0.5.0: terminal escape sequences never show (shared/presentation.ts stripAnsi); 「复制原文」 keeps them.
   const clean = useMemo(() => stripAnsi(code), [code]);
   // A file's final newline is not a line of its own (no empty numbered line at the end); copying keeps it.
-  const view = useMemo(() => outputView(code, clean, showAll, language === "ansi"), [clean, code, language, showAll]);
-  const { preview, shown: displayCode } = view;
+  // 0.11.0:「跟随最新输出」尾窗：行在运行中且跟随域开启、内容被截断时，从全文取最后 PREVIEW_LINES 行
+  // （最新行始终可见），高亮同一段，行号跟随偏移；「展开全部」仍可看到全部。其余情况维持头部预览（现状）。
+  const view = useMemo(() => outputView(code, clean, showAll, language === "ansi", true, follow), [clean, code, follow, language, showAll]);
+  const { preview, shown: displayCode, start: tailStart } = view;
   // 0.11.0:命令详情体（bash）与行头共用同一 vivid 派生映射——同一命令两处同色同构；其余语言不受影响。
   const tokens = useHighlightTokens(view.highlight, language, language === "bash" ? { ...theme.colors, ...vividSyntaxColors(theme) } : theme.colors);
   const lineCount = useMemo(() => (lineStart === undefined ? 0 : displayCode.split("\n").length), [displayCode, lineStart]);
   const codeLines = useMemo(() => (wrap ? displayCode.split("\n") : null), [wrap, displayCode]);
-  // 0.11.0:「跟随最新输出」尾窗：跟随域开启且内容被截断时，显示最后 PREVIEW_LINES 行（最新行始终可见），
-  // 行号跟随偏移；「展开全部」仍可看到全部。非跟随域维持头部预览（现状）。
-  const tailStart = follow && !showAll && preview.truncated ? Math.max(0, lineCount - PREVIEW_LINES) : 0;
 
   return (
     <View {...cmonoViewEscape} style={styles.frame}>
@@ -203,9 +202,9 @@ function HighlightedCodeBlock({
       {wrap ? (
         <View style={styles.frameBodyWrap}>
           {tokens ? (
-            <TokenizedLines lines={tailStart ? tokens.slice(tailStart) : tokens} styles={styles} numbersFrom={lineStart !== undefined ? lineStart + tailStart : undefined} wrapLines />
+            <TokenizedLines lines={tokens} styles={styles} numbersFrom={lineStart !== undefined ? lineStart + tailStart : undefined} wrapLines />
           ) : codeLines ? (
-            codeLines.slice(tailStart).map((line, index) => (
+            codeLines.map((line, index) => (
               <Text key={`code-${index}`} selectable style={[styles.codeLine, { flexShrink: 1 }]}>
                 {lineStart !== undefined ? (
                   <Text style={styles.gutterText}>{String(lineStart + tailStart + index)} </Text>
@@ -218,13 +217,13 @@ function HighlightedCodeBlock({
       ) : (
         <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
           <View style={styles.frameBody}>
-            {lineStart !== undefined ? <LineGutter start={lineStart + tailStart} count={lineCount - tailStart} styles={styles} /> : null}
+            {lineStart !== undefined ? <LineGutter start={lineStart + tailStart} count={lineCount} styles={styles} /> : null}
             <View>
               {tokens ? (
-                <TokenizedLines lines={tailStart ? tokens.slice(tailStart) : tokens} styles={styles} />
+                <TokenizedLines lines={tokens} styles={styles} />
               ) : (
                 <Text selectable style={styles.codeLine}>
-                  {displayCode.split("\n").slice(tailStart).join("\n") || " "}
+                  {displayCode || " "}
                 </Text>
               )}
             </View>
@@ -287,11 +286,10 @@ export function TerminalBlock({
   // 0.5.0: shown without terminal escape sequences, the preview and 「展开全部」 both cut from the cleaned whole output;
   // colours still reach the "ansi" highlighter. The raw output stays for 「复制原文」.
   const clean = useMemo(() => stripAnsi(output ?? ""), [output]);
-  const view = useMemo(() => outputView(output ?? "", clean, showAll, !isError), [clean, isError, output, showAll]);
+  // 0.11.0:「跟随最新输出」尾窗：行在运行中且跟随域开启、输出被截断时，从全文取最后 PREVIEW_LINES 行
+  // （最新行始终可见），颜色序列一并保留给高亮；其余情况维持头部预览。
+  const view = useMemo(() => outputView(output ?? "", clean, showAll, !isError, true, follow), [clean, follow, isError, output, showAll]);
   const { preview, shown: shownOutput } = view;
-  // 0.11.0:「跟随最新输出」尾窗：跟随域开启且截断时显示最后 PREVIEW_LINES 行（最新行始终可见）。
-  const outputTotalLines = shownOutput.split("\n").length;
-  const outputTailStart = follow && !showAll && preview.truncated ? Math.max(0, outputTotalLines - PREVIEW_LINES) : 0;
   const outputTokens = useHighlightTokens(isError ? "" : view.highlight, "ansi", theme.colors);
   const failed = exitCode !== null && exitCode !== 0;
   const failedColor = palette.statusColors.failed;
@@ -336,18 +334,18 @@ export function TerminalBlock({
           {wrap ? (
             <View style={styles.frameBodyWrap}>
               {outputTokens && !isError ? (
-                <TokenizedLines lines={outputTailStart ? outputTokens.slice(outputTailStart) : outputTokens} styles={styles} wrapLines />
+                <TokenizedLines lines={outputTokens} styles={styles} wrapLines />
               ) : (
-                <Text selectable style={[isError ? { ...styles.codeLine, color: failedColor } : styles.codeLine, { flexShrink: 1 }]}>{shownOutput.split("\n").slice(outputTailStart).join("\n") || " "}</Text>
+                <Text selectable style={[isError ? { ...styles.codeLine, color: failedColor } : styles.codeLine, { flexShrink: 1 }]}>{shownOutput || " "}</Text>
               )}
             </View>
           ) : (
             <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
               <View style={styles.frameBody}>
                 {outputTokens && !isError ? (
-                  <TokenizedLines lines={outputTailStart ? outputTokens.slice(outputTailStart) : outputTokens} styles={styles} />
+                  <TokenizedLines lines={outputTokens} styles={styles} />
                 ) : (
-                  <Text selectable style={isError ? { ...styles.codeLine, color: failedColor } : styles.codeLine}>{shownOutput.split("\n").slice(outputTailStart).join("\n") || " "}</Text>
+                  <Text selectable style={isError ? { ...styles.codeLine, color: failedColor } : styles.codeLine}>{shownOutput || " "}</Text>
                 )}
               </View>
             </ScrollView>

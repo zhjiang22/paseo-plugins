@@ -4,6 +4,7 @@ import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
 import { childLoaded, childReadable, CHILD_TIMELINE_PAGE_SIZE, recentChildTimelineEntries, type ChildRecord } from "../shared/child-agent";
 import type { ChildSummaryInput, ChildSummaryOutput, ChildSummaryRow } from "../shared/child-summary";
 import { formatReasoningText, resolveToolCallPresentation } from "../shared/presentation";
+import { TURN_TIME_RENDERER_KIND } from "../shared/turn-time";
 import { zh } from "../shared/vivid-model";
 import { hostRoute } from "./host-routes";
 
@@ -120,7 +121,10 @@ async function summarize(input: ChildSummaryInput, paseo: PluginHandlerContext["
   const output: ChildSummaryOutput = {
     status: "ok",
     agent: after ? cardAgent({ ...(agent ?? {}), ...(page.agent ?? {}) }, after) : null,
-    rows: recentChildTimelineEntries(page.entries).slice(-3).map(childSummaryRow),
+    // This plugin's turn-end time row (server/turn-time.ts) is not something the child did: it never takes one of the three places.
+    rows: recentChildTimelineEntries(page.entries.filter((entry) => !(entry.item.type === "plugin" && entry.item.kind === TURN_TIME_RENDERER_KIND)))
+      .slice(-3)
+      .map(childSummaryRow),
     ...where,
   };
   // Keep even three long tool summaries below ~10 KiB/min (12 responses plus RPC envelopes and 4/3 relay expansion).

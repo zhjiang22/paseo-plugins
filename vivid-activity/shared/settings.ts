@@ -139,6 +139,10 @@ export const activitySettings = defineSettings({
     thoughtTailFollow: z.boolean().default(false),
     // 0.11.0：尾窗大小（块模式=行数，步骤模式=步数）。UI 层钳制 5–500 后才保存。
     thoughtTailLines: z.number().int().min(5).max(500).default(20),
+    // 「每轮结束时间」（server/turn-time.ts 记录新轮次）与「活动时间」（活动行/折叠摘要的更新时间）。默认关；
+    // 旧设置没有这两项，读出来取默认值，所以版本号不变。
+    turnTime: z.boolean().default(false),
+    foldTime: z.boolean().default(false),
     // 0.6.0：同上，旧设置没有这一项，读出来取默认值。
     pinPrompt: z.boolean().default(DEFAULT_PIN_PROMPT),
     // 0.8.0：同上。
@@ -156,6 +160,11 @@ export const DEFAULT_PALETTE_MODE: PaletteMode = "vivid";
 export function takeoverFromValues(values: unknown): TakeoverScope | null {
   const parsed = activitySettings.schema.safeParse(values ?? {});
   return parsed.success ? parsed.data.takeover : null;
+}
+
+export function turnTimeFromValues(values: unknown): boolean {
+  const parsed = activitySettings.schema.safeParse(values ?? {});
+  return parsed.success ? parsed.data.turnTime : false;
 }
 
 /** The stored folding switch and takeover scope, or null when the stored values do not parse. */

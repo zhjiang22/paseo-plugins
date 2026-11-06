@@ -709,6 +709,11 @@
     "childFailedNote": "子 Agent 出错停下了：{error}"
   },
   "settings": {
+    "timeSection": "时间显示",
+    "turnTimeLabel": "每轮结束后显示时间",
+    "turnTimeHint": "在新轮次结束时记录时间；已有轮次不会补写，关闭后已记录的时间仍会显示。",
+    "foldTimeLabel": "活动行显示更新时间",
+    "foldTimeHint": "显示活动行或折叠摘要的最近更新时间，使用查看设备的本地时区。",
     "savedSettings": "已保存的设置",
     "restoreDefaults": "恢复默认",
     "vividActivity": "彩色活动行",

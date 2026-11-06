@@ -1,4 +1,5 @@
 import { translator } from "../shared/i18n";
+import { endedStamp } from "../shared/turn-time";
 import { useI18n } from "./i18n-client";
 import { t } from "../shared/text";
 import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
@@ -260,9 +261,11 @@ function ActivityHeader({
   onHover,
   expandable = true,
   styles,
+  stamp,
   vivid,
 }: {
   vivid?: { theme: Theme; compact: boolean; look: LookKey; status?: RowStatus; statusText?: string; meta?: string; live?: boolean; icon?: string; metrics?: DensityMetrics; timing?: string | null };
+  stamp?: string | null;
   icon: string;
   iconColor: string;
   title: string;
@@ -296,6 +299,7 @@ function ActivityHeader({
         icon={vivid.icon}
         metrics={vivid.metrics}
         timing={vivid.timing}
+        stamp={stamp}
         expanded={expanded}
         expandable={expandable}
         chevronColor={styles.summary.color}
@@ -355,6 +359,7 @@ function ActivityHeader({
           <Icon name={statusIcon(status)} color={statusColor ?? styles.title.color} size={12} />
         </View>
       ) : null}
+      {stamp ? <Text numberOfLines={1} style={{ color: styles.summary.color, fontSize: 11, flexShrink: 0 }}>{stamp}</Text> : null}
       {expandable ? (
         <Icon name={expanded ? "ChevronDown" : "ChevronRight"} color={styles.summary.color} size={12} />
       ) : (
@@ -403,6 +408,8 @@ export function ColorfulReasoning({
   const timing = useRowTiming(agentId, item.data.fold, isStreaming);
   const liveNow = useLiveNow(isStreaming && onScreen && timing?.start != null);
   const thinkTime = timingText(timing, isStreaming, liveNow);
+  const timeSettings = useSettings(activitySettings);
+  const stamp = endedStamp(timestamp, timeSettings.status === "ready" && timeSettings.values.foldTime, isStreaming);
   const isLatest = useIsLatestReasoning(agentId, timestamp, isStreaming);
   const isLiveTail = useIsLiveTail(agentId, timestamp, isStreaming, layout.platform);
   // 0.6.0 (grok-B2): the question of this turn, when this row opens the newest stretch of activity.
@@ -436,6 +443,7 @@ export function ColorfulReasoning({
         onPress={toggle}
         onHover={setHovered}
         styles={styles}
+        stamp={stamp}
         vivid={palette.mode === "vivid" ? { theme, compact: layout.compact, look: "think", meta, live: isStreaming, metrics } : undefined}
       />
       {expanded ? (
@@ -481,6 +489,8 @@ export function ColorfulToolCall({
   const timing = useRowTiming(agentId, item.data.fold, isRunning);
   const liveNow = useLiveNow(isRunning && onScreen && timing?.start != null);
   const durationText = item.data.notice || item.data.pi ? null : timingText(timing, isRunning, liveNow);
+  const timeSettings = useSettings(activitySettings);
+  const stamp = endedStamp(timestamp, timeSettings.status === "ready" && timeSettings.values.foldTime, isRunning);
   const isLatest = useIsLatestToolCall(agentId, timestamp, isRunning);
   const isLiveTail = useIsLiveTail(agentId, timestamp, isRunning, layout.platform);
   // 0.6.0 (grok-B2): the question of this turn, when this row opens the newest stretch of activity.
@@ -598,6 +608,7 @@ export function ColorfulToolCall({
         onHover={setHovered}
         expandable={expandable}
         styles={styles}
+        stamp={stamp}
         vivid={vivid ? { theme, compact: layout.compact, look, status: headerStatus, statusText, icon: notice || pi ? item.data.presentation.icon : item.data.presentation.fileIcon, metrics, timing: notice ? noticeTime : durationText } : undefined}
       />
       {operation && detail ? <PiSubagentLifecycleSummary toolName={item.data.name} input={undefined}

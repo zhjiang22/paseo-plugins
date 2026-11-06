@@ -784,6 +784,11 @@
     "childFailedNote": "The sub-agent stopped with an error: {error}"
   },
   "settings": {
+    "timeSection": "Timestamps",
+    "turnTimeLabel": "Show turn end time",
+    "turnTimeHint": "Record the end time of new turns; earlier turns are not backfilled, and times already recorded stay when this is off.",
+    "foldTimeLabel": "Show activity timestamps",
+    "foldTimeHint": "Show the latest update time of each activity or folded summary in the viewer's local time zone.",
     "savedSettings": "Saved settings",
     "restoreDefaults": "Restore defaults",
     "vividActivity": "Vivid activity",

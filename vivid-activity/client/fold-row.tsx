@@ -1,13 +1,15 @@
 import { useI18n } from "./i18n-client";
 import { t } from "../shared/text";
 import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
-import { useAgent } from "@getpaseo/plugin/client";
+import { useAgent, useSettings } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Pressable, Text, View, type TextStyle, type ViewStyle } from "react-native";
 import { DiffBlocks, Glyph } from "./diffstat";
 import { useFx } from "./fx";
 import { foldAccessibilityLabel, foldCountParts, foldTitle, formatFoldDuration } from "../shared/fold";
+import { activitySettings } from "../shared/settings";
+import { formatTurnTime } from "../shared/turn-time";
 import type { WireTurnTokens } from "../shared/fold-index";
 import type { FoldItemData } from "../shared/timeline";
 import { looks, type LookKey, type RowStatus } from "../shared/vivid-model";
@@ -151,6 +153,8 @@ export function FoldRow({ agentId, item, theme, layout, timestamp }: PluginTimel
   const parts = foldCountParts(data.counts);
   const bar = useMemo(() => parts.map((part) => [part.look, data.counts.find(([look]) => look === part.look)?.[1] ?? 0] as const), [data.counts, parts]);
   const duration = done ? formatFoldDuration(data.durationMs) : null;
+  const settings = useSettings(activitySettings);
+  const endedAt = settings.status === "ready" && settings.values.foldTime && done ? formatTurnTime(data.endedAt ?? 0) : "";
   const toggle = useCallback(() => foldRuntime.toggle(agentId, data.segment, !data.expanded), [agentId, data.expanded, data.segment]);
   // 0.6.0 (grok-B2): the question of this turn, when this summary stands for the newest stretch of activity.
   const pin = usePromptPin(agentId, { segment: data.segment });
@@ -210,6 +214,7 @@ export function FoldRow({ agentId, item, theme, layout, timestamp }: PluginTimel
         {data.failed > 0 ? <StatusPill theme={theme} status="failed" text={t("ui.failed2", { count: data.failed })} /> : null}
         {duration ? <Text {...cuiTextEscape} numberOfLines={1} style={text.meta}>{duration}</Text> : null}
         {done ? <StatusMark theme={theme} status={status} size={14} /> : null}
+        {endedAt ? <Text {...cuiTextEscape} numberOfLines={1} style={text.meta}>{endedAt}</Text> : null}
         <Icon name={data.expanded ? "ChevronDown" : "ChevronRight"} size={12} color={theme.colors.foregroundMuted} />
         {changes > 0 && done ? <Flash count={changes} color={withAlpha(hue(theme, status === "failed" ? "red" : "green"), 0.22)} radius={8} /> : null}
       </Pressable>

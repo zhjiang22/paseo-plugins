@@ -63,7 +63,7 @@ describe("fold keys", () => {
     expect(roleSignature({ kind: "show" })).toBe("s");
     expect(roleSignature({ kind: "hide" })).toBe("h");
     const summary = {
-      segment: "4", mode: "done" as const, expanded: false, steps: 3, hidden: 3, counts: [["shell", 2], ["read", 1]] as Array<[LookKey, number]>, failed: 0, canceled: 0, durationMs: 4000,
+      segment: "4", mode: "done" as const, expanded: false, steps: 3, hidden: 3, counts: [["shell", 2], ["read", 1]] as Array<[LookKey, number]>, failed: 0, canceled: 0, durationMs: 4000, endedAt: 5000,
       files: 1, added: 3, removed: 1, uncounted: 0, changed: [{ key: "t:e", file: "f1", added: 3, removed: 1 }], fails: [], turn: "turn-1", lastOfTurn: true,
     };
     expect(roleSignature({ kind: "fold", summary })).toBe(roleSignature({ kind: "fold", summary: { ...summary } }));
@@ -85,7 +85,7 @@ describe("planFolds: finished segments", () => {
     expect(segments.map((segment) => [segment.id, segment.mode, segment.sealed])).toEqual([["2", "done", true], ["6", "done", true]]);
     expect(summaryOf(roles, rows[1]!)).toEqual({
       segment: "2", mode: "done", expanded: false, steps: 3, hidden: 3,
-      counts: [["think", 1], ["read", 1], ["shell", 1]], failed: 0, canceled: 0, durationMs: 3000,
+      counts: [["think", 1], ["read", 1], ["shell", 1]], failed: 0, canceled: 0, durationMs: 3000, endedAt: 4000,
       files: 0, added: 0, removed: 0, uncounted: 0, changed: [], fails: [], turn: null, lastOfTurn: false,
     });
     expect(summaryOf(roles, rows[5]!).counts).toEqual([["shell", 2], ["edit", 1]]);

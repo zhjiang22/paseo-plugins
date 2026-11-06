@@ -36,7 +36,11 @@ from Beautiful Chat and [TokenLedger](https://github.com/stv1024/token-ledger).
 - **Turn tokens**: under the last fold row of a turn you watched, `This turn in 12k · cached 80k · out 2.4k`. Codex
   turns add up while they run (the coin breathes) and freeze when they end.
 - **Timing**: every row shows its duration, running rows count up live, and the fold row shows the elapsed time
-  of the whole run.
+  of the whole run. Optional timestamps show the latest update of individual activity and folded rows in the viewer's
+  local time zone. A separate option records the end time of each new turn; existing turns are not backfilled.
+  Timeline update times are not guaranteed to be exact completion times. A turn marker is appended asynchronously: it
+  is not written once the next turn has begun, and if that turn begins while it is being written it may show after the
+  next turn's first rows; it never splits or retimes a fold. Markers already recorded stay when the option is off.
 - **Strength**: finished rows can sit at 30%, 45% or 65% opacity until you hover, focus or expand them
   (full strength by default). Running, waiting and asking rows keep their full color, the newest row of a run
   stays bright, and rows with nothing to expand never fade. Finished fold summaries dim too; expand or hover
@@ -82,6 +86,7 @@ The Vivid Activity settings page offers:
 | Fold finished steps | on (default), off |
 | Row density | compact (default, 4 px between rows), standard (10 px) |
 | Strength | full (default, no fading), 65%, 45%, 30% — how far finished rows sit back until you hover, focus or expand them |
+| Timestamps | turn end and activity update times, independently off by default |
 | Pin this turn's question | on (default), off |
 | Palette | vivid (default), follow theme, soft, high contrast |
 | Running animation | spinner (default), sparkle, orb, dot grid: snake, dot grid: twinkle, with live previews |
@@ -163,7 +168,7 @@ motion (the sparkle rests on ✻).
 
 ## Data access
 
-The plugin makes no network requests and starts no processes. It reads language files and writes translation templates and its language state under its plugin data folder.
+The plugin makes no network requests and starts no processes. It reads language files and writes translation templates and its language state under its plugin data folder. When enabled, turn timestamps are appended to the agent timeline.
 
 - The server part reads the projected timeline of the agent you are viewing inside the daemon and returns a
   compact fold index to the app: each row's position, end time, kind, status and category, tool call and turn ids,

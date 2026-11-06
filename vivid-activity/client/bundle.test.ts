@@ -88,8 +88,11 @@ describe("client mobile bundle compatibility", () => {
     // strength read) and the settings screen's own ScrollView. 373 → 374 KiB for the failures expansion mode (the
     // resolver branch, the failed flag at the call sites) and the wrap-diff/command-colors settings reads; the command
     // coloring itself lives in the fx chunk, not here. 374 → 375 KiB for the thought tail-follow window (the schema
-    // scalars and the windowed render in ReasoningText).
-    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(380 * 1024);
+    // scalars and the windowed render in ReasoningText). 380 → 384 KiB for the optional timestamps (measured on the
+    // merge with 0.11.0: 388 293 → 392 639 bytes): the turn-end renderer (client/turn-time.tsx) with its payload schema
+    // and formatter (shared/turn-time.ts), about 2.5 KiB, and the foldTime reads and stamp slots of the rows, the fold
+    // summary and the settings schema, about 1.7 KiB.
+    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(384 * 1024);
     expect(bundle).toContain("function ChangeStat");
     expect(bundle).toContain("function TurnTokens");
     expect(bundle).not.toMatch(/function (?:RunningLoader|LoaderFrame|FoldChanges|sparkleStops|shiftStops)\b/);

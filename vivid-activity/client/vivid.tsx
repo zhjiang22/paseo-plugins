@@ -191,6 +191,7 @@ export interface VividHeaderProps {
   metrics?: { rowMinHeight: number; rowPaddingVertical: number; tile: number; gap: number; lineHeight: number };
   /** 本地补丁：耗时（「4.2 秒」），运行中为实时计时。 */
   timing?: string | null;
+  stamp?: string | null;
   expanded: boolean;
   expandable: boolean;
   chevronColor: string;
@@ -203,7 +204,7 @@ export interface VividHeaderProps {
 /** One compact, coloured activity row: tile · 中文动作 · 摘要 · 改动 · 状态 · 展开. */
 export function VividHeader(props: VividHeaderProps) {
   useI18n();
-  const { theme, compact, look, title, summary, fileDisplay, status, statusText, stats, meta, live, icon, expanded, expandable, chevronColor, onPress, metrics, timing } = props;
+  const { theme, compact, look, title, summary, fileDisplay, status, statusText, stats, meta, live, icon, expanded, expandable, chevronColor, onPress, metrics, timing, stamp } = props;
   const text = useVividText(theme, metrics?.lineHeight ?? 18);
   // Attention states get words on phones too (「等你批准」「退出码 1」); quieter states only on wide layouts.
   const showPill = status === "waiting" || status === "question" || status === "failed" || (!compact && (status === "canceled" || (status === "running" && !!statusText)));
@@ -229,6 +230,7 @@ export function VividHeader(props: VividHeaderProps) {
         <Text numberOfLines={1} style={status === "running" ? { ...text.meta, color: statusColor(theme, "running", "text") } : text.meta}>{timing}</Text>
       ) : null}
       {status ? <StatusMark theme={theme} status={status} /> : null}
+      {stamp ? <Text numberOfLines={1} style={text.meta}>{stamp}</Text> : null}
       <Icon name={expandable ? (expanded ? "ChevronDown" : "ChevronRight") : "ChevronRight"} size={12} color={expandable ? chevronColor : "transparent"} />
     </>
   );

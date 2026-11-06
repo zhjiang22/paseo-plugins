@@ -13,6 +13,8 @@ import { PI_CHUNK } from "./shared/generated/pi-chunk-manifest";
 import { UI_CHUNK } from "./shared/generated/ui-chunk-manifest";
 import { ActivityIndicator } from "react-native";
 import { ColorfulReasoning, ColorfulToolCall } from "./client/activity";
+import { TurnTimeRow } from "./client/turn-time";
+import { TURN_TIME_RENDERER_KIND, TURN_TIME_RENDERER_VERSION, turnTimeDataSchema } from "./shared/turn-time";
 import { FoldRow } from "./client/fold-row";
 import { configureFx } from "./client/fx";
 import { LoaderMark } from "./client/vivid";
@@ -102,6 +104,7 @@ export default function contribute(client: PluginClientContext) {
     schema: toolCallItemDataSchema,
     Component: ToolRow,
   });
+  client.addTimelineRenderer({ kind: TURN_TIME_RENDERER_KIND, version: TURN_TIME_RENDERER_VERSION, schema: turnTimeDataSchema, Component: TurnTimeRow });
   // 本地补丁：折叠摘要行。
   client.addTimelineRenderer({
     kind: FOLD_RENDERER_KIND,

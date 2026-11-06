@@ -164,6 +164,7 @@ export const foldItemDataSchema = z.object({
   failed: z.number().int().nonnegative(),
   canceled: z.number().int().nonnegative(),
   durationMs: z.number().nonnegative().nullable(),
+  endedAt: z.number().nonnegative().nullable().default(null),
   // 0.8.0: what the segment changed (shared/fold.ts summarizeChanges) and the turn whose tokens its last segment shows.
   files: z.number().int().nonnegative().optional(),
   added: z.number().int().nonnegative().optional(),

@@ -89,6 +89,8 @@ export const activitySettings = defineSettings({
     // 本地补丁：「完成后折叠连续的思考与工具行」。旧设置没有这两项，读出来取默认值，所以版本号不变。
     fold: z.boolean().default(DEFAULT_FOLD),
     density: densitySchema.default(DEFAULT_DENSITY),
+    turnTime: z.boolean().default(false),
+    foldTime: z.boolean().default(false),
     // 0.6.0：同上，旧设置没有这一项，读出来取默认值。
     pinPrompt: z.boolean().default(DEFAULT_PIN_PROMPT),
     // 0.8.0：同上。
@@ -106,6 +108,11 @@ export const DEFAULT_PALETTE_MODE: PaletteMode = "vivid";
 export function takeoverFromValues(values: unknown): TakeoverScope | null {
   const parsed = activitySettings.schema.safeParse(values ?? {});
   return parsed.success ? parsed.data.takeover : null;
+}
+
+export function turnTimeFromValues(values: unknown): boolean {
+  const parsed = activitySettings.schema.safeParse(values ?? {});
+  return parsed.success ? parsed.data.turnTime : false;
 }
 
 /** The stored folding switch and takeover scope, or null when the stored values do not parse. */

@@ -192,6 +192,17 @@ function FoldControls({ settings, actions }: { settings: ReadySettings; actions:
   );
 }
 
+function TimeControls({ settings }: { settings: ReadySettings }) {
+  return (
+    <SettingsSection title={t("settings.timeSection")}>
+      <SettingsCard>
+        <SettingsSwitch label={t("settings.turnTimeLabel")} hint={t("settings.turnTimeHint")} value={settings.values.turnTime} disabled={settings.saving} onValueChange={(value) => { void settings.save({ ...settings.values, turnTime: value }, settings.revision); }} />
+        <SettingsSwitch label={t("settings.foldTimeLabel")} hint={t("settings.foldTimeHint")} value={settings.values.foldTime} disabled={settings.saving} onValueChange={(value) => { void settings.save({ ...settings.values, foldTime: value }, settings.revision); }} />
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
 function ExpansionControls({ settings }: { settings: ReadySettings }) {
   const changeExpansion = (target: ExpansionTarget) => (value: string) => {
     const parsed = expansionModeSchema.safeParse(value);
@@ -374,6 +385,7 @@ function DisplaySettings({ theme, actions }: PluginSurfaceProps & { actions: Set
     <>
       <TakeoverControls settings={settings} actions={actions} />
       <FoldControls settings={settings} actions={actions} />
+      <TimeControls settings={settings} />
       <PaletteControls settings={settings} theme={theme} actions={actions} />
       <FontControls settings={settings} theme={theme} />
       <ExpansionControls settings={settings} />

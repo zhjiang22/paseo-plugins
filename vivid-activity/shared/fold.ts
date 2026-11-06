@@ -99,6 +99,7 @@ export interface FoldSummary {
   canceled: number;
   /** done: from the content before the segment to its last step; null when unknown. */
   durationMs: number | null;
+  endedAt: number | null;
   /**
    * 0.8.0: files the steps changed whose lines are known (edits with a diff; writes and edits without one are left out),
    * and the lines added and removed across them.
@@ -184,7 +185,7 @@ export function roleSignature(role: FoldRole): string {
   const s = role.summary;
   const changed = s.changed.map((file) => `${file.key}:${file.file}:${file.added}:${file.removed}`).join(",");
   const fails = s.fails.map((fail) => `${fail.key}:${fail.exit ?? ""}`).join(",");
-  return `f|${s.segment}|${s.mode}|${s.expanded ? 1 : 0}|${s.steps}|${s.hidden}|${s.failed}|${s.canceled}|${s.durationMs ?? ""}|${s.counts.map(([look, n]) => `${look}${n}`).join(",")}`
+  return `f|${s.segment}|${s.mode}|${s.expanded ? 1 : 0}|${s.steps}|${s.hidden}|${s.failed}|${s.canceled}|${s.durationMs ?? ""}|${s.endedAt ?? ""}|${s.counts.map(([look, n]) => `${look}${n}`).join(",")}`
     + `|${s.files}|${s.added}|${s.removed}|${s.uncounted}|${changed}|${fails}|${s.turn ?? ""}|${s.lastOfTurn ? 1 : 0}`;
 }
 
@@ -406,6 +407,7 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
         failed: loaded.filter((step) => step.status === "failed").length + failedNotices,
         canceled: loaded.filter((step) => step.status === "canceled").length,
         durationMs,
+        endedAt: end > 0 ? end : null,
         ...summarizeChanges(loaded),
         turn,
         lastOfTurn: false,
@@ -446,6 +448,7 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
       failed: 0,
       canceled: earlierSteps.filter((step) => step.status === "canceled").length,
       durationMs: null,
+      endedAt: null,
       ...summarizeChanges(earlierSteps),
       turn,
       lastOfTurn: false,

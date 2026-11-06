@@ -1,4 +1,5 @@
 import { t } from "../shared/text";
+import { useWrapLines } from "./settings-hooks";
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { ToolCallTimelineItem } from "@getpaseo/protocol/agent-types";
 import { useMemo } from "react";
@@ -68,6 +69,8 @@ export function FoldChanges({ theme, lineHeight, indent, cwd, files: fileCount, 
   if (files.length === 0 && fails.length === 0 && more === 0 && uncounted === 0) return null;
   const line: ViewStyle = { flexDirection: "row", alignItems: "center", gap: 6, minHeight: lineHeight + 2, minWidth: 0 };
   const mono: TextStyle = typesetStyle({ fontFamily: "monospace", fontSize: 12, lineHeight }, type);
+  // 0.11.0:「长行折行·命令行与输出」：失败命令行随矩阵折行（路径保持单行省略）。
+  const wrapOutput = useWrapLines("output");
   const number: TextStyle = { fontSize: 12, lineHeight, fontWeight: "700", fontVariant: ["tabular-nums"], flexShrink: 0 };
   return (
     <View style={{ marginLeft: indent, marginRight: 6, marginTop: 2, marginBottom: 2, paddingVertical: 4, paddingHorizontal: 8, gap: 1, borderRadius: 8, backgroundColor: theme.colors.surface1, borderLeftWidth: 2, borderLeftColor: hue(theme, "green", "line") }}>
@@ -86,9 +89,9 @@ export function FoldChanges({ theme, lineHeight, indent, cwd, files: fileCount, 
       {more > 0 ? <Text {...cuiTextEscape} style={{ color: theme.colors.foregroundMuted, fontSize: 11, lineHeight }}>{t("fold.moreFiles", { count: more })}</Text> : null}
       {uncounted > 0 ? <Text {...cuiTextEscape} style={{ color: theme.colors.foregroundMuted, fontSize: 11, lineHeight }}>{t("fold.uncountedNote", { count: uncounted })}</Text> : null}
       {fails.map((fail) => (
-        <View key={fail.key} style={line}>
+        <View key={fail.key} style={[line, wrapOutput ? { alignItems: "flex-start" } : null]}>
           <Glyph name="SquareTerminal" color={hue(theme, "red")} />
-          <Text numberOfLines={1} style={[mono, { color: theme.colors.foreground, flexGrow: 1, flexShrink: 1, minWidth: 0 }]}>$ {fail.command}</Text>
+          <Text numberOfLines={wrapOutput ? undefined : 1} style={[mono, { color: theme.colors.foreground, flexGrow: 1, flexShrink: 1, minWidth: 0 }]}>$ {fail.command}</Text>
           <View style={{ height: 18, paddingHorizontal: 6, borderRadius: 9, justifyContent: "center", backgroundColor: hue(theme, "red", "soft"), flexShrink: 0 }}>
             <Text {...cuiTextEscape} numberOfLines={1} style={{ color: hue(theme, "red", "text"), fontSize: 11, fontWeight: "700" }}>
               {fail.exit !== null ? t("modelText.exitCode", { code: fail.exit }) : t("modelRowStatus.failed")}

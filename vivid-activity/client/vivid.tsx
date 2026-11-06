@@ -10,6 +10,7 @@ import { Breathe, Flash, Ping, Pop, Spin, Sweep, useChangeCount } from "./motion
 import type { ActivityPalette } from "../shared/presentation";
 import { badgeInk, type Badge } from "../shared/brand";
 import { useFx, useLoader } from "./fx";
+import type { HighlightToken } from "./highlight";
 import { typeset, useTypography } from "./typography";
 
 /**
@@ -178,6 +179,8 @@ export interface VividHeaderProps {
   look: LookKey;
   title: string;
   summary?: string;
+  /** 0.11.0:「命令着色」：摘要的语法色段（shell 行）。给出时优先于纯文本 summary 渲染。 */
+  summaryNode?: ReactNode;
   fileDisplay?: { dir?: string; base: string };
   status?: RowStatus;
   /** Words for the state pill on wide layouts, e.g. 「退出码 1」. */
@@ -204,7 +207,7 @@ export interface VividHeaderProps {
 /** One compact, coloured activity row: tile · 中文动作 · 摘要 · 改动 · 状态 · 展开. */
 export function VividHeader(props: VividHeaderProps) {
   useI18n();
-  const { theme, compact, look, title, summary, fileDisplay, status, statusText, stats, meta, live, icon, expanded, expandable, chevronColor, onPress, metrics, timing, stamp } = props;
+  const { theme, compact, look, title, summary, summaryNode, fileDisplay, status, statusText, stats, meta, live, icon, expanded, expandable, chevronColor, onPress, metrics, timing, stamp } = props;
   const text = useVividText(theme, metrics?.lineHeight ?? 18);
   // Attention states get words on phones too (「等你批准」「退出码 1」); quieter states only on wide layouts.
   const showPill = status === "waiting" || status === "question" || status === "failed" || (!compact && (status === "canceled" || (status === "running" && !!statusText)));
@@ -216,7 +219,7 @@ export function VividHeader(props: VividHeaderProps) {
           state mark and chevron after it keep their width, so a narrow phone row never pushes them out of the card. */}
       <View style={{ flexDirection: "row", alignItems: "center", gap, flexGrow: 1, flexShrink: 1, minWidth: 0 }}>
         <Text numberOfLines={1} style={text.label}>{title}</Text>
-        {fileDisplay ? (
+        {summaryNode ? <Text numberOfLines={1} style={text.summary}>{summaryNode}</Text> : fileDisplay ? (
           <View style={{ flexDirection: "row", alignItems: "center", flexShrink: GIVE_WAY, minWidth: 0 }}>
             {fileDisplay.dir ? <Text numberOfLines={1} style={text.fileDir}>{props.dirText(fileDisplay.dir)}/</Text> : null}
             <Text numberOfLines={1} style={text.fileBase}>{fileDisplay.base}</Text>

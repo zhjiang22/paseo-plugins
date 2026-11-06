@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.11.0 (2026-11-02)
+
+- **Thought tail-follow**: a new "Thinking rows" section. With "Follow the output live" on, an expanded thinking
+  row shows the latest lines and follows the output as it streams, instead of freezing on its first 20 lines
+  (up to 4,000 characters);
+  the window holds 5–500 lines (steps in the step view) and defaults to 20. The per-row Expand all still shows
+  everything, and a segment you collapsed yourself stays collapsed.
+- **Follow new output**: one switch per area — command output, worktree and sub-agent logs (which also covers the
+  other tool details), task lists and browser tools — all on by default. While a row is still running, its open
+  details stay at the newest output, and long command output and logs show their latest 20 lines (up to 4,000
+  characters, colors kept) instead of the first 20; scrolling up pauses the follow, and Expand all still shows
+  everything. Finished rows open at the top with the first lines, as before.
+- **Live preview**: the settings page is split — controls on the left, a live preview panel on the right (above
+  the controls on phones). The preview draws a full mock turn with the plugin's own styles: pinned question,
+  an expanded thinking row with the tail window, tool rows (read, shell with diff, failed, running), a fold
+  summary with failures auto-expanded, and the turn's tokens — all following the strength, palette, density,
+  wrap, expansion and animation settings live. Takeover off shows a note instead.
+- **Expand failed rows**: a new "Expand failed rows" choice in Expansion lets only failed rows start open; a running
+  row opens once it fails (thinking rows and task lists treat the choice like collapsed).
+- **Failed folds open themselves**: a fold summary whose steps include failures now starts expanded, so the failed
+  rows and the red failure count are visible without a tap; a segment you collapsed yourself stays collapsed.
+- **Command colors**: the shell command in a row's title gets the theme's syntax colors — while the row is open
+  (default) or always. The colorizer lives in the lazy `fx` chunk; until it arrives the command reads as plain text.
+- **Wrap diff lines**: a new "Code and diffs" section in settings; off (default) keeps long diff lines on one row
+  with horizontal scrolling, on wraps them to the available width.
+- **Strength**: a new setting under Folding, spacing, and prompts lets finished thinking and tool rows sit at
+  65%, 45% or 30% opacity until you hover, focus or expand them; full strength (no fading) stays the default.
+  Finished fold summaries fade too: expanding or hovering one restores it, and a running segment's header
+  (「N earlier steps」) stays full. Running, waiting and asking rows keep their full color, the newest row of a
+  run stays bright, and rows without expandable content stay at full strength, since hovering them restores
+  nothing. Hidden from the settings page while takeover is off.
+- **Settings from the sidebar**: the settings page now also opens from a Vivid Activity row in the app's sidebar
+  and from "Open Vivid Activity settings" in the Command Center, next to the existing Settings → Plugins page;
+  all three show the same settings. Screen and sidebar titles follow the chosen language without reloading.
+- **Upgrading**: settings saved by 0.10.x and earlier carry over unchanged — the stored settings stay at schema
+  version 1 and every new setting starts at its default. Settings saved by a 0.11.0 pre-release build (stored as
+  version 2) show as invalid once; press Reset on the settings page. Going back to 0.10.x keeps the settings,
+  unless a row kind was set to "Expand failed rows", which 0.10.x reports as invalid.
+- Maintainers: the client-chunk build script ships with the package now — `npm run build:chunks` rebuilds the
+  served chunks after any client-side change, and `npm run check` rejects stale artifacts. The `fx` chunk grew
+  (to ~97 KiB — it now carries the shared highlight module, Prism core and the language grammars) for Command
+  colors, and downloads only when one of its features is used.
+
 ## 0.10.0 (2026-10-28)
 
 - **A sub-agent that waits for you or failed says so**: the live activity card of a sub-agent shows "Waiting for you" or "Asking you" in amber (with a breathing dot) and a line saying to open its chat; a sub-agent that stopped with an error shows the first line of the error in red (at most 150 characters, common token shapes masked first: `sk-`, `ghp_` and friends, `glpat-`, `xox?-`, JWTs, and values after `Bearer`, `token=`, `api_key=`). Read from the pending requests and error Paseo already reports, with no extra session reads; older servers send neither and the card is unchanged.

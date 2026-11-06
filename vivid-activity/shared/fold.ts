@@ -380,7 +380,7 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
     const info: SegmentInfo = { id, keys: segment.steps.map((step) => step.key), sealed, running, mode: "open", anchor: null };
     infos.push(info);
     if (!options.enabled || foldable.length === 0) continue;
-    const expanded = options.expanded?.(id) ?? false;
+    const userExpanded = options.expanded?.(id);
 
     if (!running) {
       // Rows that stay visible (ambiguous keys) are not part of what the summary stands for.
@@ -397,6 +397,10 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
       }
       // 0.6.0: a failed notice (a background sub-agent or command that failed) is not a step, but the summary says so in red.
       const failedNotices = foldable.filter((step) => step.notice && step.status === "failed" && !step.ambiguous && isPresent(step, options)).length;
+      const failed = loaded.filter((step) => step.status === "failed").length + failedNotices;
+      // 0.11.0:「失败」段自动展开（此前从未手动开合过，reader 返回 undefined）：失败行与失败清单直接可见。
+      // 用户显式开合（true/false）优先，收起的失败段保持紧凑。
+      const expanded = userExpanded ?? failed > 0;
       const summary: FoldSummary = {
         segment: id,
         mode: "done",
@@ -404,7 +408,7 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
         steps: loaded.length,
         hidden: loaded.length,
         counts: countLooks(loaded),
-        failed: loaded.filter((step) => step.status === "failed").length + failedNotices,
+        failed,
         canceled: loaded.filter((step) => step.status === "canceled").length,
         durationMs,
         endedAt: end > 0 ? end : null,
@@ -438,6 +442,8 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
     if (earlierSteps.length < minHidden) continue;
     const anchor = earlier.find((step) => isPresent(step, options));
     if (!anchor) continue;
+    // 运行中的段头没有失败计数（失败行保持显示，不计入 earlier）：自动展开只看用户显式开合。
+    const expanded = userExpanded ?? false;
     const summary: FoldSummary = {
       segment: id,
       mode: "earlier",

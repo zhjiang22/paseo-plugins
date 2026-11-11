@@ -4,6 +4,7 @@ import { StatsDirectory } from "../server/stats-directory";
 import type { StatsDirectoryAgent } from "../server/stats-types";
 import { addCall, emptyData, noteThread } from "../server/tokens/data";
 import { buildTokenLive } from "../server/tokens/live";
+import { iso } from "../server/tokens/types";
 import { type LedgerCall } from "../server/tokens/types";
 import { tokenLiveSchema } from "../shared/tokens";
 
@@ -88,4 +89,21 @@ test("a Codex subagent thread's output shows on the row of the session that spaw
   noteThread(data, "child", "parent");
   const result = tokenLiveSchema.parse(buildTokenLive(data, { ...full, detail: "agents" }, NOW, directory));
   assert.deepEqual(result.agents.map(agent => [agent.sessionId, agent.agentId, agent.title, agent.output10m, agent.calls10m]), [["parent", "agent", "派出子 Agent 的会话", 800, 2]]);
+});
+
+test("a whole-turn source joins its agent row with ten-minute totals but no fabricated rate", () => {
+  const data = emptyData();
+  // A CodeBuddy step ends a minute ago with no response time; a Codex call is still streaming.
+  addCall(data, call({ key: "cb-step", source: "codebuddy", sessionId: "cb", start: null, at: NOW - 60_000, output: 900 }), null, NOW);
+  addCall(data, call({ key: "cx", source: "codex", sessionId: "cx", at: NOW - 500, start: NOW - 20_000, output: 300 }), null, NOW);
+  const result = tokenLiveSchema.parse(buildTokenLive(data, full, NOW, new StatsDirectory()));
+  // The chart and the now-rate stay timing-true: only the Codex call spread into them.
+  assert.equal(sum(result.output), 300); assert.equal(result.now.outputPerSec, 300 / 60); assert.equal(result.now.callsPerMin, 1);
+  assert.ok(result.peak === null || result.peak.outputPerSec < 90, "the whole-turn step must not read as a burst in the chart");
+  // Both sessions appear as rows; the whole-turn row shows its ten-minute totals and an arrival rate (the step's
+  // output lands in the trailing window it completed in), with the sparkline as one self-scaled pulse.
+  const cb = result.agents.find(row => row.source === "codebuddy")!, cx = result.agents.find(row => row.source === "codex")!;
+  assert.deepEqual([cb.output10m, cb.outputPerSec, sum(cb.recent)], [900, 7.5, 900]);
+  assert.deepEqual([cx.output10m, cx.outputPerSec], [300, 2.5]);
+  assert.equal(cb.lastCallAt, iso(NOW - 60_000));
 });

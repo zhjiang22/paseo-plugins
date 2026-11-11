@@ -46,17 +46,22 @@ export function buildTokenLive(data: TokenData, input: { windowMinutes: 30 | 60;
   const rows = new Map<string, TokenLiveAgent>();
   let nowOutput = 0, nowInput = 0, nowCalls = 0;
   for (const call of data.recent.values()) {
+    if (call.at > now) continue;
     // A whole-turn record (a Grok turn, a CodeBuddy step, a Gemini response) is logged when it ends with no response
-    // time: dropped into one 10 s bucket it would read as a burst of thousands of tokens per second. It counts in
-    // today's totals (the hour buckets), not in the live speed.
-    if (call.at > now || WHOLE_TURN_SOURCES[call.source]) continue;
-    const endIndex = Math.floor((call.at - start) / BUCKET);
-    if (input.detail === "full") {
-      spread(call, start, output);
-      if (endIndex >= 0 && endIndex < count) { read[endIndex] += tokenInput(call); calls[endIndex] += modelCalls(call); }
-    }
-    if (call.at >= now - 60_000) {
-      nowOutput += portion(call, now - 60_000, now); nowInput += tokenInput(call); nowCalls += modelCalls(call);
+    // time: dropped into one 10 s bucket it would read as a burst of thousands of tokens per second, so it stays out
+    // of the chart and the card's now-rate — but its session's row counts the last ten minutes and shows the token
+    // arrival rate (the step's output over the trailing window it completed in), which is what puts a harness without
+    // per-call timing on the live card at all.
+    const wholeTurn = WHOLE_TURN_SOURCES[call.source];
+    if (!wholeTurn) {
+      const endIndex = Math.floor((call.at - start) / BUCKET);
+      if (input.detail === "full") {
+        spread(call, start, output);
+        if (endIndex >= 0 && endIndex < count) { read[endIndex] += tokenInput(call); calls[endIndex] += modelCalls(call); }
+      }
+      if (call.at >= now - 60_000) {
+        nowOutput += portion(call, now - 60_000, now); nowInput += tokenInput(call); nowCalls += modelCalls(call);
+      }
     }
     if (call.at < now - 600_000) continue;
     // A Codex subagent thread's output shows on its parent session's row.
@@ -68,6 +73,8 @@ export function buildTokenLive(data: TokenData, input: { windowMinutes: 30 | 60;
       rows.set(key, row);
     }
     row.output10m += call.output; row.calls10m += modelCalls(call);
+    // For a whole-turn record `portion` degrades to the arrival rate: the step's whole output lands in the trailing
+    // 2 minutes it was completed in, and the 10 s sparkline shows it as one pulse (self-scaled per row).
     row.outputPerSec += portion(call, now - 120_000, now) / 120;
     spread(call, miniStart, row.recent);
     if (iso(call.at) >= row.lastCallAt) { row.lastCallAt = iso(call.at); row.model = text(call.model); }

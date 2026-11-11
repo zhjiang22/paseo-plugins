@@ -84,10 +84,13 @@ test("Grok: every turn of usage.json, fresh input apart from the cache, one reco
   const snapshot = tokenSnapshotSchema.parse(buildTokenSnapshot(data, { range: "7d", utcOffsetMinutes: 0 }, NOW, new StatsDirectory(), coverage));
   assert.equal(snapshot.totals.calls, 6); assert.equal(snapshot.totals.genMs, 0); assert.equal(snapshot.speed.p50, null);
   assert.deepEqual(snapshot.sources.map(row => [row.key, row.label, row.calls]), [["grok", "Grok CLI", 6]]);
-  // A whole turn logged at its end is not a live speed: it counts today, but adds no burst to the live chart.
+  // A whole turn logged at its end is not a live speed: it counts today and shows on its session's live row with the
+  // ten-minute totals, but adds no burst to the live chart and no fabricated rate.
   const live = buildTokenLive(data, { windowMinutes: 30, utcOffsetMinutes: 0, detail: "full" }, NOW, new StatsDirectory());
   assert.equal(live.today.calls, 6); assert.equal(live.today.output, 1300);
-  assert.deepEqual([live.output.reduce((sum, value) => sum + value, 0), live.calls.reduce((sum, value) => sum + value, 0), live.now.outputPerSec, live.peak, live.agents.length], [0, 0, 0, null, 0]);
+  assert.deepEqual([live.output.reduce((sum, value) => sum + value, 0), live.calls.reduce((sum, value) => sum + value, 0), live.now.outputPerSec, live.peak], [0, 0, 0, null]);
+  assert.equal(live.agents.length, 1);
+  assert.deepEqual([live.agents[0]!.source, live.agents[0]!.output10m, live.agents[0]!.outputPerSec, live.agents[0]!.calls10m], ["grok", 1300, 1300 / 120, 6]);
 }));
 
 test("Grok: a new turn is counted once, and the turns a resumed or forked session carries are not counted again", () => ingest(root => [{ source: "grok", path: root }], async (root, ingester, calls) => {

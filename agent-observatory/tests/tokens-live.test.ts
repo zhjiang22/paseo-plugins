@@ -22,6 +22,7 @@ test("live spreads output across complete and partial buckets, with input and ca
   assert.equal(sum(result.calls), 2); assert.equal(result.calls.at(-1), 2);
   assert.equal(result.now.outputPerSec, 2510 / 60); assert.equal(result.now.inputPerSec, 200 / 60); assert.equal(result.now.callsPerMin, 2);
   assert.equal(result.peak?.outputPerSec, 100);
+  assert.equal(sum(result.arrivalOutput ?? []), 0, "timed calls never land in the arrival series");
   assert.deepEqual(result.agents[0].recent.slice(-3), [1000, 1000, 510]);
   assert.deepEqual(result.today, { calls: 2, total: 2710, output: 2510 });
 });
@@ -100,6 +101,8 @@ test("a whole-turn source joins its agent row with ten-minute totals but no fabr
   // The chart stays timing-true (only the Codex call spread into it), while the card's now-rate counts the
   // whole-turn step's output as an arrival in its trailing window.
   assert.equal(sum(result.output), 300); assert.equal(result.now.outputPerSec, (300 + 900) / 60); assert.equal(result.now.callsPerMin, 2);
+  // The arrival series carries the whole-turn pulse in the bucket the step completed in.
+  assert.equal(sum(result.arrivalOutput ?? []), 900); assert.deepEqual(result.arrivalOutput?.filter(value => value > 0), [900]);
   assert.equal(result.now.inputPerSec, 200 / 60); assert.equal(result.now.callsPerMin, 2);
   assert.ok(result.peak === null || result.peak.outputPerSec < 90, "the whole-turn step must not read as a burst in the chart");
   // Both sessions appear as rows; the whole-turn row shows its ten-minute totals, an arrival rate (the step's

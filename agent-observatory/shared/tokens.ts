@@ -224,6 +224,9 @@ export const tokenLiveSchema = z.object({
   /** Start of the first bucket. */
   start: iso,
   output: z.array(count).max(360),
+  /** Whole-turn sources' arrival pulses (their output lands in the bucket each step completed in) — a dimmed
+   * second series behind `output`; unlike `output` it must not raise the axis or the peak. */
+  arrivalOutput: z.array(count).max(360).optional(),
   input: z.array(count).max(360),
   calls: z.array(count).max(360),
   now: z.object({ outputPerSec: rate, inputPerSec: rate, callsPerMin: rate }),

@@ -34,6 +34,9 @@ export function buildTokenLive(data: TokenData, input: { windowMinutes: 30 | 60;
   now: number, directory: StatsDirectory): TokenLive {
   const count = input.windowMinutes * 6, start = bucketOf(now) - (count - 1) * BUCKET, miniStart = bucketOf(now) - 11 * BUCKET;
   const output = input.detail === "full" ? Array<number>(count).fill(0) : [], read = output.map(() => 0), calls = output.map(() => 0);
+  // Whole-turn sources' arrival pulses render as a dimmed second series: each step's whole output sits in the bucket
+  // it completed in. The axis and the peak stay timed-true; an arrival segment taller than the axis is clipped.
+  const arrivalOutput = input.detail === "full" ? Array<number>(count).fill(0) : [];
   const zone = statsZone(input.utcOffsetMinutes, input.timeZone, now), localDay = statsLocalDay(now, zone), today = { total: 0, output: 0, calls: 0 };
   for (const bucket of data.hours.values()) if (bucket.at <= now && statsLocalDay(bucket.at, zone) === localDay) {
     today.total += tokenTotal(bucket); today.output += bucket.output; today.calls += bucket.calls;
@@ -48,14 +51,17 @@ export function buildTokenLive(data: TokenData, input: { windowMinutes: 30 | 60;
   for (const call of data.recent.values()) {
     if (call.at > now) continue;
     // A whole-turn record (a Grok turn, a CodeBuddy step, a Gemini response) is logged when it ends with no response
-    // time: dropped into one 10 s bucket it would read as a burst of thousands of tokens per second, so it stays out
-    // of the chart and the card's now-rate — but its session's row counts the last ten minutes and shows the token
-    // arrival rate (the step's output over the trailing window it completed in), which is what puts a harness without
-    // per-call timing on the live card at all.
+    // time: spread over one 10 s bucket it would read as a burst of thousands of tokens per second, so its output
+    // rides in its own dimmed arrival series (never the axis or the peak) while its session's row counts the last ten
+    // minutes and shows the token arrival rate — which is what puts a harness without per-call timing on the live
+    // card at all.
     const wholeTurn = WHOLE_TURN_SOURCES[call.source];
-    if (!wholeTurn) {
+    if (input.detail === "full") {
       const endIndex = Math.floor((call.at - start) / BUCKET);
-      if (input.detail === "full") {
+      if (wholeTurn) {
+        spread(call, start, arrivalOutput);
+        if (endIndex >= 0 && endIndex < count) calls[endIndex] += modelCalls(call);
+      } else {
         spread(call, start, output);
         if (endIndex >= 0 && endIndex < count) { read[endIndex] += tokenInput(call); calls[endIndex] += modelCalls(call); }
       }
@@ -84,7 +90,7 @@ export function buildTokenLive(data: TokenData, input: { windowMinutes: 30 | 60;
   if (input.detail === "full") for (let i = 0; i < output.length; i++) {
     if (output[i] > (peak?.outputPerSec ?? 0) * 10) peak = { outputPerSec: output[i] / 10, at: iso(start + i * BUCKET) };
   }
-  const result: TokenLive = { generatedAt: iso(now), bucketMs: BUCKET, start: iso(start), output, input: read, calls,
+  const result: TokenLive = { generatedAt: iso(now), bucketMs: BUCKET, start: iso(start), output, arrivalOutput: input.detail === "full" ? arrivalOutput : undefined, input: read, calls,
     now: { outputPerSec: nowOutput / 60, inputPerSec: nowInput / 60, callsPerMin: nowCalls }, peak,
     agents: [...rows.values()].sort((a, b) => b.outputPerSec - a.outputPerSec || b.lastCallAt.localeCompare(a.lastCallAt) || a.sessionId.localeCompare(b.sessionId)).slice(0, 12), today };
   while (result.agents.length && Buffer.byteLength(JSON.stringify(result)) >= 11_900) result.agents.pop();

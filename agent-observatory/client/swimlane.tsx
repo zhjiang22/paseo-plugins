@@ -23,15 +23,15 @@ const clock = (at: number) => new Date(at).toLocaleTimeString(currentLanguage(),
  * 并行泳道: one lane per recently active Agent with its turns as bars (green done, red failed, blue still running)
  * and approval waits as amber strips, so overlapping work and stalls show at a glance. Tapping a lane opens the Agent.
  */
-export const Swimlane = memo(function Swimlane({ theme, events, agents, now, compact, onSelect, inset = space.md }: {
-  theme: PluginTheme; events: readonly TelemetryEvent[]; agents: readonly AgentRecord[]; now: number; compact: boolean; onSelect: (agentId: string) => void; inset?: number;
+export const Swimlane = memo(function Swimlane({ theme, events, agents, now, compact, onSelect, inset = space.md, subs }: {
+  theme: PluginTheme; events: readonly TelemetryEvent[]; agents: readonly AgentRecord[]; now: number; compact: boolean; onSelect: (agentId: string) => void; inset?: number; subs?: ReadonlyMap<string, string>;
 }) {
   const [range, setRange] = useState<Window>("1h");
   const [width, setWidth] = useState(0);
   const live = useMemo(() => { const result = new Map<string, "running" | "waiting">(); for (const agent of agents) if (agent.status === "running" || agent.status === "waiting") result.set(agent.id, agent.status); return result; }, [agents]);
   const titles = useMemo(() => new Map(agents.map(agent => [agent.id, agent.title] as const)), [agents]);
   // Provider subagents still working after the Agent's own turn ended (the tracker folds them into the record).
-  const subs = useMemo(() => new Map(agents.filter(agent => (agent.background?.running ?? 0) > 0 && agent.background?.since).map(agent => [agent.id, agent.background!.since!] as const)), [agents]);
+
   const windowMs = windows[range];
   const { lanes, peak, peakAt, turns, hidden } = useMemo(() => buildSwimlanes(events, live, now, windowMs, compact ? 6 : 8, titles, subs), [events, live, now, windowMs, compact, titles, subs]);
   const labelWidth = compact ? 88 : 150, track = Math.max(0, width - labelWidth - space.sm), from = now - windowMs;

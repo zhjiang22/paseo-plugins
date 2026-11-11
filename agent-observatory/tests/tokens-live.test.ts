@@ -97,13 +97,17 @@ test("a whole-turn source joins its agent row with ten-minute totals but no fabr
   addCall(data, call({ key: "cb-step", source: "codebuddy", sessionId: "cb", start: null, at: NOW - 60_000, output: 900 }), null, NOW);
   addCall(data, call({ key: "cx", source: "codex", sessionId: "cx", at: NOW - 500, start: NOW - 20_000, output: 300 }), null, NOW);
   const result = tokenLiveSchema.parse(buildTokenLive(data, full, NOW, new StatsDirectory()));
-  // The chart and the now-rate stay timing-true: only the Codex call spread into them.
-  assert.equal(sum(result.output), 300); assert.equal(result.now.outputPerSec, 300 / 60); assert.equal(result.now.callsPerMin, 1);
+  // The chart stays timing-true (only the Codex call spread into it), while the card's now-rate counts the
+  // whole-turn step's output as an arrival in its trailing window.
+  assert.equal(sum(result.output), 300); assert.equal(result.now.outputPerSec, (300 + 900) / 60); assert.equal(result.now.callsPerMin, 2);
+  assert.equal(result.now.inputPerSec, 200 / 60); assert.equal(result.now.callsPerMin, 2);
   assert.ok(result.peak === null || result.peak.outputPerSec < 90, "the whole-turn step must not read as a burst in the chart");
-  // Both sessions appear as rows; the whole-turn row shows its ten-minute totals and an arrival rate (the step's
-  // output lands in the trailing window it completed in), with the sparkline as one self-scaled pulse.
+  // Both sessions appear as rows; the whole-turn row shows its ten-minute totals, an arrival rate (the step's
+  // output lands in the trailing window it completed in) and the arrival marker, with the sparkline as one
+  // self-scaled pulse.
   const cb = result.agents.find(row => row.source === "codebuddy")!, cx = result.agents.find(row => row.source === "codex")!;
-  assert.deepEqual([cb.output10m, cb.outputPerSec, sum(cb.recent)], [900, 7.5, 900]);
+  assert.deepEqual([cb.output10m, cb.outputPerSec, sum(cb.recent), cb.arrival === true], [900, 7.5, 900, true]);
+  assert.ok(!cx.arrival);
   assert.deepEqual([cx.output10m, cx.outputPerSec], [300, 2.5]);
   assert.equal(cb.lastCallAt, iso(NOW - 60_000));
 });

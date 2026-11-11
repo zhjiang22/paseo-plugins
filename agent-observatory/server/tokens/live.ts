@@ -59,9 +59,10 @@ export function buildTokenLive(data: TokenData, input: { windowMinutes: 30 | 60;
         spread(call, start, output);
         if (endIndex >= 0 && endIndex < count) { read[endIndex] += tokenInput(call); calls[endIndex] += modelCalls(call); }
       }
-      if (call.at >= now - 60_000) {
-        nowOutput += portion(call, now - 60_000, now); nowInput += tokenInput(call); nowCalls += modelCalls(call);
-      }
+    }
+    // The card's now-rate counts arrivals: a whole-turn step's output lands in the trailing minute it completed in.
+    if (call.at >= now - 60_000) {
+      nowOutput += portion(call, now - 60_000, now); nowInput += tokenInput(call); nowCalls += modelCalls(call);
     }
     if (call.at < now - 600_000) continue;
     // A Codex subagent thread's output shows on its parent session's row.
@@ -69,7 +70,7 @@ export function buildTokenLive(data: TokenData, input: { windowMinutes: 30 | 60;
     let row = rows.get(key);
     if (!row) {
       row = { sessionId: root, source: call.source, agentId: agent?.id ?? null, title: text(agent?.title ?? null), model: text(call.model),
-        outputPerSec: 0, recent: Array<number>(12).fill(0), output10m: 0, calls10m: 0, lastCallAt: iso(call.at) };
+        outputPerSec: 0, recent: Array<number>(12).fill(0), output10m: 0, calls10m: 0, lastCallAt: iso(call.at), arrival: wholeTurn || undefined };
       rows.set(key, row);
     }
     row.output10m += call.output; row.calls10m += modelCalls(call);

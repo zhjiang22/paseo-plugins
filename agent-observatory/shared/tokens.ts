@@ -199,9 +199,14 @@ export const tokenLiveAgentSchema = z.object({
   agentId: z.string().max(256).nullable(),
   title: z.string().max(240).nullable(),
   model: z.string().max(240).nullable(),
-  /** Output tokens per second over the last 2 minutes (spread over each call's response time). */
+  /** Output tokens per second over the last 2 minutes (spread over each call's response time). Whole-turn sources
+   * have no response time: their rate is the arrival rate (completed steps' output ÷ the trailing window) and
+   * `arrival` is set so clients can tell the two measures apart. */
   outputPerSec: rate,
-  /** Output tokens per bucket over the last 2 minutes (12 × 10 s), oldest first — the row's mini chart. */
+  /** True when the row's harness logs whole-turn records (no response time) — the rate above is an arrival rate. */
+  arrival: z.boolean().optional(),
+  /** Output tokens per bucket over the last 2 minutes (12 × 10 s), oldest first — the row's mini chart. Whole-turn
+   * steps land as one pulse in the bucket they completed in. */
   recent: z.array(count).length(12),
   output10m: count, calls10m: count,
   lastCallAt: iso,

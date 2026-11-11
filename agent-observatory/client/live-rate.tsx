@@ -79,7 +79,7 @@ function LiveAgentRow({ theme, agent, onOpenAgent }: { theme: PluginTheme; agent
       <Text numberOfLines={1} style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>{[agent.model ?? agent.source, t("coreLiveRate.value10MinuteOutput", { value1: bigNumber(agent.output10m) }), relativeTime(agent.lastCallAt)].join(" · ")}</Text>
     </View>
     <MiniBars theme={theme} values={agent.recent} color={color} />
-    <Text style={{ width: 74, textAlign: "right", color: active ? theme.colors.foreground : theme.colors.foregroundMuted, fontSize: fontSize.small, fontWeight: "800", fontVariant: ["tabular-nums"] }}>{perSecond(agent.outputPerSec)}<Text style={{ fontSize: 10, fontWeight: "500", color: theme.colors.foregroundMuted }}>{t("coreLiveRate.tokS2")}</Text></Text>
+    <Text style={{ width: 74, textAlign: "right", color: active ? theme.colors.foreground : theme.colors.foregroundMuted, fontSize: fontSize.small, fontWeight: "800", fontVariant: ["tabular-nums"] }}>{perSecond(agent.outputPerSec)}<Text style={{ fontSize: 10, fontWeight: "500", color: theme.colors.foregroundMuted }}>{agent.arrival ? t("coreLiveRate.arrivalTokS") : t("coreLiveRate.tokS2")}</Text></Text>
   </>;
   const style = { flexDirection: "row" as const, alignItems: "center" as const, gap: space.sm, minHeight: 40, paddingVertical: 4 };
   return agent.agentId && onOpenAgent ? <Pressable accessibilityRole="button" accessibilityLabel={t("coreLiveRate.tokensPerSecond", { value1: title, value2: perSecond(agent.outputPerSec) })} onPress={() => onOpenAgent(agent.agentId!)} style={state => [style, { opacity: state.pressed ? 0.7 : 1 }]}>{body}</Pressable>

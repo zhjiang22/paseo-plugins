@@ -43,7 +43,7 @@ const EventRow = memo(function EventRow({ event, theme, time, selected, fresh, o
 });
 
 /** On phones the swimlane scrolls with the feed; wide layouts show it above the split view instead (`swimlane` false). */
-export function ActivityFeed({ events, theme, telemetry, onSelect, now, selectedId, agents, swimlane }: { events: TelemetryEvent[]; theme: PluginTheme; telemetry?: TelemetrySnapshot; onSelect: (id: string) => void; now: number; selectedId: string | null; agents: readonly AgentRecord[]; swimlane: boolean }) {
+export function ActivityFeed({ events, theme, telemetry, onSelect, now, selectedId, agents, swimlane, subs }: { events: TelemetryEvent[]; theme: PluginTheme; telemetry?: TelemetrySnapshot; onSelect: (id: string) => void; now: number; selectedId: string | null; agents: readonly AgentRecord[]; swimlane: boolean; subs?: ReadonlyMap<string, string> }) {
   // Everything present when the feed first has events is history; later ids are news.
   const known = useRef<Set<string> | null>(null);
   if (known.current === null && events.length) known.current = new Set(events.map(event => event.id));
@@ -52,7 +52,7 @@ export function ActivityFeed({ events, theme, telemetry, onSelect, now, selected
   return <FlatList style={{ flex: 1, minHeight: 0 }} data={events} keyExtractor={event => event.id} contentContainerStyle={{ paddingHorizontal: space.xs, paddingBottom: space.xl }}
     initialNumToRender={20} windowSize={7} extraData={`${now}:${selectedId}`}
     ListHeaderComponent={<View style={{ marginHorizontal: -space.xs }}>
-      {swimlane ? <Swimlane theme={theme} events={events} agents={agents} now={now} compact onSelect={onSelect} /> : null}
+      {swimlane ? <Swimlane theme={theme} events={events} agents={agents} now={now} compact onSelect={onSelect} subs={subs} /> : null}
       <Pulse theme={theme} events={events} now={now} telemetry={telemetry} />
     </View>}
     ListEmptyComponent={<EmptyState theme={theme} icon="Activity" title={t("coreActivityFeed.noExecutionEventsYet")} message={t("coreActivityFeed.taskStartsCompletionsFailuresAndApprovalsAppear")} />}

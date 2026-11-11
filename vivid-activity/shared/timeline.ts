@@ -164,6 +164,7 @@ export const foldItemDataSchema = z.object({
   failed: z.number().int().nonnegative(),
   canceled: z.number().int().nonnegative(),
   durationMs: z.number().nonnegative().nullable(),
+  endedAt: z.number().nonnegative().nullable().default(null),
   // 0.8.0: what the segment changed (shared/fold.ts summarizeChanges) and the turn whose tokens its last segment shows.
   files: z.number().int().nonnegative().optional(),
   added: z.number().int().nonnegative().optional(),
@@ -179,10 +180,12 @@ export type FoldItemData = z.output<typeof foldItemDataSchema>;
 export type ReasoningItemData = z.output<typeof reasoningItemDataSchema>;
 export type ToolCallItemData = z.output<typeof toolCallItemDataSchema>;
 
-export function resolveExpansion(mode: ExpansionMode, isLatest: boolean, userExpanded: boolean | null): boolean {
+export function resolveExpansion(mode: ExpansionMode, isLatest: boolean, userExpanded: boolean | null, isFailed = false): boolean {
   if (userExpanded !== null) return userExpanded;
   if (mode === "always") return true;
   if (mode === "never") return false;
+  // 0.11.0:「失败」档：只展开失败的行；运行中的行失败后即时展开（状态翻转驱动重渲染）。
+  if (mode === "failures") return isFailed;
   return isLatest;
 }
 

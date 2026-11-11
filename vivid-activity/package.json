@@ -1,6 +1,6 @@
 {
   "name": "vivid-activity",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Vivid Activity: color-coded, folding, timed activity rows for Paseo agent chats (based on Colorful Agent Activity by Matt Cowger)",
   "license": "MIT",
   "private": true,
@@ -8,7 +8,9 @@
   "scripts": {
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:chunks": "node scripts/build-client-chunks.mjs",
+    "check": "npm run build:chunks -- --check"
   },
   "dependencies": {
     "@getpaseo/protocol": "0.11.1",

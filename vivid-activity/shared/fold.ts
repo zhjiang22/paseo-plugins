@@ -99,6 +99,7 @@ export interface FoldSummary {
   canceled: number;
   /** done: from the content before the segment to its last step; null when unknown. */
   durationMs: number | null;
+  endedAt: number | null;
   /**
    * 0.8.0: files the steps changed whose lines are known (edits with a diff; writes and edits without one are left out),
    * and the lines added and removed across them.
@@ -184,7 +185,7 @@ export function roleSignature(role: FoldRole): string {
   const s = role.summary;
   const changed = s.changed.map((file) => `${file.key}:${file.file}:${file.added}:${file.removed}`).join(",");
   const fails = s.fails.map((fail) => `${fail.key}:${fail.exit ?? ""}`).join(",");
-  return `f|${s.segment}|${s.mode}|${s.expanded ? 1 : 0}|${s.steps}|${s.hidden}|${s.failed}|${s.canceled}|${s.durationMs ?? ""}|${s.counts.map(([look, n]) => `${look}${n}`).join(",")}`
+  return `f|${s.segment}|${s.mode}|${s.expanded ? 1 : 0}|${s.steps}|${s.hidden}|${s.failed}|${s.canceled}|${s.durationMs ?? ""}|${s.endedAt ?? ""}|${s.counts.map(([look, n]) => `${look}${n}`).join(",")}`
     + `|${s.files}|${s.added}|${s.removed}|${s.uncounted}|${changed}|${fails}|${s.turn ?? ""}|${s.lastOfTurn ? 1 : 0}`;
 }
 
@@ -379,7 +380,7 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
     const info: SegmentInfo = { id, keys: segment.steps.map((step) => step.key), sealed, running, mode: "open", anchor: null };
     infos.push(info);
     if (!options.enabled || foldable.length === 0) continue;
-    const expanded = options.expanded?.(id) ?? false;
+    const userExpanded = options.expanded?.(id);
 
     if (!running) {
       // Rows that stay visible (ambiguous keys) are not part of what the summary stands for.
@@ -396,6 +397,10 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
       }
       // 0.6.0: a failed notice (a background sub-agent or command that failed) is not a step, but the summary says so in red.
       const failedNotices = foldable.filter((step) => step.notice && step.status === "failed" && !step.ambiguous && isPresent(step, options)).length;
+      const failed = loaded.filter((step) => step.status === "failed").length + failedNotices;
+      // 0.11.0:「失败」段自动展开（此前从未手动开合过，reader 返回 undefined）：失败行与失败清单直接可见。
+      // 用户显式开合（true/false）优先，收起的失败段保持紧凑。
+      const expanded = userExpanded ?? failed > 0;
       const summary: FoldSummary = {
         segment: id,
         mode: "done",
@@ -403,9 +408,10 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
         steps: loaded.length,
         hidden: loaded.length,
         counts: countLooks(loaded),
-        failed: loaded.filter((step) => step.status === "failed").length + failedNotices,
+        failed,
         canceled: loaded.filter((step) => step.status === "canceled").length,
         durationMs,
+        endedAt: end > 0 ? end : null,
         ...summarizeChanges(loaded),
         turn,
         lastOfTurn: false,
@@ -436,6 +442,8 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
     if (earlierSteps.length < minHidden) continue;
     const anchor = earlier.find((step) => isPresent(step, options));
     if (!anchor) continue;
+    // 运行中的段头没有失败计数（失败行保持显示，不计入 earlier）：自动展开只看用户显式开合。
+    const expanded = userExpanded ?? false;
     const summary: FoldSummary = {
       segment: id,
       mode: "earlier",
@@ -446,6 +454,7 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
       failed: 0,
       canceled: earlierSteps.filter((step) => step.status === "canceled").length,
       durationMs: null,
+      endedAt: null,
       ...summarizeChanges(earlierSteps),
       turn,
       lastOfTurn: false,

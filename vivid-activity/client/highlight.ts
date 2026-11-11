@@ -33,15 +33,35 @@ export const BASH_STRING = (() => {
 
 // Lightweight regex grammar for Bash (avoids large stateful prism-bash dependency)
 // 本地补丁（0.6.0-local.2，codex-vivid-F1）：`${…}` 最多 256 个字符，`${${${…` 不再让每个起点都重扫到结尾。
+// 0.11.0 命令着色丰富化：constant（true/false）、heredoc（<<EOF 到终止词：正文最多 6 行、每行
+// ≤200 字符——锚点测试按行数而不是按字符数计，洪水输入线性有界）、
+// 子壳 $()/反引号/字符串内的命令替换（parameter：flag）。
+// 嵌套只用一级：prism-core 对自引用 inside（内层 = 含 subshell 的整份语法）必然栈溢出（最小复现
+// XaaY 自引用即溢出），所以内层语法剥掉 subshell/backtick，天然无环；$() 里再有 $() 走普通文本。
+const bashSubshell = { pattern: /\$\([^)]{0,400}\)/, greedy: true, inside: undefined as unknown as Prism.Grammar };
+const bashBacktick = { pattern: /`[^`\r\n]{0,400}`/, greedy: true, inside: undefined as unknown as Prism.Grammar };
+const bashStringInside = { subshell: bashSubshell, backtick: bashBacktick };
 Prism.languages.bash = {
   comment: { pattern: /(^|[\t ])#.*/m, lookbehind: true, greedy: true },
-  string: { pattern: BASH_STRING, greedy: true },
+  string: { pattern: BASH_STRING, greedy: true, inside: bashStringInside },
   variable: /\$(?:\w+|\{[^}\r\n]{0,256}\}|[?$!#@*-])/,
+  subshell: bashSubshell,
+  backtick: bashBacktick,
+  heredoc: { pattern: /<<-?["']?(\w{1,64})["']?(?:[^\n]{0,120}(\n[^\n]{0,200}){0,6}?\n\1(?![\w])|(?=$|[\s|&;)<]))/m, greedy: true },
   keyword: /\b(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|in|function|select|return|export|local)\b/,
   builtin: /\b(?:test|echo|cd|pwd|ls|cat|mkdir|rm|cp|mv|touch|grep|find|sed|awk|curl|git|node|npm|bun|deno)\b/,
+  constant: /\b(?:true|false)\b/,
+  parameter: { pattern: /(\s)--?[\w][\w=-]{0,40}/, lookbehind: true },
   operator: /&&|\|\||[|&;<>]/,
   punctuation: /[(){}[\]]/,
 };
+// 一级嵌套的内层语法：剥掉 subshell/backtick，字符串也不再下钻（字符串里的命令替换只在外层着色）。
+const bashInner: Prism.Grammar = { ...Prism.languages.bash };
+delete (bashInner as Record<string, unknown>).subshell;
+delete (bashInner as Record<string, unknown>).backtick;
+bashInner.string = { pattern: BASH_STRING, greedy: true };
+bashSubshell.inside = bashInner;
+bashBacktick.inside = bashInner;
 
 export interface ThemeSyntaxColors {
   foreground: string;
@@ -51,6 +71,14 @@ export interface ThemeSyntaxColors {
   statusSuccess?: string;
   statusWarning?: string;
   statusDanger?: string;
+  /** 0.11.0:命令着色的 vivid 派生扩展（仅命令行路径传入；其余代码高亮不受影响）。 */
+  builtin?: string;
+  keyword?: string;
+  variable?: string;
+  operator?: string;
+  parameter?: string;
+  constant?: string;
+  heredoc?: string;
 }
 
 export type SyntaxColorsInput = ThemeSyntaxColors | boolean;
@@ -205,6 +233,9 @@ function parseAnsiToLines(code: string, colors: ThemeSyntaxColors): HighlightTok
 }
 
 function resolveTokenColor(type: string, colors: ThemeSyntaxColors): string {
+  // 0.11.0:命令着色路径传入的 vivid 派生色（builtin/keyword/variable/operator/parameter）优先命中。
+  const override = (colors as unknown as Partial<Record<string, string>>)[type];
+  if (override) return override;
   switch (type) {
     case "comment":
     case "prolog":
@@ -219,6 +250,7 @@ function resolveTokenColor(type: string, colors: ThemeSyntaxColors): string {
     case "attr-value":
     case "regex":
     case "template-string":
+    case "heredoc":
       return colors.statusSuccess ?? colors.accent;
 
     case "keyword":
@@ -344,7 +376,31 @@ function colorsKey(colors: ThemeSyntaxColors): string {
     colors.statusSuccess ?? "",
     colors.statusWarning ?? "",
     colors.statusDanger ?? "",
+    // 0.11.0:override 槽位参与 key——调色板切换后同一命令必须重新着色（否则命中旧色缓存）。
+    colors.builtin ?? "",
+    colors.keyword ?? "",
+    colors.variable ?? "",
+    colors.operator ?? "",
+    colors.parameter ?? "",
+    colors.constant ?? "",
+    colors.heredoc ?? "",
   ].join("|");
+}
+
+/**
+ * 0.11.0:shell 行头首词加粗（fontStyle 位 2，渲染层已有位掩码→样式映射）。仅命令行路径调用；
+ * 首个像命令词的 token 前若是注释/纯符号则不加粗。
+ */
+export function emphasizeShellHead(lines: HighlightToken[][]): HighlightToken[][] {
+  for (const token of lines[0] ?? []) {
+    const text = token.content.trim();
+    if (!text || (token.fontStyle && token.fontStyle & 1)) continue;
+    if (text.startsWith("#")) break;
+    if (!/^[\w.$/{"']/.test(text)) continue;
+    token.fontStyle = (token.fontStyle ?? 0) | 2;
+    break;
+  }
+  return lines;
 }
 
 function cacheKey(code: string, language: string, colors: ThemeSyntaxColors): string {

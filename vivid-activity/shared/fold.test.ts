@@ -63,7 +63,7 @@ describe("fold keys", () => {
     expect(roleSignature({ kind: "show" })).toBe("s");
     expect(roleSignature({ kind: "hide" })).toBe("h");
     const summary = {
-      segment: "4", mode: "done" as const, expanded: false, steps: 3, hidden: 3, counts: [["shell", 2], ["read", 1]] as Array<[LookKey, number]>, failed: 0, canceled: 0, durationMs: 4000,
+      segment: "4", mode: "done" as const, expanded: false, steps: 3, hidden: 3, counts: [["shell", 2], ["read", 1]] as Array<[LookKey, number]>, failed: 0, canceled: 0, durationMs: 4000, endedAt: 5000,
       files: 1, added: 3, removed: 1, uncounted: 0, changed: [{ key: "t:e", file: "f1", added: 3, removed: 1 }], fails: [], turn: "turn-1", lastOfTurn: true,
     };
     expect(roleSignature({ kind: "fold", summary })).toBe(roleSignature({ kind: "fold", summary: { ...summary } }));
@@ -85,7 +85,7 @@ describe("planFolds: finished segments", () => {
     expect(segments.map((segment) => [segment.id, segment.mode, segment.sealed])).toEqual([["2", "done", true], ["6", "done", true]]);
     expect(summaryOf(roles, rows[1]!)).toEqual({
       segment: "2", mode: "done", expanded: false, steps: 3, hidden: 3,
-      counts: [["think", 1], ["read", 1], ["shell", 1]], failed: 0, canceled: 0, durationMs: 3000,
+      counts: [["think", 1], ["read", 1], ["shell", 1]], failed: 0, canceled: 0, durationMs: 3000, endedAt: 4000,
       files: 0, added: 0, removed: 0, uncounted: 0, changed: [], fails: [], turn: null, lastOfTurn: false,
     });
     expect(summaryOf(roles, rows[5]!).counts).toEqual([["shell", 2], ["edit", 1]]);
@@ -96,11 +96,26 @@ describe("planFolds: finished segments", () => {
     expect(planFolds(rows, options()).roles.size).toBe(0);
   });
 
-  it("folds failed rows too and counts them in red", () => {
+  it("folds failed rows too and counts them in red, auto-expanded so the failures are visible", () => {
     const rows = [boundary(1), tool(2), tool(3, "failed"), tool(4, "canceled"), boundary(5)];
+    // 从未手动开合过（reader undefined）+ 段含失败：自动展开（摘要 + 全部行）。
     const { roles } = planFolds(rows, options());
+    expect(kinds(roles, rows)).toEqual(["|", "fold", "show", "show", "|"]);
+    expect(summaryOf(roles, rows[1]!)).toMatchObject({ steps: 3, failed: 1, canceled: 1, expanded: true });
+  });
+
+  it("respects an explicit collapse on a failed segment", () => {
+    const rows = [boundary(1), tool(2), tool(3, "failed"), tool(4, "canceled"), boundary(5)];
+    const { roles } = planFolds(rows, options({ expanded: () => false }));
     expect(kinds(roles, rows)).toEqual(["|", "fold", "hide", "hide", "|"]);
-    expect(summaryOf(roles, rows[1]!)).toMatchObject({ steps: 3, failed: 1, canceled: 1 });
+    expect(summaryOf(roles, rows[1]!)).toMatchObject({ failed: 1, expanded: false });
+  });
+
+  it("respects an explicit expand on a segment without failures", () => {
+    const rows = [boundary(1), tool(2), tool(3), tool(4), boundary(5)];
+    const { roles } = planFolds(rows, options({ expanded: () => true }));
+    expect(kinds(roles, rows)).toEqual(["|", "fold", "show", "show", "|"]);
+    expect(summaryOf(roles, rows[1]!)).toMatchObject({ failed: 0, expanded: true });
   });
 
   it("seals the trailing run when the agent has stopped, keeps it open while it runs", () => {
@@ -231,11 +246,13 @@ describe("planFolds: scope, notices, loaded rows and ambiguity", () => {
     const failed = tool(4, "failed", "agent", { notice: { ref: "call-0", foreground: false } });
     const rows = [boundary(1), tool(2), tool(3), failed, boundary(5)];
     const done = planFolds(rows, options());
-    expect(kinds(done.roles, rows)).toEqual(["|", "fold", "hide", "hide", "|"]);
-    expect(summaryOf(done.roles, rows[1]!)).toMatchObject({ steps: 2, failed: 1 });
-    // A stopped sub-agent (Claude Code's "killed") is no failure.
+    // 含失败通知的段自动展开（0.11.0）：摘要 + 全部行。
+    expect(kinds(done.roles, rows)).toEqual(["|", "fold", "show", "show", "|"]);
+    expect(summaryOf(done.roles, rows[1]!)).toMatchObject({ steps: 2, failed: 1, expanded: true });
+    // A stopped sub-agent (Claude Code's "killed") is no failure: no auto-expand.
     const stopped = planFolds([boundary(1), tool(2), tool(3), tool(4, "canceled", "agent", { notice: { ref: "call-0", foreground: false } }), boundary(5)], options());
-    expect(summaryOf(stopped.roles, rows[1]!)).toMatchObject({ steps: 2, failed: 0 });
+    expect(kinds(stopped.roles, rows)).toEqual(["|", "fold", "hide", "hide", "|"]);
+    expect(summaryOf(stopped.roles, rows[1]!)).toMatchObject({ steps: 2, failed: 0, expanded: false });
     // While the run goes on, the failure stays on screen like a failed step.
     const live = [boundary(1), tool(2), tool(3), tool(4), failed, tool(5), tool(6), tool(7, "running")];
     const running = planFolds(live, options({ agentRunning: true }));

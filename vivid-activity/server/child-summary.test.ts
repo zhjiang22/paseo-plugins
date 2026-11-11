@@ -58,6 +58,21 @@ describe("compact child summaries", () => {
     expect(calls).toEqual(["child", { direction: "tail", limit: 8, projection: "projected" }]);
   });
 
+  it("never gives one of the three places to this plugin's turn-end time row", async () => {
+    const command = (n: number) => ({ seqStart: n, seqEnd: n, item: { type: "tool_call", callId: `t-${n}`, name: "Bash", status: "completed", detail: { type: "shell", command: `echo ${n}` } } });
+    const marker = { seqStart: 4, seqEnd: 4, item: { type: "plugin", pluginId: "vivid-activity", kind: "vivid-turn-time", version: 1, data: { at: 1, turnId: "t1", outcome: "completed" } } };
+    const card = { seqStart: 5, seqEnd: 5, item: { ...marker.item, kind: "other-card" } };
+    const context = (entries: unknown[]) => ({ paseo: { agents: { ref: () => ({
+      refresh: async () => ({ agent: { status: "idle", activeTurn: null } }),
+      timeline: { refetch: async () => ({ entries }) },
+    }) } } }) as unknown as PluginHandlerContext;
+    const output = await handleChildSummary({ agentId: "child", manual: true }, context([command(1), command(2), command(3), marker]));
+    expect(output.rows.map((row) => row.k)).toEqual(["1", "2", "3"]);
+    // Another plugin's row is still part of what the child shows.
+    const other = await handleChildSummary({ agentId: "child", manual: true }, context([command(1), command(2), command(3), marker, card]));
+    expect(other.rows.map((row) => [row.k, row.t])).toEqual([["2", expect.any(String)], ["3", expect.any(String)], ["5", "other-card"]]);
+  });
+
   it("caps a response containing three long tool summaries as a whole", async () => {
     const context = { paseo: { agents: { ref: () => ({
       refresh: async () => ({ agent: { status: "running", activeTurn: null } }),

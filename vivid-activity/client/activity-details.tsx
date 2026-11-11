@@ -1,6 +1,6 @@
 import { t } from "../shared/text";
 import type { PluginTimelineItemProps } from "@getpaseo/plugin/client";
-import { useAgent, useRpc } from "@getpaseo/plugin/client";
+import { useAgent, useRpc, useSettings } from "@getpaseo/plugin/client";
 import { Icon, ScrollView, useRevealedText } from "@getpaseo/plugin/client/react-native";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -12,7 +12,7 @@ import { githubToolKind } from "../shared/github";
 import { parseInlineMarkdown, parseReasoningMarkdown, type ReasoningMarkdownBlock } from "../shared/markdown";
 import { isOmpFindTool } from "../shared/omp-find";
 import { parsePiSubagentCall, piSubagentOperation } from "../shared/pi-subagents";
-import { askContent, compactText, diffLinesForDetail, editDiffContentSize, effectiveUnifiedDiff, extractCodeInput, fileIconForPath, formatUnknownValue, hasMeaningfulUnknownValue, isAskTool, isBgWaitTool, isOmpWaitTool, isOpencodeSubagentTool, isSkillTool, isSubagentSupervisorTool, isTodoTool, MAX_DIFF_CHARS, notInHeader, outputView, parseOpencodeSearchContent, parsePiLsOutput, paseoToolLeafName, PREVIEW_LINES, previewText, readErrorMessage, relativeToRoot, resolveSearchCounts, skillNameForDetail, splitReasoningSteps, splitStepTitle, stripAnsi, subAgentLogFullyShown, type ActivityPalette, type AskContent, type DiffLine } from "../shared/presentation";
+import { askContent, compactText, diffLinesForDetail, editDiffContentSize, effectiveUnifiedDiff, extractCodeInput, fileIconForPath, formatUnknownValue, hasMeaningfulUnknownValue, isAskTool, isBgWaitTool, isOmpWaitTool, isOpencodeSubagentTool, isSkillTool, isSubagentSupervisorTool, isTodoTool, MAX_DIFF_CHARS, notInHeader, outputView, parseOpencodeSearchContent, parsePiLsOutput, paseoToolLeafName, PREVIEW_LINES, previewText, readErrorMessage, relativeToRoot, resolveSearchCounts, skillNameForDetail, splitReasoningSteps, splitStepTitle, stripAnsi, subAgentLogFullyShown, tailLinesOf, type ActivityPalette, type AskContent, type DiffLine } from "../shared/presentation";
 import { readImageRpc, shouldAttemptImageLoad } from "../shared/read-image";
 import { noticeSections, type NoticeState } from "../shared/notice";
 import { PI_NOTICE_BODY_CHARS, type PiNoticeData, type ReasoningItemData, type ToolCallItemData } from "../shared/timeline";
@@ -21,7 +21,8 @@ import { CodeModeToolDetail } from "./codemode";
 import { CopyButton, OutputCopyButtons } from "./copy-button";
 import { GithubToolDetail } from "./github";
 import { useHighlightTokens, type HighlightToken } from "./highlight";
-import { aria } from "./kit";
+import { aria, vividSyntaxColors } from "./kit";
+import { useFollowBottom, useWrapLines } from "./settings-hooks";
 import { Breathe } from "./motion";
 import { OmpFindToolDetail } from "./omp-find";
 import { OmpWaitToolDetail } from "./omp-wait";
@@ -31,6 +32,7 @@ import { BgWaitToolDetail, PiSubagentToolDetail, SupervisorToolDetail } from "./
 import { TodoToolDetail } from "./todo";
 import { BrandChip, zh } from "./vivid";
 import { cmonoTextEscape, cmonoViewEscape, cuiViewEscape } from "./web";
+import { activitySettings } from "../shared/settings";
 import type { useActivityStyles } from "./activity";
 
 type Theme = PluginTimelineItemProps["theme"];
@@ -83,14 +85,21 @@ function FileTitle({ path, styles }: { path: string; styles: ReturnType<typeof u
 function TokenizedLines({
   lines,
   styles,
+  numbersFrom,
+  wrapLines,
 }: {
   lines: HighlightToken[][];
   styles: ReturnType<typeof useActivityStyles>;
+  /** 「长行折行」时的内联行号（替代行号槽；折行后续行自然流下，行号仍对逻辑行）。 */
+  numbersFrom?: number;
+  /** 「长行折行」：行内允许折行（flexShrink），配合父级去掉横向滚动。 */
+  wrapLines?: boolean;
 }) {
   return (
     <View>
       {lines.map((line, lineIndex) => (
-        <Text key={`line-${lineIndex}`} selectable style={styles.codeLine}>
+        <Text key={`line-${lineIndex}`} selectable style={[styles.codeLine, wrapLines || numbersFrom !== undefined ? { flexShrink: 1 } : null]}>
+          {numbersFrom !== undefined ? <Text style={styles.gutterText}>{String(numbersFrom + lineIndex)} </Text> : null}
           {line.length === 0
             ? " "
             : line.map((token, tokenIndex) => {
@@ -142,6 +151,7 @@ function HighlightedCodeBlock({
   lineStart,
   extra,
   copyLabel = t("ui.copyCode"),
+  follow,
 }: {
   code: string;
   language: string;
@@ -155,15 +165,23 @@ function HighlightedCodeBlock({
   lineStart?: number;
   extra?: ReactNode;
   copyLabel?: string;
+  /** 0.11.0:「跟随最新输出」——跟随域开启时输出块显示尾窗（最后 N 行），最新行始终可见。 */
+  follow?: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
+  // 0.11.0:「长行折行·代码与文件」：折行时去掉横向滚动、行号内联到行首（悬挂语义，行号仍对逻辑行）。
+  const wrap = useWrapLines("code");
   // 0.5.0: terminal escape sequences never show (shared/presentation.ts stripAnsi); 「复制原文」 keeps them.
   const clean = useMemo(() => stripAnsi(code), [code]);
   // A file's final newline is not a line of its own (no empty numbered line at the end); copying keeps it.
-  const view = useMemo(() => outputView(code, clean, showAll, language === "ansi"), [clean, code, language, showAll]);
-  const { preview, shown: displayCode } = view;
-  const tokens = useHighlightTokens(view.highlight, language, theme.colors);
+  // 0.11.0:「跟随最新输出」尾窗：行在运行中且跟随域开启、内容被截断时，从全文取最后 PREVIEW_LINES 行
+  // （最新行始终可见），高亮同一段，行号跟随偏移；「展开全部」仍可看到全部。其余情况维持头部预览（现状）。
+  const view = useMemo(() => outputView(code, clean, showAll, language === "ansi", true, follow), [clean, code, follow, language, showAll]);
+  const { preview, shown: displayCode, start: tailStart } = view;
+  // 0.11.0:命令详情体（bash）与行头共用同一 vivid 派生映射——同一命令两处同色同构；其余语言不受影响。
+  const tokens = useHighlightTokens(view.highlight, language, language === "bash" ? { ...theme.colors, ...vividSyntaxColors(theme) } : theme.colors);
   const lineCount = useMemo(() => (lineStart === undefined ? 0 : displayCode.split("\n").length), [displayCode, lineStart]);
+  const codeLines = useMemo(() => (wrap ? displayCode.split("\n") : null), [wrap, displayCode]);
 
   return (
     <View {...cmonoViewEscape} style={styles.frame}>
@@ -181,20 +199,37 @@ function HighlightedCodeBlock({
         {extra}
         <OutputCopyButtons clean={clean} raw={code} label={copyLabel} theme={theme} styles={styles} />
       </View>
-      <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
-        <View style={styles.frameBody}>
-          {lineStart !== undefined ? <LineGutter start={lineStart} count={lineCount} styles={styles} /> : null}
-          <View>
-            {tokens ? (
-              <TokenizedLines lines={tokens} styles={styles} />
-            ) : (
-              <Text selectable style={styles.codeLine}>
-                {displayCode || " "}
+      {wrap ? (
+        <View style={styles.frameBodyWrap}>
+          {tokens ? (
+            <TokenizedLines lines={tokens} styles={styles} numbersFrom={lineStart !== undefined ? lineStart + tailStart : undefined} wrapLines />
+          ) : codeLines ? (
+            codeLines.map((line, index) => (
+              <Text key={`code-${index}`} selectable style={[styles.codeLine, { flexShrink: 1 }]}>
+                {lineStart !== undefined ? (
+                  <Text style={styles.gutterText}>{String(lineStart + tailStart + index)} </Text>
+                ) : null}
+                {line || " "}
               </Text>
-            )}
-          </View>
+            ))
+          ) : null}
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
+          <View style={styles.frameBody}>
+            {lineStart !== undefined ? <LineGutter start={lineStart + tailStart} count={lineCount} styles={styles} /> : null}
+            <View>
+              {tokens ? (
+                <TokenizedLines lines={tokens} styles={styles} />
+              ) : (
+                <Text selectable style={styles.codeLine}>
+                  {displayCode || " "}
+                </Text>
+              )}
+            </View>
+          </View>
+        </ScrollView>
+      )}
       {preview.truncated ? (
         <Pressable
           accessibilityRole="button"
@@ -221,7 +256,7 @@ function shellExitCode(detail: { exitCode?: number | null }, errorText: string |
 }
 
 /** 本地补丁（吸收 beautiful-chat）：终端框。标题栏：程序色标、退出码、复制命令；`$ 命令` 高亮；输出在下层。 */
-function TerminalBlock({
+export function TerminalBlock({
   command,
   output: rawOutput,
   errorOutput,
@@ -229,6 +264,7 @@ function TerminalBlock({
   theme,
   palette,
   styles,
+  follow,
 }: {
   command: string;
   output: string | undefined;
@@ -238,6 +274,8 @@ function TerminalBlock({
   theme: Theme;
   palette: ActivityPalette;
   styles: ReturnType<typeof useActivityStyles>;
+  /** 0.11.0:「跟随最新输出」——跟随域开启时输出尾窗（最后 N 行），最新行始终可见。 */
+  follow?: boolean;
 }) {
   const brand = useMemo(() => commandBadge(command), [command]);
   const commandTokens = useHighlightTokens(`$ ${command}`, "bash", theme.colors);
@@ -248,12 +286,15 @@ function TerminalBlock({
   // 0.5.0: shown without terminal escape sequences, the preview and 「展开全部」 both cut from the cleaned whole output;
   // colours still reach the "ansi" highlighter. The raw output stays for 「复制原文」.
   const clean = useMemo(() => stripAnsi(output ?? ""), [output]);
-  const view = useMemo(() => outputView(output ?? "", clean, showAll, !isError), [clean, isError, output, showAll]);
+  // 0.11.0:「跟随最新输出」尾窗：行在运行中且跟随域开启、输出被截断时，从全文取最后 PREVIEW_LINES 行
+  // （最新行始终可见），颜色序列一并保留给高亮；其余情况维持头部预览。
+  const view = useMemo(() => outputView(output ?? "", clean, showAll, !isError, true, follow), [clean, follow, isError, output, showAll]);
   const { preview, shown: shownOutput } = view;
   const outputTokens = useHighlightTokens(isError ? "" : view.highlight, "ansi", theme.colors);
   const failed = exitCode !== null && exitCode !== 0;
-  // 0.5.0: vivid red and green in 「鲜明」 (gemini-F9), like the row's own state colours.
   const failedColor = palette.statusColors.failed;
+  // 0.11.0:「长行折行·命令行与输出」：折行时去横向滚动，长命令/长输出折到可用宽度。
+  const wrap = useWrapLines("output");
   const exitColor = failed ? failedColor : palette.statusColors.completed;
   return (
     <View {...cmonoViewEscape} style={styles.frame}>
@@ -269,26 +310,46 @@ function TerminalBlock({
         ) : null}
         <CopyButton value={command} label={t("ui.copyCommand")} theme={theme} styles={styles} />
       </View>
-      <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
-        <View style={styles.frameBody}>
-          {commandTokens ? <TokenizedLines lines={commandTokens} styles={styles} /> : <Text selectable style={styles.codeLine}>{`$ ${command}`}</Text>}
+      {wrap ? (
+        <View style={styles.frameBodyWrap}>
+          {commandTokens ? (
+            <TokenizedLines lines={commandTokens} styles={styles} wrapLines />
+          ) : (
+            <Text selectable style={[styles.codeLine, { flexShrink: 1 }]}>{`$ ${command}`}</Text>
+          )}
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
+          <View style={styles.frameBody}>
+            {commandTokens ? <TokenizedLines lines={commandTokens} styles={styles} /> : <Text selectable style={styles.codeLine}>{`$ ${command}`}</Text>}
+          </View>
+        </ScrollView>
+      )}
       {output ? (
         <View style={styles.termOutput}>
           <View style={styles.termOutputHeader}>
             <DetailLabel style={isError ? { ...styles.detailLabel, color: failedColor } : styles.detailLabel}>{isError ? t("ui.errorOutput") : t("ui.output")}</DetailLabel>
             <OutputCopyButtons clean={clean} raw={output} label={t("ui.copyOutput")} theme={theme} styles={styles} />
           </View>
-          <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
-            <View style={styles.frameBody}>
+          {wrap ? (
+            <View style={styles.frameBodyWrap}>
               {outputTokens && !isError ? (
-                <TokenizedLines lines={outputTokens} styles={styles} />
+                <TokenizedLines lines={outputTokens} styles={styles} wrapLines />
               ) : (
-                <Text selectable style={isError ? { ...styles.codeLine, color: failedColor } : styles.codeLine}>{shownOutput || " "}</Text>
+                <Text selectable style={[isError ? { ...styles.codeLine, color: failedColor } : styles.codeLine, { flexShrink: 1 }]}>{shownOutput || " "}</Text>
               )}
             </View>
-          </ScrollView>
+          ) : (
+            <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
+              <View style={styles.frameBody}>
+                {outputTokens && !isError ? (
+                  <TokenizedLines lines={outputTokens} styles={styles} />
+                ) : (
+                  <Text selectable style={isError ? { ...styles.codeLine, color: failedColor } : styles.codeLine}>{shownOutput || " "}</Text>
+                )}
+              </View>
+            </ScrollView>
+          )}
           {preview.truncated ? (
             <Pressable accessibilityRole="button" {...aria({ expanded: showAll })} onPress={() => setShowAll(!showAll)} style={styles.showMoreButton}>
               <Text style={styles.showMoreText}>
@@ -379,7 +440,14 @@ function ReadImageBlock({
   );
 }
 
-function DiffBlock({
+/** 0.11.0:「思考行实时跟随」：开 = 展开后的思考框展示最新 N 行并跟随输出（shared/settings.ts thoughtTail*）。 */
+function useThoughtTail(): { follow: boolean; lines: number } {
+  const settings = useSettings(activitySettings);
+  if (settings.status !== "ready") return { follow: false, lines: 20 };
+  return { follow: settings.values.thoughtTailFollow, lines: settings.values.thoughtTailLines };
+}
+
+export function DiffBlock({
   detail,
   palette,
   styles,
@@ -389,6 +457,7 @@ function DiffBlock({
   styles: ReturnType<typeof useActivityStyles>;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const wrap = useWrapLines("diff");
   const lines = useMemo(() => diffLinesForDetail(detail), [detail]);
   const isTruncated = lines.length > PREVIEW_LINES;
   const displayLines = showAll || !isTruncated ? lines : lines.slice(0, PREVIEW_LINES);
@@ -396,15 +465,25 @@ function DiffBlock({
   return (
     <View style={styles.section}>
       <DetailLabel style={styles.detailLabel}>{t("ui.changes")}</DetailLabel>
-      <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
+      {wrap ? (
         <View style={styles.diffSurface}>
           {displayLines.length === 0 ? (
             <Text style={styles.empty}>{t("ui.noChangesToShow")}</Text>
           ) : (
-            displayLines.map((line, index) => <DiffRow key={`${line.kind}-${index}`} line={line} palette={palette} styles={styles} />)
+            displayLines.map((line, index) => <DiffRow key={`${line.kind}-${index}`} line={line} palette={palette} styles={styles} wrap />)
           )}
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView horizontal nestedScrollEnabled style={styles.codeScroll}>
+          <View style={styles.diffSurface}>
+            {displayLines.length === 0 ? (
+              <Text style={styles.empty}>{t("ui.noChangesToShow")}</Text>
+            ) : (
+              displayLines.map((line, index) => <DiffRow key={`${line.kind}-${index}`} line={line} palette={palette} styles={styles} />)
+            )}
+          </View>
+        </ScrollView>
+      )}
       {isTruncated ? (
         <Pressable
           accessibilityRole="button"
@@ -425,10 +504,13 @@ function DiffRow({
   line,
   palette,
   styles,
+  wrap = false,
 }: {
   line: DiffLine;
   palette: ActivityPalette;
   styles: ReturnType<typeof useActivityStyles>;
+  /** 「折行 diff 行」：文字折到可用宽度（horizontal 滚动关闭时）。 */
+  wrap?: boolean;
 }) {
   const rowStyle =
     line.kind === "add"
@@ -450,7 +532,7 @@ function DiffRow({
   return (
     <View style={[styles.diffLine, rowStyle]}>
       <Text style={[styles.diffMarker, { color: markerColor }]}>{marker}</Text>
-      <Text selectable style={[styles.diffText, { color: line.kind === "meta" ? markerColor : styles.codeLine.color }]}>
+      <Text selectable style={[styles.diffText, wrap ? { flexShrink: 1, minWidth: 0 } : null, { color: line.kind === "meta" ? markerColor : styles.codeLine.color }]}>
         {line.text || " "}
       </Text>
     </View>
@@ -704,12 +786,15 @@ export function DetailBody({
   theme,
   palette,
   styles,
+  follow,
 }: {
   data: ToolCallData;
   agentId: string;
   theme: Theme;
   palette: ActivityPalette;
   styles: ReturnType<typeof useActivityStyles>;
+  /** 0.11.0:「跟随最新输出」：该行的跟随域开启且在流式中（输出块显示尾窗）。 */
+  follow?: boolean;
 }) {
   const detail = asToolCallDetail(data.detail);
   const cwd = useAgent(agentId, (agent) => agent.cwd);
@@ -740,6 +825,7 @@ export function DetailBody({
       return (
         <>
           <TerminalBlock
+            follow={follow}
             command={detail.command}
             output={detail.output}
             errorOutput={data.errorText}
@@ -875,7 +961,7 @@ export function DetailBody({
         <>
           <Text style={styles.detailText}>{t("ui.branchValue", { value: detail.branchName })}</Text>
           <Text style={styles.mutedText}>{t("ui.pathValue", { value: detail.worktreePath })}</Text>
-          {detail.log ? <HighlightedCodeBlock code={detail.log} language="ansi" label={t("ui.setupLog")} styles={styles} theme={theme} /> : null}
+          {detail.log ? <HighlightedCodeBlock code={detail.log} language="ansi" label={t("ui.setupLog")} styles={styles} theme={theme} follow={follow} /> : null}
         </>
       );
     case "sub_agent":
@@ -889,7 +975,7 @@ export function DetailBody({
           {notInHeader(detail.subAgentType, data.presentation.summary) ? <Text style={styles.detailText}>{detail.subAgentType}</Text> : null}
           {notInHeader(detail.description, data.presentation.summary) ? <Text style={styles.mutedText}>{detail.description}</Text> : null}
           {detail.childSessionId ? <Text style={styles.mutedText}>{t("ui.sessionValue", { value: detail.childSessionId })}</Text> : null}
-          {detail.log && !subAgentLogFullyShown(detail) ? <HighlightedCodeBlock code={detail.log} language="ansi" label={t("ui.activityLog")} styles={styles} theme={theme} /> : null}
+          {detail.log && !subAgentLogFullyShown(detail) ? <HighlightedCodeBlock code={detail.log} language="ansi" label={t("ui.activityLog")} styles={styles} theme={theme} follow={follow} /> : null}
         </>
       );
     case "plain_text":
@@ -1052,6 +1138,7 @@ export function DetailBody({
                 label={t("ui.output")}
                 styles={styles}
                 theme={theme}
+                follow={follow}
               />
             ) : data.status === "running" ? (
               <PendingOutput styles={styles} />
@@ -1252,43 +1339,55 @@ export function ReasoningText({
   styles: ReturnType<typeof useActivityStyles>;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const tail = useThoughtTail();
   const preview = useMemo(() => previewText(text), [text]);
-  const targetText = showAll ? text : preview.text;
+  // 跟随模式吃全量文本（头部预览截断会让「尾窗」错切到头 20 行的尾巴）；窗口只裁剪渲染。
+  const targetText = showAll || tail.follow ? text : preview.text;
   const revealedText = useRevealedText(targetText, phase);
-  const steps = useMemo(() => splitReasoningSteps(revealedText), [revealedText]);
+  const allSteps = useMemo(() => splitReasoningSteps(revealedText), [revealedText]);
+  // 0.11.0:「思考行实时跟随」：窗口只裁剪渲染，揭示与打字机始终吃全量。步骤模式按步保号，块模式按行；
+  // 用户点开的「展开全部」（showAll）压过窗口。流式时 revealedText 每 tick 变化，窗口随之滑动。
+  const windowed = tail.follow && !showAll
+    ? allSteps.length > 1
+      ? { kind: "steps" as const, steps: allSteps.slice(Math.max(0, allSteps.length - tail.lines)), start: Math.max(0, allSteps.length - tail.lines) }
+      : { kind: "block" as const, block: tailLinesOf(revealedText, tail.lines) }
+    : null;
+  const stepStart = windowed?.kind === "steps" ? windowed.start : 0;
+  const shownSteps = windowed?.kind === "steps" ? windowed.steps : allSteps;
+  const blockText = windowed?.kind === "block" ? windowed.block : revealedText;
+  // 窗口确实裁掉了内容（或用户已展开）才给按钮；OFF 时沿用头部预览的截断判定。
+  const windowTruncated = tail.follow && !showAll && (allSteps.length > 1 ? allSteps.length > tail.lines : revealedText.split("\n").length > tail.lines);
+  const showExpandButton = showAll || windowTruncated || (!tail.follow && preview.truncated);
   const isStreaming = phase === "streaming";
   const scrollRef = useRef<NativeScrollView | null>(null);
   const isNearBottom = useRef(true);
-  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    isNearBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - 32;
-  }, []);
-  const handleContentSizeChange = useCallback(() => {
-    if (isNearBottom.current) scrollRef.current?.scrollToEnd({ animated: false });
-  }, []);
+  // 窗口饱和后内容高度近似不变（旧的从顶上裁掉、新的接在底下），onContentSizeChange 不再触发，
+  // 跟随就此停摆——共享回底钩子把回底挂在尾窗内容本身（tailHead 一变就回底），直到用户上滚离底。
+  const tailHead = shownSteps.length > 1 ? shownSteps[shownSteps.length - 1] : blockText;
+  const { onScroll: onTailScroll, onContentSizeChange: onTailContentSizeChange } = useFollowBottom(scrollRef, isNearBottom, tailHead, true);
 
   return (
     <View>
       <ScrollView
         ref={scrollRef}
         nestedScrollEnabled
-        onContentSizeChange={handleContentSizeChange}
-        onScroll={handleScroll}
+        onContentSizeChange={onTailContentSizeChange}
+        onScroll={onTailScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator
         style={styles.detailsScroll}
       >
-        {steps.length <= 1 ? (
-          <ReasoningMarkdown text={revealedText} theme={theme} styles={styles} />
+        {shownSteps.length <= 1 ? (
+          <ReasoningMarkdown text={blockText} theme={theme} styles={styles} />
         ) : (
           <View {...cuiViewEscape} style={styles.stepList}>
-            {steps.map((step, index) => (
+            {shownSteps.map((step, index) => (
               <ReasoningStep
-                key={`step-${index}`}
-                index={index}
+                key={`step-${stepStart + index}`}
+                index={stepStart + index}
                 text={step}
-                active={isStreaming && index === steps.length - 1}
-                last={index === steps.length - 1}
+                active={isStreaming && stepStart + index === allSteps.length - 1}
+                last={stepStart + index === allSteps.length - 1}
                 theme={theme}
                 palette={palette}
                 styles={styles}
@@ -1297,7 +1396,7 @@ export function ReasoningText({
           </View>
         )}
       </ScrollView>
-      {preview.truncated ? (
+      {showExpandButton ? (
         <Pressable
           accessibilityRole="button"
           {...aria({ expanded: showAll })}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ansiColourPrefix, hasAnsi, outputView, PREVIEW_CHARS, PREVIEW_LINES, resolveToolCallPresentation, stripAnsi } from "./presentation";
+import { ansiColourPrefix, ansiColourWindow, hasAnsi, outputView, PREVIEW_CHARS, PREVIEW_LINES, resolveToolCallPresentation, stripAnsi, tailPreviewText } from "./presentation";
 
 const ESC = "\u001b";
 const BEL = "\u0007";
@@ -117,8 +117,95 @@ describe("outputView: preview and 「展开全部」 from the cleaned whole outp
   it("leaves text without escape sequences as it was", () => {
     const raw = "a\nb\n";
     const view = outputView(raw, stripAnsi(raw), true, true);
-    expect(view).toMatchObject({ shown: "a\nb", highlight: "a\nb" });
+    expect(view).toMatchObject({ shown: "a\nb", highlight: "a\nb", start: 0 });
     expect(outputView(raw, raw, true, true, false).shown).toBe(raw);
+  });
+});
+
+describe("outputView tail window (0.11.0 跟随最新输出)", () => {
+  const numbered = (count: number) => Array.from({ length: count }, (_, index) => `LINE_${index + 1}`);
+
+  it("shows the last lines of the whole output, not the tail of the head preview", () => {
+    const raw = `${numbered(60).join("\n")}\n`;
+    const view = outputView(raw, raw, false, true, true, true);
+    expect(view.preview.truncated).toBe(true);
+    expect(view.shown.split("\n")).toEqual(numbered(60).slice(60 - PREVIEW_LINES));
+    expect(view.start).toBe(60 - PREVIEW_LINES);
+    expect(view.highlight).toBe(view.shown);
+    // Not following: the head preview, as before.
+    const head = outputView(raw, raw, false, true, true, false);
+    expect(head.shown.split("\n")).toEqual(numbered(PREVIEW_LINES));
+    expect(head.start).toBe(0);
+  });
+
+  it("leaves short output, and 「展开全部」, as they were", () => {
+    const short = numbered(5).join("\n");
+    expect(outputView(short, short, false, false, true, true)).toMatchObject({ shown: short, start: 0 });
+    const long = numbered(60).join("\n");
+    expect(outputView(long, long, true, false, true, true)).toMatchObject({ shown: long, start: 0 });
+  });
+
+  it("caps the window at PREVIEW_CHARS characters from the end, numbering the first, cut line", () => {
+    const lines = Array.from({ length: 30 }, (_, index) => `${index + 1}:${"x".repeat(500)}`);
+    const raw = lines.join("\n");
+    const view = outputView(raw, raw, false, false, true, true);
+    expect(view.shown.length).toBeLessThanOrEqual(PREVIEW_CHARS);
+    expect(raw.endsWith(view.shown)).toBe(true);
+    expect(view.shown.endsWith(lines[29]!)).toBe(true);
+    // The first shown line is the end of line `start + 1`.
+    expect(lines[view.start]!.endsWith(view.shown.split("\n")[0]!)).toBe(true);
+    expect(view.start + view.shown.split("\n").length).toBe(30);
+  });
+
+  it("never starts the window inside a surrogate pair", () => {
+    const text = `${"😀".repeat(PREVIEW_CHARS)}`;
+    const tail = tailPreviewText(text);
+    expect(tail.length).toBeLessThanOrEqual(PREVIEW_CHARS);
+    const first = tail.charCodeAt(0);
+    expect(first >= 0xdc00 && first <= 0xdfff).toBe(false);
+  });
+
+  it("keeps the colours of the window, including one set before it", () => {
+    // 40 lines; line 10 opens yellow and leaves it open until line 35, across the window's first line (line 20).
+    const lines = Array.from({ length: 40 }, (_, index) =>
+      index === 10 ? `${ESC}[33mwarn starts` : index === 35 ? `still warn${ESC}[0m` : index > 10 && index < 35 ? `plain ${index}` : `${ESC}[3${index % 7}mline ${index}${ESC}[0m`);
+    const raw = `${lines.join("\n")}\n`;
+    const clean = stripAnsi(raw);
+    const view = outputView(raw, clean, false, true, true, true);
+    expect(stripAnsi(view.highlight)).toBe(view.shown);
+    expect(view.shown.split("\n")[0]).toBe(clean.replace(/\n$/, "").split("\n")[view.start]);
+    // The window opens inside the yellow stretch: the yellow sequence is replayed before its first line.
+    expect(view.start).toBe(20);
+    expect(view.highlight.startsWith(`${ESC}[33mplain 20\n`)).toBe(true);
+    expect(view.highlight).toContain(`still warn${ESC}[0m`);
+  });
+});
+
+describe("ansiColourWindow: the colours of a tail window", () => {
+  const raw = `${ESC}]0;title${BEL}${ESC}[31mred${ESC}[0m ${ESC}[2Kplain ${ESC}[1;32mgreen${ESC}[0m${ESC}[?25h end`;
+
+  it("cuts the same characters stripAnsi shows, for every window", () => {
+    const clean = stripAnsi(raw);
+    for (let from = 0; from <= clean.length; from++) {
+      for (let visible = 0; from + visible <= clean.length; visible++) {
+        expect(stripAnsi(ansiColourWindow(raw, from, visible))).toBe(clean.slice(from, from + visible));
+      }
+    }
+  });
+
+  it("replays the colour state before the window from the last reset on", () => {
+    // From "green": the red stretch ended with a reset, only the bold green sequence is replayed.
+    const clean = stripAnsi(raw);
+    const from = clean.indexOf("green");
+    expect(ansiColourWindow(raw, from, 5)).toBe(`${ESC}[1;32mgreen`);
+    // Inside the green word: the same sequence comes first, then the rest of the word.
+    expect(ansiColourWindow(raw, from + 2, 3)).toBe(`${ESC}[1;32meen`);
+    // Right where green closes: green is replayed, then the window's own reset turns it off before " end".
+    expect(ansiColourWindow(raw, clean.indexOf(" end"), 4)).toBe(`${ESC}[1;32m${ESC}[0m end`);
+    // A bare reset before the window leaves nothing to replay.
+    expect(ansiColourWindow(`${ESC}[31mred${ESC}[0m\nnext`, 4, 4)).toBe("next");
+    // No colours at all: the text itself.
+    expect(ansiColourWindow("abc\ndef", 4, 3)).toBe("def");
   });
 });
 

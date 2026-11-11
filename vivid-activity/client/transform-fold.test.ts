@@ -87,7 +87,7 @@ describe("timeline transforms with folding", () => {
         kind: "vivid-fold",
         version: 1,
         data: {
-          segment: "2", mode: "done", expanded: false, steps: 3, hidden: 3, counts: [["shell", 2], ["read", 1]], failed: 0, canceled: 0, durationMs: 3000,
+          segment: "2", mode: "done", expanded: false, steps: 3, hidden: 3, counts: [["shell", 2], ["read", 1]], failed: 0, canceled: 0, durationMs: 3000, endedAt: 4000,
           files: 0, added: 0, removed: 0, uncounted: 0, changed: [], fails: [], turn: null, lastOfTurn: false,
         },
       },
@@ -222,7 +222,8 @@ describe("timeline transforms with folding", () => {
       for (let index = 0; index < 400; index++) {
         expect(kindsOf(transformToolCall({ item: notice("big-bash", `ok ${index}`, `task_notification_big_${index}`), phase: "complete" }))).toEqual(["colorful-tool-call"]);
       }
-      expect(performance.now() - started).toBeLessThan(400);
+      // 墙钟放宽（安静时 ~100ms）：守卫抓的是二次退化（数量级差异），并行满载下 400ms 会误报。
+      expect(performance.now() - started).toBeLessThan(2_000);
     });
   });
 

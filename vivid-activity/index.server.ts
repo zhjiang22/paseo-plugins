@@ -14,6 +14,7 @@ import { createUsageFeed, openUsageFeed, type FeedApi } from "./server/usage-fee
 import { foldIndexRpc } from "./shared/fold-index.js";
 import { turnPromptRpc } from "./shared/prompt-pin.js";
 import { readImageRpc } from "./shared/read-image.js";
+import { TurnTimePublisher } from "./server/turn-time.js";
 import { activitySettings } from "./shared/settings";
 
 type ServerApi = Parameters<Parameters<PluginServerContext["handle"]>[1]>[1]["paseo"];
@@ -40,7 +41,9 @@ export default function contribute(server: PluginServerContext) {
     turnName: (agentId, turnId) => turnName(agentId, turnId),
   });
   server.handle(getClientChunk, getUiChunk);
-  server.registerSettings(activitySettings);
+  const settings = server.registerSettings(activitySettings);
+  const turnTimes = new TurnTimePublisher(settings);
+  turnTimes.start();
   server.handle(childSummaryRpc, handleChildSummary);
   server.handle(readImageRpc, (input, context) => handleReadImage(input, context));
   // 本地补丁：折叠用的时间线索引（只回传位置、种类、状态和类别）。0.8.0：另带改动行数、退出码和本轮 Token。
@@ -54,11 +57,13 @@ export default function contribute(server: PluginServerContext) {
   const stopTurns = server.on("agent.turn_started", (event, context) => {
     see(context?.paseo);
     noteTurnStarted(event.agent.id, event.turnId);
+    turnTimes.started(event.agent.id);
     void usage.turnStarted(event.agent.id, event.agent.provider, event.turnId).catch(() => undefined);
   });
   const stopEnded = server.on("agent.turn_ended", (event, context) => {
     see(context?.paseo);
     usage.turnEnded(event.agent.id, event.turnId);
+    return turnTimes.finish(event, context);
   });
   // 0.5.0：Agent 关闭（归档、删除、从归档恢复、daemon 停止）后丢掉它的轮次开始时间（Paseo 0.11 的 `agent.closed`）。
   // 0.10.0-local.3：Paseo 0.14 在空闲一小时后也关闭会话，下次发消息再载入；关闭只换一代（之前的轮次还要显示用时和 Token，
@@ -70,11 +75,13 @@ export default function contribute(server: PluginServerContext) {
   const stopArchived = server.on("agent.archived", (event) => {
     forgetAgentTurns(event.agent.id);
     usage.forget(event.agent.id);
+    turnTimes.forget(event.agent.id);
   });
   return () => {
     locales.dispose();
     stopTurns();
     stopEnded();
+    turnTimes.dispose();
     stopClosed();
     stopArchived();
     usage.dispose();

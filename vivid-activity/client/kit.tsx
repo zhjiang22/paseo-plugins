@@ -1,4 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import type { ThemeSyntaxColors } from "./highlight";
 import { Icon, Modal, ScrollView, TextInput } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent, type StyleProp, type TextInput as NativeTextInput, type ViewStyle } from "react-native";
@@ -475,4 +476,25 @@ export function compactNumber(value: number): string {
   if (abs < 1000) return String(Math.round(value));
   if (abs < 1_000_000) return `${(value / 1000).toFixed(abs < 10_000 ? 1 : 0).replace(/\.0$/, "")}k`;
   return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+}
+
+/** 0.11.0:「命令着色」的 vivid 派生语法色：10 种 shell token kind → 调色板 hue（命令橙/关键字紫/字符串绿/变量青…）。
+ *  仅命令着色路径（CommandTokens/shellSegments）传入；其余代码高亮走既有 3 色通道。 */
+export function vividSyntaxColors(theme: PluginTheme): ThemeSyntaxColors {
+  return {
+    foreground: theme.colors.foreground,
+    foregroundMuted: theme.colors.foregroundMuted,
+    accent: hue(theme, "violet", "text"),
+    statusSuccess: hue(theme, "green", "text"),
+    statusWarning: hue(theme, "amber", "text"),
+    statusDanger: hue(theme, "red", "text"),
+    builtin: hue(theme, "orange", "text"),
+    keyword: hue(theme, "violet", "text"),
+    variable: hue(theme, "cyan", "text"),
+    operator: hue(theme, "sky", "text"),
+    parameter: hue(theme, "indigo", "text"),
+    // 0.11.0:boolean/constant 拆出紫（青柠）、heredoc 原始块用鸭羽绿——都避开红/蓝状态语义色。
+    constant: hue(theme, "lime", "text"),
+    heredoc: hue(theme, "teal", "text"),
+  };
 }

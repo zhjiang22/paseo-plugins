@@ -36,7 +36,25 @@ from Beautiful Chat and [TokenLedger](https://github.com/stv1024/token-ledger).
 - **Turn tokens**: under the last fold row of a turn you watched, `This turn in 12k · cached 80k · out 2.4k`. Codex
   turns add up while they run (the coin breathes) and freeze when they end.
 - **Timing**: every row shows its duration, running rows count up live, and the fold row shows the elapsed time
-  of the whole run.
+  of the whole run. Optional timestamps show the latest update of individual activity and folded rows in the viewer's
+  local time zone. A separate option records the end time of each new turn; existing turns are not backfilled.
+  Timeline update times are not guaranteed to be exact completion times. A turn marker is appended asynchronously: it
+  is not written once the next turn has begun, and if that turn begins while it is being written it may show after the
+  next turn's first rows; it never splits or retimes a fold. Markers already recorded stay when the option is off.
+- **Strength**: finished rows can sit at 30%, 45% or 65% opacity until you hover, focus or expand them
+  (full strength by default). Running, waiting and asking rows keep their full color, the newest row of a run
+  stays bright, and rows with nothing to expand never fade. Finished fold summaries dim too; expand or hover
+  one to restore it.
+- **Failures stay visible**: "Expand failed rows" starts only failed rows open, and a running row opens once
+  it fails. A fold summary with failures expands by default, so the failed rows show without a tap; collapse
+  it yourself to keep the segment tight.
+- **Thought tail-follow**: with "Follow the output live" on, an expanded thinking row shows the latest lines
+  (5–500, default 20) and follows the output as it streams; the per-row Expand all still shows everything.
+- **Follow new output**: while a row is still running, its open details stay at the newest output and long command
+  output and logs show their latest 20 lines; finished rows open at the top with the first lines. One switch per area.
+- **Colored commands**: the shell command in a row's title carries the theme's syntax colors — while the row
+  is open (default) or always.
+- **Wrap diff lines**: keep long diff lines on one scrolling row (default) or wrap them to the available width.
 - **Detail cards**: highlighted commands with output, exit code and copy buttons; file reads with a language
   badge and line numbers; colored diffs; inline previews for images the agent read; dedicated views for Paseo's
   own tools, GitHub and Exa results.
@@ -67,13 +85,23 @@ The Vivid Activity settings page offers:
 | Takeover | all rows (default), thinking rows only, off |
 | Fold finished steps | on (default), off |
 | Row density | compact (default, 4 px between rows), standard (10 px) |
+| Strength | full (default, no fading), 65%, 45%, 30% — how far finished rows sit back until you hover, focus or expand them |
+| Timestamps | turn end and activity update times, independently off by default |
 | Pin this turn's question | on (default), off |
 | Palette | vivid (default), follow theme, soft, high contrast |
 | Running animation | spinner (default), sparkle, orb, dot grid: snake, dot grid: twinkle, with live previews |
 | Code font | font family (web and desktop; fonts installed on the viewing device, falling back to the default stack), text size small / standard (default) / large / larger (11 to 16 px), line spacing compact / standard (default) / relaxed |
-| Expansion | per row kind: always, newest only, collapsed |
+| Command colors | when open (default), always — syntax colors for the shell command in a row's title |
+| Wrap diff lines | off (default, long lines scroll sideways), on |
+| Thinking rows | follow the output live (default off) with a 5–500 line window (default 20) |
+| Follow new output | per area — command output, worktree and sub-agent logs (and the other tool details), task lists, browser — on (default), off; only running rows follow |
+| Expansion | per row kind: always, newest only, failed only, collapsed |
+
+The same page opens from Paseo's **Settings → Plugins**, from the **Vivid Activity** row in the app's sidebar,
+and from "Open Vivid Activity settings" in the Command Center.
 
 Settings are stored in Paseo's plugin settings on the daemon, so every connected device uses the same ones.
+Settings saved by earlier versions carry over when you upgrade; new settings start at their defaults.
 
 ![The settings page](assets/screenshot-settings-dark.png)
 
@@ -140,7 +168,7 @@ motion (the sparkle rests on ✻).
 
 ## Data access
 
-The plugin makes no network requests and starts no processes. It reads language files and writes translation templates and its language state under its plugin data folder.
+The plugin makes no network requests and starts no processes. It reads language files and writes translation templates and its language state under its plugin data folder. When enabled, turn timestamps are appended to the agent timeline.
 
 - The server part reads the projected timeline of the agent you are viewing inside the daemon and returns a
   compact fold index to the app: each row's position, end time, kind, status and category, tool call and turn ids,
@@ -185,10 +213,13 @@ npm ci
 npm run typecheck
 npm test
 npm run lint
+npm run build:chunks   # rebuild the served client chunks after any client-side change
+npm run check          # reject stale chunk artifacts
 ```
 
-The client entry (`index.client.tsx`) registers the timeline transformers and renderers and the settings
-page; the server entry (`index.server.ts`) registers the settings, the `read-image`, `fold-index`, `turn-prompt` and
+The client entry (`index.client.tsx`) registers the timeline transformers and renderers, the settings page —
+also reachable from the app's sidebar and the Command Center — and nothing else; the server entry
+(`index.server.ts`) registers the settings, the `read-image`, `fold-index`, `turn-prompt` and
 `child-summary` RPCs, and `vivid.client-chunk.get`, which serves the three lazily loaded chunks (`ui`, `pi` and `fx`).
 See [CHANGELOG.md](CHANGELOG.md) for the changes from Colorful Agent Activity.
 
@@ -218,5 +249,5 @@ provider agents.
 The running animations other than the spinner and the expanded change list of a fold row are a third chunk, `fx`,
 downloaded the first time one is needed. Until it arrives, a running row shows the spinner and an expanded fold row shows its steps without the list.
 
-Generated chunks are shipped with this package. Maintainers rebuild them from the collection root with
+Generated chunks are shipped with this package. Maintainers rebuild them in this directory with
 `npm run build:chunks`; `npm run check` rejects stale artifacts.

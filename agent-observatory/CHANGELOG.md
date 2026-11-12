@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+**实时流速 shows whole-turn harnesses too**
+- The live-rate card only counted sessions whose calls carry response times — CodeBuddy, Grok, Gemini, the Cline family, Hermes and dsh were invisible there while their Agents worked, because their rows log only an end time. Their sessions now appear among the live rows with the ten-minute output, the call count, the last activity and a token-arrival rate labelled 到达/s (the trailing two minutes of completed steps — never a single step read as an instant burst). The card's now-rate counts their output as it arrives in its trailing minute; the chart's timed series, axis and peak stay timing-true, with whole-turn steps drawn as dimmed arrival pulses behind the bars (clipped at the axis; the picked minute shows their arrival rate). The session list's tok/s pills stay timing-only.
+
 **Provider 用量 falls back to the session's own harness**
 - A session the observatory cannot link to an Agent — run directly in a terminal, its Agent since deleted — used to land in the one 未关联会话 row, however clearly its log named the tool. Unmatched sessions now fall back to a provider row named by their log source (omp, claude, codex, …), so a configured harness's whole consumption shows in its own row; every source names its own row, and only sessions beyond the 5,000-session detail window keep the unmatched row; an Agent link or a provider root's own claim still wins over the fallback. On a machine where oh-my-pi is the daily driver this moves about two thirds of the recorded tokens from 未关联 into the omp row.
 - An explicit provider-root owner keeps its Provider ID as the row label even when source-fallback sessions also feed the same row, regardless of ingestion order.

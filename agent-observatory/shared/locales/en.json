@@ -1038,7 +1038,8 @@
     "callsMin": "{value1} calls/min",
     "lastMinute": "Last minute",
     "noModelOutputInTheLast10": "No model output in the last 10 minutes",
-    "outputPerSecond": "{rate} tok/s"
+    "outputPerSecond": "{rate} tok/s",
+    "arrivalTokS": "arrival/s"
   },
   "coreOpenUrl": {
     "onlyHttpSLinksCanBeOpened": "Only http(s) links can be opened"
@@ -2018,11 +2019,11 @@
     "message": "{value1}/{value2} {value3}",
     "tokensComeFromLocalClaudeCode": "Tokens come from local Claude Code, Codex, Grok CLI, Pi, Kimi Code, and ZCode session logs, including custom providers based on them. Log folders are located through CLAUDE_CONFIG_DIR / CODEX_HOME / GROK_HOME / KIMI_CODE_HOME / ZCODE_HOME / PI_CODING_AGENT_DIR in provider configuration, startup scripts, or Pi settings. Counting follows tools such as ccusage. Other provider logs are not yet supported; unavailable sources are hidden.",
     "includesAllLocalSessionsFromThese": "Includes all local sessions from these providers, not only sessions started by Paseo, and links them to Paseo by session ID. Messages in resumed or forked sessions are deduplicated. Codex archived_sessions are included. Codex subagent threads, like Claude Code subagents, count toward their parent session. Sessions run in the system temporary folder, such as one-time scripts, are grouped under \"Temporary folders\" in \"Project usage\".",
-    "grokCliRecordsEachTurnS": "Grok CLI records each turn's usage once at the end (usage.json), so Grok counts by turn and has no individual call response duration. It contributes to totals, but not output rate or live throughput. Cache reads and writes are separated from its input. Observatory's own Grok insight analysis in temporary paseo-insight-* folders is excluded. Pi follows its own counting: replies, tool results with usage, and compaction and branch summaries. Kimi Code reads per-request usage.record entries, including subagents. ZCode reads completed steps from its local SQLite database and WAL, without counting duplicate message totals; cache reads and writes are separated from input. Missing usage and monetary cost are not estimated.",
-    "providerUsageLinksLogsToPaseo": "\"Provider usage\" links logs to Paseo sessions by session ID and then groups by provider. Custom providers sharing a log folder can therefore be separated. If a log folder belongs to only one custom provider, logs without a matching Paseo session also count toward it. Other unmatched logs, including terminal sessions and deleted sessions, are listed as \"Unlinked sessions\".",
+    "grokCliRecordsEachTurnS": "Grok CLI records each turn's usage once at the end (usage.json), so Grok counts by turn and has no individual call response duration. It contributes to totals and, as an arrival rate based on completion time, to the live card's current rate and its session rows (labelled arrival/s); in the live chart it shows only as dimmed arrival pulses that never raise the axis or the peak, and it has no output rate (TPS). Cache reads and writes are separated from its input. Observatory's own Grok insight analysis in temporary paseo-insight-* folders is excluded. Pi follows its own counting: replies, tool results with usage, and compaction and branch summaries. Kimi Code reads per-request usage.record entries, including subagents. ZCode reads completed steps from its local SQLite database and WAL, without counting duplicate message totals; cache reads and writes are separated from input. Missing usage and monetary cost are not estimated.",
+    "providerUsageLinksLogsToPaseo": "\"Provider usage\" links logs to Paseo sessions by session ID and then groups by provider. Custom providers sharing a log folder can therefore be separated. If a log folder belongs to only one custom provider, logs without a matching Paseo session also count toward it. Logs without a matching Paseo session count toward a row named by their own source; only the remainder beyond the session-detail window is listed as \"Earlier sessions\".",
     "dailyAndHourlyCountsUseThis": "Daily and hourly counts use this device's time zone, including daylight saving transitions, like the statistics page. Logs are recorded by UTC hour and each hour is converted using its offset at the time.",
     "newInputCacheWriteCacheRead": "New input + cache write + cache read = all context read by the model. Adding output gives the total. Cache hit rate = cache read ÷ total input.",
-    "outputRateTpsOutputTokensResponse": "Output rate (TPS) = output tokens ÷ response duration, including the wait for the first token. Live throughput spreads each call's output evenly across its response duration.",
+    "outputRateTpsOutputTokensResponse": "Output rate (TPS) = output tokens ÷ response duration, including the wait for the first token. Live throughput spreads calls with a response duration evenly across it; harnesses logged only at completion time contribute an arrival rate to their session rows.",
     "onlyCountsModelsWorkingDirectoriesAnd": "Only counts, models, working directories, and session IDs are stored. Prompts and output content are not stored. Costs are not estimated because prices vary by provider, proxy, or subscription even for the same model.",
     "consumedToday": "Consumed today",
     "cacheHit": " · Cache hit {value1}",
@@ -2063,8 +2064,8 @@
     "cacheHit2": "Cache hit",
     "ofEveryInputTokensComeDirectly": "Of every 100 input tokens, {value1} come directly from the prompt cache.",
     "sessionsRunFromTerminalOrDeleted": {
-      "one": "{count} session · Run from terminal or deleted{value2}",
-      "other": "{count} sessions · Run from terminal or deleted{value2}"
+      "one": "{count} session · Earlier sessions{value2}",
+      "other": "{count} sessions · Earlier sessions{value2}"
     },
     "sessions": "{value1}{value2} sessions{value3}",
     "noDataInThisRangeYet": "No data in this range yet",
@@ -2666,7 +2667,7 @@
     "m002": "Other",
     "m003": "Unknown",
     "m004": "No linked session",
-    "m005": "No linked session"
+    "m005": "Earlier sessions"
   },
   "serverTokensStore": {
     "m001": "Token import failed ({value1}).",

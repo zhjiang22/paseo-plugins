@@ -34,6 +34,9 @@ export function buildTokenLive(data: TokenData, input: { windowMinutes: 30 | 60;
   now: number, directory: StatsDirectory): TokenLive {
   const count = input.windowMinutes * 6, start = bucketOf(now) - (count - 1) * BUCKET, miniStart = bucketOf(now) - 11 * BUCKET;
   const output = input.detail === "full" ? Array<number>(count).fill(0) : [], read = output.map(() => 0), calls = output.map(() => 0);
+  // Whole-turn sources' arrival pulses render as a dimmed second series: each step's whole output sits in the bucket
+  // it completed in. The axis and the peak stay timed-true; an arrival segment taller than the axis is clipped.
+  const arrivalOutput = input.detail === "full" ? Array<number>(count).fill(0) : [];
   const zone = statsZone(input.utcOffsetMinutes, input.timeZone, now), localDay = statsLocalDay(now, zone), today = { total: 0, output: 0, calls: 0 };
   for (const bucket of data.hours.values()) if (bucket.at <= now && statsLocalDay(bucket.at, zone) === localDay) {
     today.total += tokenTotal(bucket); today.output += bucket.output; today.calls += bucket.calls;
@@ -46,15 +49,24 @@ export function buildTokenLive(data: TokenData, input: { windowMinutes: 30 | 60;
   const rows = new Map<string, TokenLiveAgent>();
   let nowOutput = 0, nowInput = 0, nowCalls = 0;
   for (const call of data.recent.values()) {
+    if (call.at > now) continue;
     // A whole-turn record (a Grok turn, a CodeBuddy step, a Gemini response) is logged when it ends with no response
-    // time: dropped into one 10 s bucket it would read as a burst of thousands of tokens per second. It counts in
-    // today's totals (the hour buckets), not in the live speed.
-    if (call.at > now || WHOLE_TURN_SOURCES[call.source]) continue;
-    const endIndex = Math.floor((call.at - start) / BUCKET);
+    // time: spread over one 10 s bucket it would read as a burst of thousands of tokens per second, so its output
+    // rides in its own dimmed arrival series (never the axis or the peak) while its session's row counts the last ten
+    // minutes and shows the token arrival rate — which is what puts a harness without per-call timing on the live
+    // card at all.
+    const wholeTurn = WHOLE_TURN_SOURCES[call.source];
     if (input.detail === "full") {
-      spread(call, start, output);
-      if (endIndex >= 0 && endIndex < count) { read[endIndex] += tokenInput(call); calls[endIndex] += modelCalls(call); }
+      const endIndex = Math.floor((call.at - start) / BUCKET);
+      if (wholeTurn) {
+        spread(call, start, arrivalOutput);
+        if (endIndex >= 0 && endIndex < count) calls[endIndex] += modelCalls(call);
+      } else {
+        spread(call, start, output);
+        if (endIndex >= 0 && endIndex < count) { read[endIndex] += tokenInput(call); calls[endIndex] += modelCalls(call); }
+      }
     }
+    // The card's now-rate counts arrivals: a whole-turn step's output lands in the trailing minute it completed in.
     if (call.at >= now - 60_000) {
       nowOutput += portion(call, now - 60_000, now); nowInput += tokenInput(call); nowCalls += modelCalls(call);
     }
@@ -64,10 +76,12 @@ export function buildTokenLive(data: TokenData, input: { windowMinutes: 30 | 60;
     let row = rows.get(key);
     if (!row) {
       row = { sessionId: root, source: call.source, agentId: agent?.id ?? null, title: text(agent?.title ?? null), model: text(call.model),
-        outputPerSec: 0, recent: Array<number>(12).fill(0), output10m: 0, calls10m: 0, lastCallAt: iso(call.at) };
+        outputPerSec: 0, recent: Array<number>(12).fill(0), output10m: 0, calls10m: 0, lastCallAt: iso(call.at), arrival: wholeTurn || undefined };
       rows.set(key, row);
     }
     row.output10m += call.output; row.calls10m += modelCalls(call);
+    // For a whole-turn record `portion` degrades to the arrival rate: the step's whole output lands in the trailing
+    // 2 minutes it was completed in, and the 10 s sparkline shows it as one pulse (self-scaled per row).
     row.outputPerSec += portion(call, now - 120_000, now) / 120;
     spread(call, miniStart, row.recent);
     if (iso(call.at) >= row.lastCallAt) { row.lastCallAt = iso(call.at); row.model = text(call.model); }
@@ -76,7 +90,7 @@ export function buildTokenLive(data: TokenData, input: { windowMinutes: 30 | 60;
   if (input.detail === "full") for (let i = 0; i < output.length; i++) {
     if (output[i] > (peak?.outputPerSec ?? 0) * 10) peak = { outputPerSec: output[i] / 10, at: iso(start + i * BUCKET) };
   }
-  const result: TokenLive = { generatedAt: iso(now), bucketMs: BUCKET, start: iso(start), output, input: read, calls,
+  const result: TokenLive = { generatedAt: iso(now), bucketMs: BUCKET, start: iso(start), output, arrivalOutput: input.detail === "full" ? arrivalOutput : undefined, input: read, calls,
     now: { outputPerSec: nowOutput / 60, inputPerSec: nowInput / 60, callsPerMin: nowCalls }, peak,
     agents: [...rows.values()].sort((a, b) => b.outputPerSec - a.outputPerSec || b.lastCallAt.localeCompare(a.lastCallAt) || a.sessionId.localeCompare(b.sessionId)).slice(0, 12), today };
   while (result.agents.length && Buffer.byteLength(JSON.stringify(result)) >= 11_900) result.agents.pop();

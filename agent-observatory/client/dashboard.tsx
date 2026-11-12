@@ -41,7 +41,7 @@ import { StatsBoard, type SessionScopeTarget } from "./stats-board";
 import { StatsBreakdown, type BreakdownDimension } from "./stats-breakdown";
 import { StatsCompare } from "./stats-compare";
 import { TokenBoard } from "./token-board";
-import { tokenTotal } from "../shared/tokens";
+import { sessionOutputRates, tokenTotal } from "../shared/tokens";
 import { ViewTabs, type ViewTab } from "./view-tabs";
 import { Swimlane } from "./swimlane";
 import { SessionList, countRunningDescendants, groupTitles, type SessionItem } from "./session-list";
@@ -153,7 +153,8 @@ export function DashboardView({ theme, layout, host, navigation, workspaceId, in
   const liveExtras = useLiveExtras(host.id, liveWanted);
   // Heartbeats that will wake an Agent: 「22:35 唤醒」 on its row and a card in its detail (opus-B8).
   const heartbeats = useHeartbeats(host.id, tab === "agents" || tab === "activity" || !!selectedId), checkHeartbeats = useHeartbeatCheck(host.id);
-  const rates = useMemo(() => new Map((rowLive.data?.agents ?? []).flatMap(agent => agent.agentId && agent.outputPerSec > 0 ? [[agent.agentId, agent.outputPerSec] as const] : [])), [rowLive.data]);
+  // A whole-turn row's rate is an arrival rate, never shown as the row's tok/s pill.
+  const rates = useMemo(() => sessionOutputRates(rowLive.data?.agents ?? []), [rowLive.data]);
   useEffect(() => { setWorkspace(workspaceId ?? "all"); }, [workspaceId]);
   useEffect(() => { onAnalyticsVisible?.(observing); }, [observing, onAnalyticsVisible]);
   const syncedView: ViewPreferences = useMemo(() => ({ query: "", status, readFilter, workspace, project, checkout, provider, range, sessionScope, view, sort, expanded: [...expanded], scrollOffset: 0, focus }), [status, readFilter, workspace, project, checkout, provider, range, sessionScope, view, sort, expanded, focus]);
@@ -225,6 +226,8 @@ export function DashboardView({ theme, layout, host, navigation, workspaceId, in
   const selected = selectedId ? agents.find(agent => agent.id === selectedId) : undefined;
   const eventAgents = useMemo(() => scoped.filter(agent => matchesAgentStatus(agent, status) && (readFilter === "all" || completionReadState(agent) === readFilter) && (focus === "all" || attentionOf(agent))), [scoped, status, readFilter, focus, attentionOf]);
   const scopeIds = useMemo(() => new Set(eventAgents.map(agent => agent.id)), [eventAgents]);
+  // Provider subagents only: a Paseo child's work shows on the child's own lane, never double-counted on the parent.
+  const subs = useMemo(() => { const map = new Map<string, string>(); for (const entry of background?.agents ?? []) if (entry.running > 0 && entry.since) map.set(entry.agentId, entry.since); return map; }, [background]);
   const eventSince = range === "all" ? -Infinity : filterNow - (range === "24h" ? 1 : range === "7d" ? 7 : 30) * 86400_000;
   const events = useMemo(() => (telemetry?.events ?? []).filter(event => scopeIds.has(event.agentId) && Date.parse(event.at) >= eventSince), [telemetry, scopeIds, eventSince]);
   // Clearing filters cannot reveal deleted/archived Agents or leave a workspace-scoped page and its time range.
@@ -434,8 +437,8 @@ export function DashboardView({ theme, layout, host, navigation, workspaceId, in
         : tab === "activity" ? <>
           {hiddenEvents ? <View style={{ paddingHorizontal: space.md, paddingTop: space.md }}><Banner theme={theme} tone="neutral" icon="Filter"
             message={t("coreDashboard.hiddenByFilters", { value1: hiddenEvents })} action={{ label: t("coreDashboard.clearFilters"), onPress: resetFilters }} /></View> : null}
-          {!compact ? <Swimlane theme={theme} events={events} agents={eventAgents} now={now} compact={false} onSelect={selectAgent} inset={space.lg} /> : null}
-          <SplitView theme={theme} compact={compact} showDetail={false} list={<ActivityFeed events={events} theme={theme} telemetry={telemetry} onSelect={selectAgent} now={now} selectedId={selectedId} agents={eventAgents} swimlane={compact} />} detail={detail} />
+          {!compact ? <Swimlane theme={theme} events={events} agents={eventAgents} now={now} compact={false} onSelect={selectAgent} inset={space.lg} subs={subs} /> : null}
+          <SplitView theme={theme} compact={compact} showDetail={false} list={<ActivityFeed events={events} theme={theme} telemetry={telemetry} onSelect={selectAgent} now={now} selectedId={selectedId} agents={eventAgents} swimlane={compact} subs={subs} />} detail={detail} />
         </>
         : tab === "board" ? <StatsBoard {...statsProps} live={known ? boardCounts : undefined} quota={<QuotaChip theme={theme} quota={quota.data} onPress={() => setTab("tokens")} />} onOpenScope={showScope} onOpenAgent={openFromView} onOpenBreakdown={() => { setDimension("models"); setTab("analytics"); }}
           tokens={tokens.data?.daily.length ? { today: tokenTotal(tokens.data.daily.at(-1)!), onOpen: () => setTab("tokens") } : undefined} />

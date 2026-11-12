@@ -29,12 +29,12 @@ function niceCeiling(value: number): number {
 export const LiveRateChart = memo(function LiveRateChart({ theme, live, height = 132 }: { theme: PluginTheme; live: TokenLive; height?: number }) {
   const [width, setWidth] = useState(0);
   const [picked, setPicked] = useState<number | null>(null);
-  const values = live.output, n = values.length, start = Date.parse(live.start), bucket = live.bucketMs;
+  const values = live.output, arrival = live.arrivalOutput, n = values.length, start = Date.parse(live.start), bucket = live.bucketMs;
   const axis = 42, plot = Math.max(0, width - axis), column = n ? plot / n : 0, gap = column >= 3 ? 1 : 0;
   const top = niceCeiling(Math.max(...values, 1) / (bucket / 1000));
   const y = (perSec: number) => Math.min(1, perSec / top) * height;
   const color = hue(theme, "orange"), accent = hue(theme, "pink"), grid = isDarkTheme(theme) ? withAlpha("#ffffff", 0.07) : withAlpha("#000000", 0.06);
-  const minutes = Math.ceil(n / 6), minuteRate = (minute: number) => values.slice(minute * 6, minute * 6 + 6).reduce((sum, value) => sum + value, 0) / 60;
+  const minutes = Math.ceil(n / 6), minuteRate = (minute: number) => values.slice(minute * 6, minute * 6 + 6).reduce((sum, value) => sum + value, 0) / 60; const arrivalMinuteRate = (minute: number) => (arrival ?? []).slice(minute * 6, minute * 6 + 6).reduce((sum, value) => sum + value, 0) / 60;
   const window = Math.round(n * bucket / 60_000);
   return <View style={{ gap: 6 }}>
     <View onLayout={event => setWidth(Math.round(event.nativeEvent.layout.width))} style={{ height: height + 2 }}>
@@ -43,9 +43,16 @@ export const LiveRateChart = memo(function LiveRateChart({ theme, live, height =
       <Text style={{ position: "absolute", left: 0, width: axis - 6, textAlign: "right", bottom: -1, color: theme.colors.foregroundMuted, fontSize: 10 }}>{t("coreLiveRate.tokS")}</Text>
       {width > 0 ? values.map((value, index) => {
         const perSec = value / (bucket / 1000), last = index === n - 1, h = value > 0 ? Math.max(2, y(perSec)) : 0;
-        if (!h) return null;
-        return <View key={start + index * bucket} style={[{ position: "absolute", left: axis + index * column, bottom: 0, width: Math.max(1, column - gap), height: h, borderTopLeftRadius: 2, borderTopRightRadius: 2 },
-          last ? [gradient(theme, [accent, color], { angle: 180 }), { opacity: 1 }] : { backgroundColor: color, opacity: 0.3 + 0.7 * (index / n) }]} />;
+        // Whole-turn arrival pulses stack behind the timed bar but never raise the axis: a step taller than the
+        // ceiling is clipped flat at the top (its true value shows in the picked-minute summary).
+        const arrivalPerSec = arrival?.[index] ? arrival[index] / (bucket / 1000) : 0;
+        const arrivalH = arrivalPerSec > 0 ? Math.max(2, Math.min(height - h, y(arrivalPerSec))) : 0;
+        if (!h && !arrivalH) return null;
+        return <View key={start + index * bucket} style={{ position: "absolute", left: axis + index * column, bottom: 0, width: Math.max(1, column - gap), height: Math.max(h, h + arrivalH) }}>
+          <View style={[{ position: "absolute", bottom: 0, left: 0, right: 0, height: h, borderTopLeftRadius: 2, borderTopRightRadius: 2 },
+            last ? [gradient(theme, [accent, color], { angle: 180 }), { opacity: 1 }] : { backgroundColor: color, opacity: 0.3 + 0.7 * (index / n) }]} />
+          {arrivalH ? <View style={{ position: "absolute", bottom: h, left: 0, right: 0, height: arrivalH, backgroundColor: withAlpha(accent, 0.45) }} /> : null}
+        </View>;
       }) : null}
       {width > 0 && n ? (() => { const perSec = values[n - 1]! / (bucket / 1000); return <View style={{ position: "absolute", left: axis + (n - 1) * column + column / 2 - 5, bottom: Math.max(2, y(perSec)) - 5, width: 10, height: 10, alignItems: "center", justifyContent: "center" }}>
         <Ping size={10} color={accent} active={perSec > 0} /><View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: accent }} />
@@ -58,7 +65,8 @@ export const LiveRateChart = memo(function LiveRateChart({ theme, live, height =
       <Text style={{ color: theme.colors.foregroundMuted, fontSize: 10 }}>{t("coreLiveRate.now")}</Text>
     </View>
     {picked !== null ? <Text style={{ color: theme.colors.foreground, fontSize: fontSize.small }}>
-      <TextParts id="coreLiveRate.minuteSummary" values={{ time: clock(start + picked * 60_000), rate: <Text style={{ color: hue(theme, "orange", "text"), fontWeight: "800" }}>{perSecond(minuteRate(picked))}{t("coreLiveRate.tokS2")}</Text>, calls: live.calls.slice(picked * 6, picked * 6 + 6).reduce((sum, value) => sum + value, 0) }} /></Text> : null}
+      <TextParts id="coreLiveRate.minuteSummary" values={{ time: clock(start + picked * 60_000), rate: <Text style={{ color: hue(theme, "orange", "text"), fontWeight: "800" }}>{perSecond(minuteRate(picked))}{t("coreLiveRate.tokS2")}</Text>, calls: live.calls.slice(picked * 6, picked * 6 + 6).reduce((sum, value) => sum + value, 0) }} />
+      {arrivalMinuteRate(picked) > 0 ? <Text style={{ color: hue(theme, "pink", "text") }}> · {t("coreLiveRate.arrivalTokS")} {perSecond(arrivalMinuteRate(picked))}</Text> : null}</Text> : null}
   </View>;
 });
 
@@ -79,7 +87,7 @@ function LiveAgentRow({ theme, agent, onOpenAgent }: { theme: PluginTheme; agent
       <Text numberOfLines={1} style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>{[agent.model ?? agent.source, t("coreLiveRate.value10MinuteOutput", { value1: bigNumber(agent.output10m) }), relativeTime(agent.lastCallAt)].join(" · ")}</Text>
     </View>
     <MiniBars theme={theme} values={agent.recent} color={color} />
-    <Text style={{ width: 74, textAlign: "right", color: active ? theme.colors.foreground : theme.colors.foregroundMuted, fontSize: fontSize.small, fontWeight: "800", fontVariant: ["tabular-nums"] }}>{perSecond(agent.outputPerSec)}<Text style={{ fontSize: 10, fontWeight: "500", color: theme.colors.foregroundMuted }}>{t("coreLiveRate.tokS2")}</Text></Text>
+    <Text style={{ width: 74, textAlign: "right", color: active ? theme.colors.foreground : theme.colors.foregroundMuted, fontSize: fontSize.small, fontWeight: "800", fontVariant: ["tabular-nums"] }}>{perSecond(agent.outputPerSec)}<Text style={{ fontSize: 10, fontWeight: "500", color: theme.colors.foregroundMuted }}>{agent.arrival ? t("coreLiveRate.arrivalTokS") : t("coreLiveRate.tokS2")}</Text></Text>
   </>;
   const style = { flexDirection: "row" as const, alignItems: "center" as const, gap: space.sm, minHeight: 40, paddingVertical: 4 };
   return agent.agentId && onOpenAgent ? <Pressable accessibilityRole="button" accessibilityLabel={t("coreLiveRate.tokensPerSecond", { value1: title, value2: perSecond(agent.outputPerSec) })} onPress={() => onOpenAgent(agent.agentId!)} style={state => [style, { opacity: state.pressed ? 0.7 : 1 }]}>{body}</Pressable>

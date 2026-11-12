@@ -199,14 +199,29 @@ export const tokenLiveAgentSchema = z.object({
   agentId: z.string().max(256).nullable(),
   title: z.string().max(240).nullable(),
   model: z.string().max(240).nullable(),
-  /** Output tokens per second over the last 2 minutes (spread over each call's response time). */
+  /** Output tokens per second over the last 2 minutes (spread over each call's response time). Whole-turn sources
+   * have no response time: their rate is the arrival rate (completed steps' output ÷ the trailing window) and
+   * `arrival` is set so clients can tell the two measures apart. */
   outputPerSec: rate,
-  /** Output tokens per bucket over the last 2 minutes (12 × 10 s), oldest first — the row's mini chart. */
+  /** True when the row's harness logs whole-turn records (no response time) — the rate above is an arrival rate. */
+  arrival: z.boolean().optional(),
+  /** Output tokens per bucket over the last 2 minutes (12 × 10 s), oldest first — the row's mini chart. Whole-turn
+   * steps land as one pulse in the bucket they completed in. */
   recent: z.array(count).length(12),
   output10m: count, calls10m: count,
   lastCallAt: iso,
 });
 export type TokenLiveAgent = z.infer<typeof tokenLiveAgentSchema>;
+
+/**
+ * The session list's tok/s pill per Agent: timed rows only. A whole-turn row's rate is an arrival rate (`arrival`), not
+ * an output speed, so it gets no pill there — the live card labels it 到达/s instead.
+ */
+export function sessionOutputRates(agents: readonly TokenLiveAgent[]): Map<string, number> {
+  const rates = new Map<string, number>();
+  for (const agent of agents) if (agent.agentId && !agent.arrival && agent.outputPerSec > 0) rates.set(agent.agentId, agent.outputPerSec);
+  return rates;
+}
 
 /**
  * Live throughput for the last `windowMinutes`. Each call's output is spread evenly over its response time
@@ -219,6 +234,9 @@ export const tokenLiveSchema = z.object({
   /** Start of the first bucket. */
   start: iso,
   output: z.array(count).max(360),
+  /** Whole-turn sources' arrival pulses (their output lands in the bucket each step completed in) — a dimmed
+   * second series behind `output`; unlike `output` it must not raise the axis or the peak. */
+  arrivalOutput: z.array(count).max(360).optional(),
   input: z.array(count).max(360),
   calls: z.array(count).max(360),
   now: z.object({ outputPerSec: rate, inputPerSec: rate, callsPerMin: rate }),

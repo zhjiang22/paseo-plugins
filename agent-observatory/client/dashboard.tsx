@@ -41,7 +41,7 @@ import { StatsBoard, type SessionScopeTarget } from "./stats-board";
 import { StatsBreakdown, type BreakdownDimension } from "./stats-breakdown";
 import { StatsCompare } from "./stats-compare";
 import { TokenBoard } from "./token-board";
-import { tokenTotal } from "../shared/tokens";
+import { sessionOutputRates, tokenTotal } from "../shared/tokens";
 import { ViewTabs, type ViewTab } from "./view-tabs";
 import { Swimlane } from "./swimlane";
 import { SessionList, countRunningDescendants, groupTitles, type SessionItem } from "./session-list";
@@ -153,7 +153,8 @@ export function DashboardView({ theme, layout, host, navigation, workspaceId, in
   const liveExtras = useLiveExtras(host.id, liveWanted);
   // Heartbeats that will wake an Agent: 「22:35 唤醒」 on its row and a card in its detail (opus-B8).
   const heartbeats = useHeartbeats(host.id, tab === "agents" || tab === "activity" || !!selectedId), checkHeartbeats = useHeartbeatCheck(host.id);
-  const rates = useMemo(() => new Map((rowLive.data?.agents ?? []).flatMap(agent => agent.agentId && agent.outputPerSec > 0 ? [[agent.agentId, agent.outputPerSec] as const] : [])), [rowLive.data]);
+  // A whole-turn row's rate is an arrival rate, never shown as the row's tok/s pill.
+  const rates = useMemo(() => sessionOutputRates(rowLive.data?.agents ?? []), [rowLive.data]);
   useEffect(() => { setWorkspace(workspaceId ?? "all"); }, [workspaceId]);
   useEffect(() => { onAnalyticsVisible?.(observing); }, [observing, onAnalyticsVisible]);
   const syncedView: ViewPreferences = useMemo(() => ({ query: "", status, readFilter, workspace, project, checkout, provider, range, sessionScope, view, sort, expanded: [...expanded], scrollOffset: 0, focus }), [status, readFilter, workspace, project, checkout, provider, range, sessionScope, view, sort, expanded, focus]);

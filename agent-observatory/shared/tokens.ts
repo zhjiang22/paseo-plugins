@@ -214,6 +214,16 @@ export const tokenLiveAgentSchema = z.object({
 export type TokenLiveAgent = z.infer<typeof tokenLiveAgentSchema>;
 
 /**
+ * The session list's tok/s pill per Agent: timed rows only. A whole-turn row's rate is an arrival rate (`arrival`), not
+ * an output speed, so it gets no pill there — the live card labels it 到达/s instead.
+ */
+export function sessionOutputRates(agents: readonly TokenLiveAgent[]): Map<string, number> {
+  const rates = new Map<string, number>();
+  for (const agent of agents) if (agent.agentId && !agent.arrival && agent.outputPerSec > 0) rates.set(agent.agentId, agent.outputPerSec);
+  return rates;
+}
+
+/**
  * Live throughput for the last `windowMinutes`. Each call's output is spread evenly over its response time
  * (start → end) across the buckets it overlaps; calls without a known start count in their end bucket. Input is
  * counted in the end bucket. The last bucket is the one containing `generatedAt` (partial).

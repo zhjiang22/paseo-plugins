@@ -5,16 +5,17 @@ Plugins for [Paseo](https://paseo.sh). Each directory is a separate plugin with 
 | Plugin | Directory | What it does |
 | --- | --- | --- |
 | Agent Observatory | [`agent-observatory`](agent-observatory) | Results-first dashboard for every Paseo agent and subagent: unread queue, timelines, usage and token statistics, scheduled runs, optional AI reviews and turn summaries, plus alerts and scheduled sends. |
+| Ferry | [`ferry`](ferry) | Move a conversation to another provider and back. Providers that share a session store continue the same session; others get a budgeted handoff with a searchable history, and switching back sends only what was missed. |
 | Project Notes | [`project-notes`](project-notes) | Tasks, prompts and ideas per project, with one-tap prompt pills, a launcher that shows each started agent on its task, and an agent CLI. |
 | Server Browser | [`server-browser`](server-browser) | A Chromium browser on the daemon host, shared by your phone, your computer and a dedicated browser agent, with explicit handover and one-tap access to ports your agents open. |
 | Terracotta Themes | [`claude-theme`](claude-theme) | Twelve color themes, six dark and six light, from one perceptual tonal ladder, plus a live custom theme you tune with sliders. Unofficial; not affiliated with Anthropic. |
 | Vivid Activity | [`vivid-activity`](vivid-activity) | Redraws agent thinking and tool-call rows as color-coded activity rows with live states, folds finished runs into one summary row with its file changes and turn tokens, and times every step. Based on Colorful Agent Activity by Matt Cowger. |
 
-Requirements are declared per plugin in `requirements.paseo` (currently Paseo 0.11.0 or newer for the themes and 0.11.1 or newer for the others). Read each plugin's `OVERVIEW.md` for what it reads, writes and runs.
+Requirements are declared per plugin in `requirements.paseo` (currently Paseo 0.11.0 or newer for the themes, 0.14.0 or newer for Ferry and 0.11.1 or newer for the others). Read each plugin's `OVERVIEW.md` for what it reads, writes and runs.
 
 ## Languages
 
-Agent Observatory, Project Notes, Server Browser, Vivid Activity and Terracotta Themes have English and Simplified Chinese built in and follow the system language by default; other device languages show English. Each has a **Language** setting under Settings → Plugins.
+Agent Observatory, Ferry, Project Notes, Server Browser, Vivid Activity and Terracotta Themes have English and Simplified Chinese built in and follow the system language by default; other device languages show English. Each has a **Language** setting under Settings → Plugins.
 
 To add a language, for example Korean:
 

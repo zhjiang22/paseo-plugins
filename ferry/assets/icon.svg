@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Source of icon.png (rendered at 512 px). A ferry whose cabin is a chat bubble, between two arcs that go there and
+       back, on evening water. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#134257"/>
+      <stop offset="0.6" stop-color="#0D2D3F"/>
+      <stop offset="1" stop-color="#081C29"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.46">
+      <stop offset="0" stop-color="#2E8C8A" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#2E8C8A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F8CB78"/>
+      <stop offset="1" stop-color="#E2964A"/>
+    </linearGradient>
+    <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#03111A" flood-opacity="0.55"/>
+    </filter>
+    <marker id="headTeal" viewBox="0 0 10 10" refX="3" refY="5" markerUnits="userSpaceOnUse" markerWidth="40" markerHeight="40" orient="auto">
+      <path d="M0 0.5 L10 5 L0 9.5 Z" fill="#7FE3D2"/>
+    </marker>
+    <marker id="headSand" viewBox="0 0 10 10" refX="3" refY="5" markerUnits="userSpaceOnUse" markerWidth="40" markerHeight="40" orient="auto">
+      <path d="M0 0.5 L10 5 L0 9.5 Z" fill="#F8CB78"/>
+    </marker>
+  </defs>
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <rect width="512" height="512" fill="url(#glow)"/>
+
+  <!-- There, over the top; back, underneath. -->
+  <path d="M88 178 A190 190 0 0 1 412 170" fill="none" stroke="#7FE3D2" stroke-width="18" stroke-linecap="round" marker-end="url(#headTeal)"/>
+  <path d="M424 342 A190 190 0 0 1 100 350" fill="none" stroke="#F8CB78" stroke-width="18" stroke-linecap="round" marker-end="url(#headSand)"/>
+
+  <!-- The boat: a chat bubble for a cabin. -->
+  <g filter="url(#lift)">
+    <path d="M206 150 H306 A24 24 0 0 1 330 174 V214 A24 24 0 0 1 306 238 H270 L248 258 L250 238 H206 A24 24 0 0 1 182 214 V174 A24 24 0 0 1 206 150 Z" fill="#F4FBFA"/>
+    <circle cx="222" cy="194" r="10" fill="#1B5B66"/>
+    <circle cx="256" cy="194" r="10" fill="#1B5B66"/>
+    <circle cx="290" cy="194" r="10" fill="#1B5B66"/>
+    <path d="M136 262 H376 L352 306 Q345 318 331 318 H181 Q167 318 160 306 Z" fill="url(#hull)"/>
+    <rect x="186" y="278" width="140" height="9" rx="4.5" fill="#B4682B" fill-opacity="0.5"/>
+  </g>
+
+  <!-- Water. -->
+  <path d="M150 338 Q172 326 194 338 T238 338 T282 338 T326 338 T370 338" fill="none" stroke="#3FB8B0" stroke-width="9" stroke-linecap="round" stroke-opacity="0.8"/>
+</svg>

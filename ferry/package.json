@@ -1,0 +1,34 @@
+{
+  "name": "paseo-ferry",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Move a Paseo conversation to another provider and back: native continuation where providers share a session store, a budgeted handoff everywhere else, and only the missed part when switching back.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "bin": {
+    "ferry": "bin/ferry.mjs"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@getpaseo/client": "0.14.0",
+    "@getpaseo/plugin": "0.14.0",
+    "@getpaseo/protocol": "0.14.0",
+    "@tanstack/react-query": "^5.90.11",
+    "@types/node": "^22.20.4",
+    "@types/react": "~19.2.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.11",
+    "zod": "^4.4.3"
+  },
+  "overrides": {
+    "vite": "7.3.7"
+  }
+}

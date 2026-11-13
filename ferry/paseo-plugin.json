@@ -1,0 +1,20 @@
+{
+  "id": "ferry",
+  "name": "Ferry",
+  "description": "Move a conversation to another provider and back. Providers that share a session store continue the same session; others get a budgeted handoff, and switching back sends only what was missed.",
+  "icon": "assets/icon.png",
+  "media": [
+    "assets/screenshot-picker.png",
+    "assets/screenshot-handoff.png",
+    "assets/screenshot-phone.png"
+  ],
+  "translations": {
+    "zh-CN": {
+      "name": "摆渡",
+      "description": "把对话交给另一个 Provider 接着做，也能再切回来。共用会话存储的 Provider 直接续同一个会话；其他的按预算交接历史，切回时只补对方错过的部分。"
+    }
+  },
+  "requirements": {
+    "paseo": ">=0.14.0"
+  }
+}

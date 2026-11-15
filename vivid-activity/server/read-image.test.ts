@@ -8,6 +8,7 @@ import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { IMAGE_HEADER_BYTES, MAX_READ_IMAGE_BYTES } from "../shared/read-image.js";
 import {
   defaultTempRoots,
+  defaultWorktreeRoots,
   handleReadImage,
   imageRoots,
   isInside,
@@ -52,8 +53,21 @@ function withSandbox(run: (dirs: { root: string; cwd: string; temp: string; else
 }
 
 /** `agentId` null: the request names no Agent at all. */
-const read = (filePath: string, cwd: string | null, temp: string[], agentId: string | null = "agent-1", io?: ReadImageIo) =>
-  handleReadImage({ filePath, ...(agentId !== null ? { agentId } : {}) } as { filePath: string; agentId: string }, contextWithCwd(cwd), temp, io);
+const read = (
+  filePath: string,
+  cwd: string | null,
+  temp: string[],
+  agentId: string | null = "agent-1",
+  io?: ReadImageIo,
+  worktrees: readonly string[] = [],
+) =>
+  handleReadImage(
+    { filePath, ...(agentId !== null ? { agentId } : {}) } as { filePath: string; agentId: string },
+    contextWithCwd(cwd),
+    temp,
+    io,
+    worktrees,
+  );
 
 /**
  * File access that counts the bytes read and refuses whole-file reads. `grow` appends that many bytes to the file right
@@ -132,7 +146,7 @@ describe("imageRoots", () => {
     await withSandbox(async ({ root, cwd, temp }) => {
       const link = join(root, "cwd-link");
       symlinkSync(cwd, link);
-      const roots = await imageRoots(link, [temp, join(root, "missing"), "relative/dir"]);
+      const roots = await imageRoots(link, [temp, join(root, "missing"), "relative/dir"], []);
       expect(roots.lexical).toEqual([link, temp, join(root, "missing")]);
       expect(roots.real).toEqual([cwd, temp].map((dir) => execFileSync("realpath", [dir]).toString().trim()));
     });
@@ -145,6 +159,14 @@ describe("defaultTempRoots", () => {
     expect(defaultTempRoots("linux", "/var/tmp/user-1000", "/home/user")).toEqual(["/var/tmp/user-1000"]);
     expect(defaultTempRoots("darwin", "/var/folders/ab/cd/T", "/Users/user")).toEqual(["/var/folders/ab/cd/T", "/tmp"]);
     expect(defaultTempRoots("darwin", "/tmp/", "/Users/user")).toEqual(["/tmp"]);
+  });
+
+  it("uses $PASEO_HOME/worktrees, or ~/.paseo/worktrees, and ignores a root that holds the home directory", () => {
+    expect(defaultWorktreeRoots("/home/user", "")).toEqual(["/home/user/.paseo/worktrees"]);
+    expect(defaultWorktreeRoots("/home/user", "/var/paseo")).toEqual(["/var/paseo/worktrees"]);
+    expect(defaultWorktreeRoots("/home/user", "relative/paseo")).toEqual(["/home/user/.paseo/worktrees"]);
+    expect(defaultWorktreeRoots("/home/user", "/")).toEqual(["/worktrees"]);
+    expect(defaultWorktreeRoots("/srv/paseo/worktrees/box", "/srv/paseo")).toEqual([]);
   });
 
   it("ignores a TMPDIR that is / or holds the home directory, which would open that whole tree (0.4.1)", () => {
@@ -205,6 +227,14 @@ describe("handleReadImage", () => {
       mkdirSync(join(cwd, "shots"));
       writeFileSync(join(cwd, "shots", "shot.png"), PNG_BYTES);
       expect((await read("shots/shot.png", cwd, [temp])).status).toBe("ok");
+    });
+  });
+
+  it("reads an image from another paseo worktree when that tree is outside the agent cwd", async () => {
+    await withSandbox(async ({ cwd, temp, elsewhere }) => {
+      const file = join(elsewhere, "proof.png");
+      writeFileSync(file, PNG_BYTES);
+      expect((await read(file, cwd, [temp], "agent-1", undefined, [elsewhere])).status).toBe("ok");
     });
   });
 

@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { open, readlink, realpath, stat, type FileHandle } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { isAbsolute, parse, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import {
   IMAGE_HEADER_BYTES,
@@ -70,11 +70,31 @@ export function defaultTempRoots(
 }
 
 /**
- * 本地补丁：图片预览只读 Agent 工作目录和临时目录里的文件。上游会读取任意绝对路径的图片，
+ * Paseo worktrees, where agents write renders that belong to a repo other than the chat that is open.
+ * `$PASEO_HOME/worktrees` when that home is absolute, otherwise `~/.paseo/worktrees`. A root that is the
+ * file system root or that holds the home directory is ignored, same as a bad temp directory.
+ */
+export function defaultWorktreeRoots(
+  home: string = homedir(),
+  paseoHome: string | undefined = process.env.PASEO_HOME,
+): string[] {
+  const homeDir = isAbsolute(home) && resolve(home) !== parse(resolve(home)).root ? resolve(home) : null;
+  const base = paseoHome && isAbsolute(paseoHome) ? resolve(paseoHome) : join(homeDir ?? resolve(home), ".paseo");
+  const root = resolve(join(base, "worktrees"));
+  if (root === parse(root).root || (homeDir && isInside(root, homeDir))) return [];
+  return [root];
+}
+
+/**
+ * 图片预览可读 Agent 工作目录、临时目录，以及 Paseo 工作树根。其余路径不读：上游会读取任意绝对路径的图片，
  * 任何能调用插件 RPC 的客户端都能借它读出主机上的图片。符号链接按真实路径判断。
  */
-export async function imageRoots(agentCwd: string | null, tempRoots: readonly string[]): Promise<{ lexical: string[]; real: string[] }> {
-  const lexical = [agentCwd, ...tempRoots].filter((root): root is string => Boolean(root) && isAbsolute(root!)).map((root) => resolve(root));
+export async function imageRoots(
+  agentCwd: string | null,
+  tempRoots: readonly string[],
+  worktreeRoots: readonly string[] = defaultWorktreeRoots(),
+): Promise<{ lexical: string[]; real: string[] }> {
+  const lexical = [agentCwd, ...tempRoots, ...worktreeRoots].filter((root): root is string => Boolean(root) && isAbsolute(root!)).map((root) => resolve(root));
   const real = await Promise.all(lexical.map((root) => realpath(root).catch(() => null)));
   return {
     lexical: [...new Set(lexical)],
@@ -152,15 +172,16 @@ export async function handleReadImage(
   context: PluginHandlerContext,
   tempRoots: readonly string[] = defaultTempRoots(),
   io: ReadImageIo = NODE_IO,
+  worktreeRoots: readonly string[] = defaultWorktreeRoots(),
 ): Promise<ReadImageResult> {
-  // 0.4.1: an Agent the daemon knows is required. Its working directory and the temp directories are the only places
-  // a preview reads; without one nothing is read, not even the temp directory.
+  // 0.4.1: an Agent the daemon knows is required. Its working directory, Paseo worktrees, and the temp
+  // directories are the only places a preview reads; without an agent nothing is read, not even those.
   const agentCwd = await resolveAgentCwd(context.paseo, input.agentId);
   if (!agentCwd) return { status: "unavailable" };
   const absolutePath = resolveAbsolutePath(input.filePath, agentCwd);
   if (!absolutePath) return { status: "unavailable" };
 
-  const roots = await imageRoots(agentCwd, tempRoots);
+  const roots = await imageRoots(agentCwd, tempRoots, worktreeRoots);
   // Refuse before touching the file system, so outside paths do not reveal whether they exist.
   if (![...roots.lexical, ...roots.real].some((root) => isInside(root, absolutePath))) return { status: "outside" };
   let realPath: string;

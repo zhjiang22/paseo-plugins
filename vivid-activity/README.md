@@ -178,11 +178,12 @@ The plugin makes no network requests and starts no processes. It reads language 
 - To read token figures by provider base, the server part reads the daemon's `config.json` in the Paseo home (at
   most 4 MB, at most once a minute) and keeps only each custom provider's `extends`. At the start of a Codex-based
   turn it asks the daemon for the agent's record, which loads nothing.
-- Image previews read the image file only from the working directory of the agent whose chat shows it or from
-  the system temp directory (`os.tmpdir()`, plus `/tmp` on macOS): regular files up to 3 MB, links resolved before
-  the check, the opened file checked again, and no more than the first 32 bytes of a file that is not an image
-  (`server/read-image.ts`).
-- It reads no credentials. It uses `PASEO_HOME` or `HOME` for language files and the daemon config, and `TMPDIR` and `HOME` for image checks.
+- Image previews read the image file only from the working directory of the agent whose chat shows it, from the
+  Paseo worktree root (`$PASEO_HOME/worktrees`, otherwise `~/.paseo/worktrees`), or from the system temp directory
+  (`os.tmpdir()`, plus `/tmp` on macOS): regular files up to 3 MB, links resolved before the check, the opened file
+  checked again, and no more than the first 32 bytes of a file that is not an image (`server/read-image.ts`).
+  A worktree root that contains the home directory is ignored.
+- It reads no credentials. It uses `PASEO_HOME` or `HOME` for language files, the daemon config and the worktree root, and `TMPDIR` and `HOME` for the temp-directory check.
 - Expanding a row for Paseo's create agent tool makes the server part read the last 8 entries of the new agent's
   timeline and send the app three short rows (about 500 bytes), while the app is in the foreground and the card is on
   screen; at most every five seconds while the agent keeps changing. Before each read it starts by itself, it asks

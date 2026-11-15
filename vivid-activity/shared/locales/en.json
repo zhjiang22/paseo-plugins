@@ -480,7 +480,7 @@
     "image": "Image",
     "loadingImage": "Loading image…",
     "theImageIsLargerThan": "The image is larger than 3 MB, so no preview is shown.",
-    "theImageIsOutsideThe": "The image is outside the agent's working directory and temporary directories, so no preview is shown.",
+    "theImageIsOutsideThe": "The image is outside the agent's working directory, Paseo worktrees, and temporary directories, so no preview is shown.",
     "copyOutput": "Copy output",
     "errorOutput": "Error output",
     "copyCommand": "Copy command",

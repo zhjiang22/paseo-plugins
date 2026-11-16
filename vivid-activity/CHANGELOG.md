@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.11.1 (2026-11-16)
+
+- Subagent progress no longer fails when Paseo omits `detail.log` (optional since Paseo 0.14.1; the daemon keeps sending an empty string only until 2027-04-30): a missing log reads as empty. Checked on isolated Paseo 0.16.0 and 0.15.4 daemons, including the 0.16 web UI.
 
 - Image previews also read files under the Paseo worktree root (`$PASEO_HOME/worktrees`, or `~/.paseo/worktrees`). A render written in one worktree shows in a chat whose folder is another. A worktree root that contains the home directory is ignored. Every other path is still refused, and a link is still judged by its real path.
 

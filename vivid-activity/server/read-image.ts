@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { open, readlink, realpath, stat, type FileHandle } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { isAbsolute, parse, relative, resolve, sep } from "node:path";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import {
   IMAGE_HEADER_BYTES,
@@ -9,6 +9,7 @@ import {
   detectImageMimeType,
   type ReadImageResult,
 } from "../shared/read-image.js";
+import { daemonHome } from "./provider-base.js";
 
 type ReadImageInput = { filePath: string; agentId: string };
 
@@ -71,22 +72,22 @@ export function defaultTempRoots(
 
 /**
  * Paseo worktrees, where agents write renders that belong to a repo other than the chat that is open.
- * `$PASEO_HOME/worktrees` when that home is absolute, otherwise `~/.paseo/worktrees`. A root that is the
- * file system root or that holds the home directory is ignored, same as a bad temp directory.
+ * `worktrees` in the daemon home the config is read from (server/provider-base.ts): `$PASEO_HOME` when absolute or
+ * `~/…`, otherwise `~/.paseo`. A root that is the file system root or that holds the home directory is ignored, same
+ * as a bad temp directory.
  */
 export function defaultWorktreeRoots(
   home: string = homedir(),
   paseoHome: string | undefined = process.env.PASEO_HOME,
 ): string[] {
   const homeDir = isAbsolute(home) && resolve(home) !== parse(resolve(home)).root ? resolve(home) : null;
-  const base = paseoHome && isAbsolute(paseoHome) ? resolve(paseoHome) : join(homeDir ?? resolve(home), ".paseo");
-  const root = resolve(join(base, "worktrees"));
+  const root = resolve(daemonHome({ PASEO_HOME: paseoHome }, homeDir ?? resolve(home)), "worktrees");
   if (root === parse(root).root || (homeDir && isInside(root, homeDir))) return [];
   return [root];
 }
 
 /**
- * 图片预览可读 Agent 工作目录、临时目录，以及 Paseo 工作树根。其余路径不读：上游会读取任意绝对路径的图片，
+ * 本地补丁：图片预览可读 Agent 工作目录、临时目录，以及 Paseo 工作树根。其余路径不读：上游会读取任意绝对路径的图片，
  * 任何能调用插件 RPC 的客户端都能借它读出主机上的图片。符号链接按真实路径判断。
  */
 export async function imageRoots(

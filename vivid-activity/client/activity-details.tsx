@@ -368,7 +368,7 @@ type ReadImageState =
   | { status: "ok"; uri: string }
   | { status: "fallback"; note?: string };
 
-// 预览只读 Agent 工作目录、Paseo 工作树和临时目录（见 server/read-image.ts），其他位置给出原因。
+// 本地补丁：预览只读 Agent 工作目录、Paseo 工作树和临时目录（见 server/read-image.ts），其他位置给出原因。
 const IMAGE_NOTES: Partial<Record<string, string>> = {
   get outside() { return t("ui.theImageIsOutsideThe"); },
   get "too-large"() { return t("ui.theImageIsLargerThan"); },

@@ -18,6 +18,7 @@ import {
   type ImageFile,
   type ReadImageIo,
 } from "./read-image.js";
+import { daemonHome } from "./provider-base.js";
 
 const PNG_BYTES = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
@@ -161,14 +162,6 @@ describe("defaultTempRoots", () => {
     expect(defaultTempRoots("darwin", "/tmp/", "/Users/user")).toEqual(["/tmp"]);
   });
 
-  it("uses $PASEO_HOME/worktrees, or ~/.paseo/worktrees, and ignores a root that holds the home directory", () => {
-    expect(defaultWorktreeRoots("/home/user", "")).toEqual(["/home/user/.paseo/worktrees"]);
-    expect(defaultWorktreeRoots("/home/user", "/var/paseo")).toEqual(["/var/paseo/worktrees"]);
-    expect(defaultWorktreeRoots("/home/user", "relative/paseo")).toEqual(["/home/user/.paseo/worktrees"]);
-    expect(defaultWorktreeRoots("/home/user", "/")).toEqual(["/worktrees"]);
-    expect(defaultWorktreeRoots("/srv/paseo/worktrees/box", "/srv/paseo")).toEqual([]);
-  });
-
   it("ignores a TMPDIR that is / or holds the home directory, which would open that whole tree (0.4.1)", () => {
     expect(defaultTempRoots("linux", "/", "/home/user")).toEqual([]);
     expect(defaultTempRoots("linux", "/home", "/home/user")).toEqual([]);
@@ -176,6 +169,28 @@ describe("defaultTempRoots", () => {
     expect(defaultTempRoots("darwin", "/Users/user", "/Users/user")).toEqual(["/tmp"]);
     expect(defaultTempRoots("linux", "/home/user/.cache/tmp", "/home/user")).toEqual(["/home/user/.cache/tmp"]);
     expect(defaultTempRoots("linux", "relative/tmp", "/home/user")).toEqual([]);
+  });
+});
+
+describe("defaultWorktreeRoots", () => {
+  it("uses $PASEO_HOME/worktrees, or ~/.paseo/worktrees, and ignores a root that holds the home directory", () => {
+    expect(defaultWorktreeRoots("/home/user", undefined)).toEqual(["/home/user/.paseo/worktrees"]);
+    expect(defaultWorktreeRoots("/home/user", "")).toEqual(["/home/user/.paseo/worktrees"]);
+    expect(defaultWorktreeRoots("/home/user", "/var/paseo")).toEqual(["/var/paseo/worktrees"]);
+    expect(defaultWorktreeRoots("/home/user", "relative/paseo")).toEqual(["/home/user/.paseo/worktrees"]);
+    expect(defaultWorktreeRoots("/home/user", "/")).toEqual(["/worktrees"]);
+    expect(defaultWorktreeRoots("/srv/paseo/worktrees/box", "/srv/paseo")).toEqual([]);
+    expect(defaultWorktreeRoots("/srv/paseo/worktrees", "/srv/paseo")).toEqual([]);
+    expect(defaultWorktreeRoots("/srv/paseo/worktrees/box", "/srv/paseo/other/..")).toEqual([]);
+  });
+
+  it("expands a leading ~ and trims PASEO_HOME, as the Paseo daemon and the daemon config read do", () => {
+    expect(defaultWorktreeRoots("/home/user", "~/paseo-dev")).toEqual(["/home/user/paseo-dev/worktrees"]);
+    expect(defaultWorktreeRoots("/home/user", "~")).toEqual(["/home/user/worktrees"]);
+    expect(defaultWorktreeRoots("/home/user", " /var/paseo ")).toEqual(["/var/paseo/worktrees"]);
+    for (const value of [undefined, "", "/var/paseo", "~", "~/paseo-dev", "relative/paseo", " /var/paseo/ "]) {
+      expect(defaultWorktreeRoots("/home/user", value)).toEqual([join(daemonHome({ PASEO_HOME: value }, "/home/user"), "worktrees")]);
+    }
   });
 });
 
@@ -235,6 +250,97 @@ describe("handleReadImage", () => {
       const file = join(elsewhere, "proof.png");
       writeFileSync(file, PNG_BYTES);
       expect((await read(file, cwd, [temp], "agent-1", undefined, [elsewhere])).status).toBe("ok");
+    });
+  });
+
+  it("refuses dot-dot escapes, look-alike siblings and links out of the worktree root, judging links by their real path", async () => {
+    await withSandbox(async ({ root, cwd, temp, elsewhere }) => {
+      const worktrees = join(root, "worktrees");
+      const tree = join(worktrees, "0e5bdwyx", "filthy-robin");
+      mkdirSync(tree, { recursive: true });
+      mkdirSync(join(root, "worktrees-old"));
+      writeFileSync(join(elsewhere, "secret.png"), PNG_BYTES);
+      writeFileSync(join(root, "worktrees-old", "shot.png"), PNG_BYTES);
+      writeFileSync(join(tree, "proof.png"), PNG_BYTES);
+      symlinkSync(join(elsewhere, "secret.png"), join(tree, "innocent.png"));
+      symlinkSync(elsewhere, join(tree, "linked-dir"));
+      symlinkSync(join(tree, "proof.png"), join(cwd, "proof-link.png"));
+      const at = (filePath: string, agentId: string | null = "agent-1", cwdOf: string | null = cwd) =>
+        read(filePath, cwdOf, [temp], agentId, undefined, [worktrees]);
+
+      expect(await at(`${worktrees}/../elsewhere/secret.png`)).toEqual({ status: "outside" });
+      expect(await at(`${tree}/../../../elsewhere/secret.png`)).toEqual({ status: "outside" });
+      expect(await at(join(root, "worktrees-old", "shot.png"))).toEqual({ status: "outside" });
+      expect(await at(join(tree, "innocent.png"))).toEqual({ status: "outside" });
+      expect(await at(join(tree, "linked-dir", "secret.png"))).toEqual({ status: "outside" });
+      // Outside every root, existing or not, still answers the same.
+      expect(await at(join(elsewhere, "secret.png"))).toEqual({ status: "outside" });
+      expect(await at(join(elsewhere, "missing.png"))).toEqual({ status: "outside" });
+      // A link from the cwd into another worktree is judged by where it lands, which is allowed.
+      expect((await at("proof-link.png")).status).toBe("ok");
+      expect((await at(join(tree, "proof.png"))).status).toBe("ok");
+      // Without an Agent the daemon knows, the worktree root is not read either.
+      expect(await at(join(tree, "proof.png"), null)).toEqual({ status: "unavailable" });
+      expect(await at(join(tree, "proof.png"), "no-such-agent", null)).toEqual({ status: "unavailable" });
+    });
+  });
+
+  it("reads under a worktree root that is a link by its real path", async () => {
+    await withSandbox(async ({ root, cwd, temp, elsewhere }) => {
+      const real = join(elsewhere, "fast-disk");
+      mkdirSync(join(real, "0e5bdwyx", "filthy-robin"), { recursive: true });
+      writeFileSync(join(real, "0e5bdwyx", "filthy-robin", "proof.png"), PNG_BYTES);
+      writeFileSync(join(elsewhere, "secret.png"), PNG_BYTES);
+      const worktrees = join(root, "worktrees");
+      symlinkSync(real, worktrees);
+      const at = (filePath: string) => read(filePath, cwd, [temp], "agent-1", undefined, [worktrees]);
+      expect((await at(join(worktrees, "0e5bdwyx", "filthy-robin", "proof.png"))).status).toBe("ok");
+      expect((await at(join(real, "0e5bdwyx", "filthy-robin", "proof.png"))).status).toBe("ok");
+      // The kernel resolves `worktrees/..` through the link to `elsewhere`, where secret.png is.
+      expect(await at(`${worktrees}/../secret.png`)).toEqual({ status: "outside" });
+      expect(await at(join(elsewhere, "secret.png"))).toEqual({ status: "outside" });
+    });
+  });
+
+  it("applies the same file checks in the worktree root: no FIFOs, directories, non-images or files over 3 MB", async () => {
+    await withSandbox(async ({ root, cwd, temp }) => {
+      const worktrees = join(root, "worktrees");
+      const tree = join(worktrees, "0e5bdwyx", "filthy-robin");
+      mkdirSync(tree, { recursive: true });
+      execFileSync("mkfifo", [join(tree, "pipe.png")]);
+      writeFileSync(join(tree, ".env.png"), "TOKEN=not-an-image\n");
+      writeFileSync(join(tree, "huge.png"), Buffer.alloc(MAX_READ_IMAGE_BYTES + 1, 0));
+      const at = (filePath: string, io?: ReadImageIo) => read(filePath, cwd, [temp], "agent-1", io, [worktrees]);
+      expect(await at(join(tree, "pipe.png"))).toEqual({ status: "not-found" });
+      expect(await at(tree)).toEqual({ status: "not-found" });
+      expect(await at(join(tree, "missing.png"))).toEqual({ status: "not-found" });
+      const notImage = trackedIo();
+      expect(await at(join(tree, ".env.png"), notImage.io)).toEqual({ status: "not-image" });
+      expect(notImage.bytesRead()).toBeLessThanOrEqual(IMAGE_HEADER_BYTES);
+      const huge = trackedIo();
+      expect(await at(join(tree, "huge.png"), huge.io)).toEqual({ status: "too-large" });
+      expect(huge.bytesRead()).toBe(0);
+    });
+  });
+
+  it("reads under $PASEO_HOME/worktrees by default, and nowhere else in the Paseo home", async () => {
+    await withSandbox(async ({ root, cwd, temp }) => {
+      const paseoHome = join(root, "paseo-home");
+      const tree = join(paseoHome, "worktrees", "0e5bdwyx", "filthy-robin");
+      mkdirSync(tree, { recursive: true });
+      writeFileSync(join(tree, "proof.png"), PNG_BYTES);
+      writeFileSync(join(paseoHome, "leak.png"), PNG_BYTES);
+      const saved = process.env.PASEO_HOME;
+      process.env.PASEO_HOME = paseoHome;
+      try {
+        const call = (filePath: string) => handleReadImage({ filePath, agentId: "agent-1" }, contextWithCwd(cwd), [temp]);
+        expect((await call(join(tree, "proof.png"))).status).toBe("ok");
+        expect(await call(join(paseoHome, "leak.png"))).toEqual({ status: "outside" });
+        expect(await call(`${paseoHome}/worktrees/../leak.png`)).toEqual({ status: "outside" });
+      } finally {
+        if (saved === undefined) delete process.env.PASEO_HOME;
+        else process.env.PASEO_HOME = saved;
+      }
     });
   });
 

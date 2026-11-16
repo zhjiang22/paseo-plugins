@@ -25,7 +25,7 @@ export const readImageRpc = defineRpc({
     agentId: z.string().min(1).max(256),
   }),
   output: z.object({
-    // outside = 不在 Agent 工作目录、Paseo 工作树或临时目录内，不读取。
+    // 本地补丁：outside = 不在 Agent 工作目录、Paseo 工作树或临时目录内，不读取。
     status: z.enum(["ok", "not-found", "not-image", "too-large", "unavailable", "outside"]),
     data: z.string().optional(),
     mimeType: z.string().optional(),

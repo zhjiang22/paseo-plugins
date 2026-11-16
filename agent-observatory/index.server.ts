@@ -9,7 +9,7 @@ import { getAnalytics } from "./shared/analytics";
 import { createAnalyticsEnrichment } from "./server/analytics-enrichment";
 import { registerInsights } from "./server/insights";
 import { isInsightAgent } from "./server/insight-runner-lifecycle";
-import type { PaseoApi } from "./server/paseo-types";
+import type { AgentTimelineItem, PaseoApi } from "./server/paseo-types";
 import { registerHistory } from "./server/history";
 import { registerResults } from "./server/results";
 import { registerPreferences } from "./server/preferences";
@@ -35,6 +35,7 @@ import { resolvePaseoHome } from "./server/paseo-home";
 import { createInterruptGrace } from "./server/interrupts";
 import { registerQuota } from "./server/quota";
 import { lifecycleHub, turnRead } from "./server/lifecycle-hub";
+import { hookTimeline } from "./server/turn-timeline";
 import { DeviceZone } from "./server/device-zone";
 import { scheduleInsightSweeps } from "./server/grok-runner";
 import { registerProfiles } from "./server/profiles";
@@ -173,14 +174,16 @@ export default function contribute(host: PluginServerContext) {
   const removers = [
     server.on("agent.created", ({ agent }, { paseo }) => { live(agent); observeWork(paseo, agent, () => telemetry.record({ type: "created", agent })); }),
     server.on("agent.turn_started", ({ agent, turnId }, { paseo }) => { live(agent); attention.turnStarted(agent.id); schedules.nudge(agent.id); observeWork(paseo, agent, () => telemetry.record({ type: "turn_started", agent, turnId })); }),
-    server.on("agent.turn_ended", ({ agent, turnId, outcome, timeline }, { paseo }) => {
+    server.on("agent.turn_ended", (ended, { paseo }) => {
+      // The conversation the hub read for this turn (Paseo 0.16 no longer types the hook's own `timeline`).
+      const { agent, turnId, outcome } = ended, timeline = hookTimeline<TimelineItem>(ended);
       // A message queued for the end of this turn goes out shortly, before the ledger's next poll.
       deferred.notify(agent.id, paseo);
       // Decided at once: the grace after 拒绝并中断 must not run out while the insight-label lookup below is slow.
       const kind = outcomeOf(agent.id, turnId, outcome);
       live(agent); attention.turnEnded(agent.id); schedules.nudge(agent.id);
       observeWork(paseo, agent, async () => {
-        const items = timeline as unknown as TimelineItem[];
+        const items = timeline;
         // Only whether the final reply asks the user, and why the turn stopped (a limit, nothing, mid-way), are kept; never text.
         // The one sentence a quick reply would answer stays in memory for the popover, which shows it above the buttons.
         const stop = turnStop({ outcome: kind, error: outcome.kind === "failed" ? outcome.error.message : null, items, now: Date.now(), hostZone: zones.current() ?? undefined });
@@ -214,7 +217,7 @@ export default function contribute(host: PluginServerContext) {
     statsRemovers.push(
       server.on("agent.turn_started", ({ agent }, { paseo }) => observeWork(paseo, agent, () => stats.record({ type: "turn_started", agentId: agent.id }))),
       server.on("agent.turn_ended", (event, { paseo }) => {
-        const { agent, turnId, outcome, timeline } = event, kind = outcomeOf(agent.id, turnId, outcome);
+        const { agent, turnId, outcome } = event, timeline = hookTimeline<AgentTimelineItem>(event), kind = outcomeOf(agent.id, turnId, outcome);
         // 0.13: the hub read the end of the conversation (lifecycle-hub.ts); rows keep their keys from read to read.
         const read = turnRead(event);
         observeWork(paseo, agent, () => stats.record({ type: "turn_ended", agentId: agent.id, outcome: kind, timeline,

@@ -14,6 +14,7 @@ import { telemetryDirectory } from "./telemetry";
 import { contentRevision } from "./revision";
 import { buildRecapPrompt, endsWithReply, isCompacting, parseRecapOutput, recapOutputSchema, RECAP_SYSTEM_PROMPT, type ParsedRecap } from "./recap-prompt";
 import { RecapStorage, retainRecaps, type StoredRecap } from "./recap-storage";
+import { hookTimeline } from "./turn-timeline";
 
 /** Quiet time after a turn ends before its recap is written: a reply or a new turn in it cancels the recap. */
 export const RECAP_QUIET_MS = 10_000;
@@ -413,7 +414,7 @@ export function registerRecaps(server: PluginServerContext, options: RecapManage
   server.handle(getRecapStatus, (_input, { paseo }) => manager.status(paseo));
   const removers = [
     server.on("agent.turn_started", ({ agent }) => { manager.turnStarted(agent.id); }),
-    server.on("agent.turn_ended", ({ agent, outcome, timeline }, { paseo }) => { manager.turnEnded(paseo, agent, outcome.kind, timeline); }),
+    server.on("agent.turn_ended", (event, { paseo }) => { manager.turnEnded(paseo, event.agent, event.outcome.kind, hookTimeline<AgentTimelineItem>(event)); }),
     server.on("agent.permission_requested", ({ agent, request }) => { manager.permissionRequested(agent.id, request.id); }),
     server.on("agent.permission_resolved", ({ agent, requestId }) => { manager.permissionResolved(agent.id, requestId); }),
     server.on("agent.archived", ({ agent }) => { manager.archived(agent.id); }),

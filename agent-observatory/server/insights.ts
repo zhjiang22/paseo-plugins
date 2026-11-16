@@ -15,7 +15,7 @@ import { fitInsightReport, InsightStorage, retainInsightJobs, summarizeInsight, 
 import { AUTO_RUNNER_LABEL, BUILTIN_INSIGHT_RUNNER, InsightRunnerRegistry, NO_RUNNER_ERROR, cleanupInsightAgents, grokPlan, runPaseoStructured } from "./insight-runner";
 import { isInsightAgent, isKnownInsightAgent, markInsightAgent } from "./insight-runner-lifecycle";
 import { turnRead } from "./lifecycle-hub";
-import { isTurnStart, turnTimeline } from "./turn-timeline";
+import { hookTimeline, isTurnStart, turnTimeline } from "./turn-timeline";
 import { getInsightOverview, getInsightSuggestions, startInsightSuggestions, cancelInsightSuggestions, setActionFeedback,
   suggestionReportSchema, type OverviewDays, type SuggestionJob, type ActionFeedback } from "../shared/insight-overview";
 import { buildInsightOverview, getSuggestionTiming, summarizeSuggestion } from "./insight-overview";
@@ -510,7 +510,7 @@ export function registerInsights(server: PluginServerContext, options: { zone?: 
   const removers = [server.on("agent.turn_started", ({ agent }, { paseo }) => observe(paseo, agent, () => manager.turnStarted(agent.id))),
     server.on("agent.turn_ended", (event, { paseo }) => observe(paseo, event.agent, () => {
       manager.turnEnded(event.agent.id); if (event.outcome.kind === "canceled") return;
-      const { users, tools } = conversationCounts(event.timeline), read = turnRead(event);
+      const { users, tools } = conversationCounts(hookTimeline(event)), read = turnRead(event);
       return manager.scheduleAuto(paseo, event.agent.id, users, tools, undefined,
         read && !read.complete ? (minTurns, minTools) => deeperCounts(paseo, event.agent.id, minTurns, minTools) : undefined);
     }))];

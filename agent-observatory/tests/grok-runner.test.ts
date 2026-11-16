@@ -188,8 +188,8 @@ test("the startup sweep clears stale temp directories and Grok sessions of finis
     const now = Date.parse("2026-11-01T12:00:00Z"), hours = (count: number) => new Date(now - count * 3_600_000);
     const outside = join(f.root, "outside"); await mkdir(outside); await writeFile(join(outside, "keep.txt"), "keep");
     const temp = async (name: string, age: number) => { const path = join(f.tmp, name); await mkdir(path); await writeFile(join(path, "trajectory.txt"), "x".repeat(100)); await utimes(path, hours(age), hours(age)); return path; };
-    const group = async (cwd: string, age = 0) => { const path = join(f.sessions, encodeURIComponent(cwd)); await mkdir(join(path, "019a-session"), { recursive: true });
-      await writeFile(join(path, "019a-session", "updates.jsonl"), "y".repeat(400)); await utimes(path, hours(age), hours(age)); return path; };
+    const group = async (cwd: string, age = 0) => { const path = join(f.sessions, encodeURIComponent(cwd)), session = join(path, "019a-session"); await mkdir(session, { recursive: true });
+      await writeFile(join(session, "updates.jsonl"), "y".repeat(400)); await utimes(session, hours(age), hours(age)); await utimes(path, hours(age), hours(age)); return path; };
     const stale = await temp("paseo-insight-Stale1", 2), live = await temp("paseo-insight-Live01", 0.1), lookAlike = await temp("paseo-insights-Old001", 5);
     await symlink(outside, join(f.tmp, "paseo-insight-Link01"));
     await writeFile(join(f.tmp, "paseo-insight-File01"), "not a directory");
@@ -197,6 +197,7 @@ test("the startup sweep clears stale temp directories and Grok sessions of finis
     await group(join(f.tmp, "paseo-insight-Stale1", "nested"), 3);
     const linkedGroup = join(f.sessions, encodeURIComponent(join(f.tmp, "paseo-insight-Link02"))); await symlink(outside, linkedGroup);
     const withLink = await group(join(f.tmp, "paseo-insight-Gone02"), 2); await symlink(outside, join(withLink, "019a-session", "outside"));
+    await utimes(join(withLink, "019a-session"), hours(2), hours(2));
 
     const swept = await cleanupInsightLeftovers({ grokHome: f.grokHome, tmp: f.tmp, now: () => now });
     assert.deepEqual([swept.directories, swept.sessions], [1, 3]);

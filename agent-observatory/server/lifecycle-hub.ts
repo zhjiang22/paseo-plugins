@@ -1,5 +1,5 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { turnTimeline, type TurnTimeline, type TurnTimelinePaseo } from "./turn-timeline";
+import { hookTimeline, turnTimeline, type TurnTimeline, type TurnTimelinePaseo } from "./turn-timeline";
 
 type On = PluginServerContext["on"];
 type Name = Parameters<On>[0];
@@ -19,8 +19,9 @@ export function turnRead(input: object): TurnRead | null { return reads.get(inpu
  * single host handler per event and runs theirs in registration order on that one copy, one after another, each failure
  * on its own, as the host does. The input is shared, so handlers treat it as read-only (the timeline is typed readonly).
  *
- * Paseo 0.13 sends `agent.turn_ended` with `timeline: []` (getpaseo/paseo#7477). The hub then reads the end of the
- * conversation once, back to the latest user message (`turnTimeline`), and hands every handler that window as `timeline`;
+ * Paseo 0.13 sends `agent.turn_ended` with `timeline: []` (getpaseo/paseo#7477), and 0.16 drops the field from the SDK
+ * type (sent as `[]` until 2027-05-31, then omitted). The hub then reads the end of the conversation once, back to the
+ * latest user message (`turnTimeline`), and hands every handler that window as `timeline` (read it with `hookTimeline`);
  * `turnRead(input)` tells how far it reaches. While such a turn end is being read and handled, the Agent's later events
  * wait in order behind it, so a turn that starts right away (a queued message) is never handled before the end of the
  * turn before it. Without a read (0.12, or no Agent) events run at once, as before.
@@ -77,9 +78,9 @@ function agentOf(input: unknown): string | null {
   return typeof agent?.id === "string" && agent.id ? agent.id : null;
 }
 
+/** `[]` (Paseo 0.13–0.16) or no field at all (the 0.16 SDK type; the daemon stops sending `[]` after 2027-05-31). */
 function emptyTimeline(input: unknown): boolean {
-  const timeline = (input as { timeline?: unknown } | null)?.timeline;
-  return Array.isArray(timeline) && timeline.length === 0;
+  return hookTimeline(input).length === 0;
 }
 
 /** Short enough that a few turn ends queued behind each other stay inside the host's 30 s hook timeout. */

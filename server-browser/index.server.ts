@@ -19,7 +19,9 @@ export default function contribute(server:PluginServerContext,deps:{manager?:Bro
  let restoreTask:Promise<void>|undefined;
  // An RPC error reaches the client and the daemon log as its message. Playwright names the whole page address there (query,
  // fragment and redirect target too), so every message loses its page addresses, as the saved state does.
- const handle:PluginServerContext['handle']=(contract,handler)=>server.handle(contract,async(input,context)=>{try{return await handler(input,context);}catch(error){throw new Error(withoutAddresses(error));}});
+ // Paseo 0.16 overloads `handle` (RPCs and subscriptions); this wrapper only ever registers RPCs, typed as the RPC overload.
+ type Handle=PluginServerContext['handle'];
+ const handle=((contract:Parameters<Handle>[0],handler:Parameters<Handle>[1])=>server.handle(contract,async(input,context)=>{try{return await handler(input,context);}catch(error){throw new Error(withoutAddresses(error));}})) as Handle;
  // An archived workspace that comes back (restored, or its directory reopened) gets its browser back.
  directory.onRestore(workspaceId=>manager.unretire(workspaceId));
  // The Agent bridge accepts file uploads only from the workspace's own directory, as the daemon reports it; the name labels leftovers.

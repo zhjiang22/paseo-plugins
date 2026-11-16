@@ -30,7 +30,9 @@ export default function contribute(server: PluginServerContext) {
   // no daemon API until a call brings one, so every handler hands it over and delivery resumes with the next board or
   // picker read.
   const deferred = new DeferredSend({ file: join(daemonHome(), "plugin-data", "project-notes", "deferred-send.json"), capabilities: readSendCapabilities });
-  const handle: PluginServerContext["handle"] = (contract, handler) => server.handle(contract, (input, context) => { deferred.use(context?.paseo); return handler(input, context); });
+  // Paseo 0.16 overloads `handle` (RPCs and subscriptions); this wrapper only ever registers RPCs, typed as the RPC overload.
+  type Handle = PluginServerContext["handle"];
+  const handle = ((contract: Parameters<Handle>[0], handler: Parameters<Handle>[1]) => server.handle(contract, (input, context) => { deferred.use(context?.paseo); return handler(input, context); })) as Handle;
   // 一键发送: the list is a host setting (every app follows a change at once); the server only reads the note to send it.
   if (typeof server.registerSettings === "function") server.registerSettings(quickSettings);
   const quick = new QuickPrompts(store, deferred, projects);

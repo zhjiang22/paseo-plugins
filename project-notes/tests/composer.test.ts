@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PaseoApi } from "@getpaseo/client";
+// The client type the plugin hands these helpers (PluginPaseoApi from Paseo 0.16, PaseoApi before).
+import type { PaseoApi } from "../client/paseo-types";
 import { interpolateTemplate, quickNoteFields, templateVariables, composerAttachmentsRpc } from "../shared/composer";
 import { checkPromptSend } from "../client/composer-send";
 import { BoardStore } from "../server/store";

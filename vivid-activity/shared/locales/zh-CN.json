@@ -414,7 +414,7 @@
     "image": "图片",
     "loadingImage": "正在加载图片…",
     "theImageIsLargerThan": "图片超过 3 MB，不显示预览。",
-    "theImageIsOutsideThe": "图片不在 Agent 工作目录或临时目录内，不显示预览。",
+    "theImageIsOutsideThe": "图片不在 Agent 工作目录、Paseo 工作树或临时目录内，不显示预览。",
     "copyOutput": "复制输出",
     "errorOutput": "错误输出",
     "copyCommand": "复制命令",

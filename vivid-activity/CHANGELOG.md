@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Image previews also read files under the Paseo worktree root (`$PASEO_HOME/worktrees`, or `~/.paseo/worktrees`). A render written in one worktree shows in a chat whose folder is another. A worktree root that contains the home directory is ignored. Every other path is still refused, and a link is still judged by its real path.
+
 ## 0.11.0 (2026-11-02)
 
 - **Thought tail-follow**: a new "Thinking rows" section. With "Follow the output live" on, an expanded thinking

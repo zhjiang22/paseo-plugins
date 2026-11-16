@@ -5,7 +5,8 @@ vi.mock("../server/i18n-server", () => ({ createLocaleService: () => ({ dispose(
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PaseoApi } from "@getpaseo/client";
+// The client type the plugin hands these helpers (PluginPaseoApi from Paseo 0.16, PaseoApi before).
+import type { PaseoApi } from "../client/paseo-types";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import contribute from "../index.server";
 import { notesDeferred } from "../shared/composer";

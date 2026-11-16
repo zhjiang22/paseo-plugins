@@ -83,7 +83,7 @@ test("Paseo 0.13: an empty turn_ended timeline is read once and every handler ge
   const conversation = [{ type: "user_message", text: "old" }, { type: "assistant_message", text: "old reply" }, { type: "user_message", text: "go" }, { type: "assistant_message", text: "done" }];
   const { paseo, calls } = pagedPaseo(conversation);
   const seen: unknown[] = [], reads: unknown[] = [];
-  for (let index = 0; index < 3; index++) hub.server.on("agent.turn_ended", (input: { timeline: unknown }) => { seen.push(input.timeline); reads.push(turnRead(input as object)); });
+  for (let index = 0; index < 3; index++) hub.server.on("agent.turn_ended", (input: object) => { seen.push((input as { timeline?: unknown }).timeline); reads.push(turnRead(input)); });
   const handler = [...host.handlers.get("agent.turn_ended")!][0]!;
   await handler({ agent: { id: "a" }, turnId: "t", outcome: { kind: "completed" }, timeline: [] }, { paseo });
   assert.equal(calls.length, 1, "one read for all handlers");
@@ -94,6 +94,18 @@ test("Paseo 0.13: an empty turn_ended timeline is read once and every handler ge
   await handler({ agent: { id: "a" }, turnId: "t2", outcome: { kind: "completed" }, timeline: conversation }, { paseo });
   assert.equal(calls.length, 1);
   assert.deepEqual(reads, [null, null, null]);
+});
+
+test("Paseo 0.16+: a turn_ended without a timeline field (gone from the SDK type; sent as [] until 2027-05-31) is read like an empty one", async () => {
+  const host = fakeHost(), hub = lifecycleHub(host.server);
+  const conversation = [{ type: "user_message", text: "go" }, { type: "assistant_message", text: "done" }];
+  const { paseo, calls } = pagedPaseo(conversation);
+  const seen: unknown[] = [];
+  hub.server.on("agent.turn_ended", (input: object) => { seen.push((input as { timeline?: unknown }).timeline); });
+  const handler = [...host.handlers.get("agent.turn_ended")!][0]!;
+  await handler({ agent: { id: "a" }, turnId: "t", outcome: { kind: "completed" } }, { paseo });
+  assert.equal(calls.length, 1, "the hub read the turn");
+  assert.deepEqual(seen, [conversation]);
 });
 
 test("Paseo 0.13: the Agent's later events wait for its turn-end read; other Agents do not", async () => {

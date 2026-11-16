@@ -2,7 +2,8 @@
  * The conversation as it stood when a turn ended (`agent.turn_ended`).
  *
  * Paseo 0.12 and older put the whole conversation in the hook's `timeline`; from 0.13 it is always `[]`
- * (getpaseo/paseo#7477) and plugins read what they need. `turnTimeline` keeps the hook's items when there are any.
+ * (getpaseo/paseo#7477), 0.16 drops it from the SDK type, and plugins read what they need (`hookTimeline` reads the field
+ * safely). `turnTimeline` keeps the hook's items when there are any.
  * Otherwise it reads the agent's projected timeline from the end backwards, `pageSize` rows a page, until
  * `enough(items)` holds (by default: the window reaches back to the start of the latest turn, see `isTurnStart`), the
  * start of the conversation, `maxRows`, or the deadline. It never throws: a failed or slow read keeps the newer pages
@@ -54,13 +55,23 @@ export function hasUserMessage(items: readonly { type: string }[]): boolean {
   return items.some((item) => item.type === "user_message");
 }
 
+/**
+ * The items `agent.turn_ended` itself brought. Paseo 0.12 and older sent the whole conversation and 0.13–0.16 send `[]`;
+ * Paseo 0.16 dropped the field from the SDK type (getpaseo/paseo#9573) and keeps sending `[]` only until 2027-05-31
+ * (COMPAT(pluginTurnTimeline)). A missing or malformed field reads as `[]`, so `turnTimeline` reads the turn back.
+ */
+export function hookTimeline<Item>(event: unknown): readonly Item[] {
+  const timeline = (event as { timeline?: unknown } | null | undefined)?.timeline;
+  return Array.isArray(timeline) ? (timeline as Item[]) : [];
+}
+
 export async function turnTimeline<Item extends { type: string }>(
   paseo: TurnTimelinePaseo | null | undefined,
   agentId: string,
-  hookItems: readonly Item[],
+  hookItems: readonly Item[] | null | undefined,
   options: TurnTimelineOptions<Item> = {},
 ): Promise<TurnTimeline<Item>> {
-  if (hookItems.length) return { items: [...hookItems], positions: hookItems.map((_, index) => index), complete: true, source: "hook" };
+  if (hookItems?.length) return { items: [...hookItems], positions: hookItems.map((_, index) => index), complete: true, source: "hook" };
   const enough = options.enough ?? hasTurnStart;
   const maxRows = Math.max(1, options.maxRows ?? MAX_ROWS);
   const pageSize = Math.max(1, Math.min(options.pageSize ?? PAGE_ROWS, maxRows));

@@ -1,6 +1,6 @@
 {
   "name": "vivid-activity",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Vivid Activity: color-coded, folding, timed activity rows for Paseo agent chats (based on Colorful Agent Activity by Matt Cowger)",
   "license": "MIT",
   "private": true,

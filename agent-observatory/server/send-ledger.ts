@@ -58,7 +58,9 @@ export function answeringGuard(turns: ObservedTurns) {
  * or a hook brings one, so the first call of any kind (the sidebar badge polls) lets queued messages go out again.
  */
 export function handingOver(host: PluginServerContext, ledger: { use(paseo: PaseoApi | null | undefined): void }): PluginServerContext {
-  const handle: PluginServerContext["handle"] = (contract, handler) => host.handle(contract, (input, call) => { ledger.use(call?.paseo); return handler(input, call); });
+  // Paseo 0.16 overloads `handle` (RPCs and subscriptions); this wrapper only ever registers RPCs, typed as the RPC overload.
+  type Handle = PluginServerContext["handle"];
+  const handle = ((contract: Parameters<Handle>[0], handler: Parameters<Handle>[1]) => host.handle(contract, (input, call) => { ledger.use(call?.paseo); return handler(input, call); })) as Handle;
   return new Proxy(host, { get: (target, property) => {
     if (property === "handle") return handle;
     const value = Reflect.get(target, property, target);

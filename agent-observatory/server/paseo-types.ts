@@ -1,4 +1,4 @@
-import type { PluginHandlerContext, PluginLifecycleEvents } from "@getpaseo/plugin/server";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 
 /**
  * Daemon API types, derived from the plugin SDK's own contracts instead of imported from `@getpaseo/client` /
@@ -16,6 +16,7 @@ export type PaseoAgentRefetchResult = NonNullable<Awaited<ReturnType<PaseoAgentH
 export type PaseoAgentRunResult = Awaited<ReturnType<PaseoAgentHandle["waitForFinish"]>>;
 export type PaseoAgentTimelineRefetchOptions = NonNullable<Parameters<PaseoAgentHandle["timeline"]["refetch"]>[0]>;
 export type PaseoProviderSnapshotResult = Awaited<ReturnType<PaseoApi["providers"]["snapshot"]>>;
-export type AgentTimelineItem = PluginLifecycleEvents["agent.turn_ended"]["timeline"][number];
+/** A projected timeline row's item. Taken from `timeline.refetch`: Paseo 0.16 dropped `agent.turn_ended`'s `timeline` from the SDK type. */
+export type AgentTimelineItem = Awaited<ReturnType<PaseoAgentHandle["timeline"]["refetch"]>>["entries"][number]["item"];
 export type ToolCallDetail = Extract<AgentTimelineItem, { type: "tool_call" }>["detail"];
 export type AgentMode = PaseoAgent["availableModes"][number];

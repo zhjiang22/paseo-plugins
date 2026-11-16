@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hasUserMessage, turnTimeline, type TurnTimelinePaseo } from "../server/turn-timeline";
+import { hasUserMessage, hookTimeline, turnTimeline, type TurnTimelinePaseo } from "../server/turn-timeline";
 
 type Item = { type: string; text?: string };
 type Request = { direction: "tail" | "before"; cursor?: { epoch: string; seq: number }; limit: number; projection: "projected" };
@@ -32,6 +32,22 @@ test("the hook's own timeline (Paseo 0.12) is used as it is, without a read", as
   const read = await turnTimeline(paseo, "a", hook);
   assert.deepEqual(read, { items: hook, positions: [0, 1], complete: true, source: "hook" });
   assert.equal(requests.length, 0);
+});
+
+test("a hook without `timeline` (the field leaves the 0.16 SDK type; the daemon stops sending it after 2027-05-31) reads like an empty one", async () => {
+  assert.deepEqual(hookTimeline({ agent: { id: "a" }, turnId: "t", outcome: { kind: "completed" } }), []);
+  assert.deepEqual(hookTimeline({ timeline: "not an array" }), []);
+  assert.deepEqual(hookTimeline(null), []);
+  const hook = [user("whole")];
+  assert.equal(hookTimeline({ timeline: hook }), hook);
+  const items = [user("ask"), tool(1), reply("done")];
+  const { paseo, requests } = fakePaseo(items);
+  const read = await turnTimeline<Item>(paseo, "a", hookTimeline<Item>({ agent: { id: "a" } }));
+  assert.equal(read.source, "read");
+  assert.deepEqual(read.items, items);
+  assert.equal(requests.length, 1);
+  const missing = await turnTimeline<Item>(paseo, "a", undefined);
+  assert.deepEqual(missing.items, items, "undefined hook items read too");
 });
 
 test("an empty hook timeline (0.13) reads the projected tail back to the latest user message", async () => {

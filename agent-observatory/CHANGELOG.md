@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 2.19.0 · 2026-11-16
+
+**Paseo 0.16 compatibility (0.11.1 and later still supported)**
+- Paseo 0.16 removed `timeline` from the turn-end hook payload type; the daemon keeps sending `[]` until 2027-05-31 and then omits it. The observatory now reads the field through the shared kit's `hookTimeline()`: a missing or malformed field reads as empty and the turn is read back from the agent's timeline as before, so reply detection, statistics and AI reviews keep working once Paseo stops sending it.
+- The send-ledger RPC handler is typed for 0.16's overloaded `handle` (types only, same behaviour).
+- Verified on isolated Paseo 0.16.0 and 0.15.4 daemons with scripted turns, the 0.16 web UI (no page or plugin errors), and type checks against the 0.15.4 and 0.16.0 SDKs.
 
 **实时流速 shows whole-turn harnesses too**
 - The live-rate card only counted sessions whose calls carry response times — CodeBuddy, Grok, Gemini, the Cline family, Hermes and dsh were invisible there while their Agents worked, because their rows log only an end time. Their sessions now appear among the live rows with the ten-minute output, the call count, the last activity and a token-arrival rate labelled 到达/s (the trailing two minutes of completed steps — never a single step read as an instant burst). The card's now-rate counts their output as it arrives in its trailing minute; the chart's timed series, axis and peak stay timing-true, with whole-turn steps drawn as dimmed arrival pulses behind the bars (clipped at the axis; the picked minute shows their arrival rate). The session list's tok/s pills stay timing-only.

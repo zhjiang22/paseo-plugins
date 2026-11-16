@@ -7,7 +7,8 @@ import type { TelemetryStore } from "../server/telemetry";
 import type { TelemetryEvent } from "../shared/telemetry";
 
 const at = new Date().toISOString();
-const hookAgent: PluginHookAgent = { id: "agent", workspaceId: "workspace", parentAgentId: null, provider: "codex", cwd: "/repo/checkout", title: "Worker" };
+// Paseo 0.16 adds `background` and `metadata` to the hook agent; older SDK types do not know them, so the fixture asserts.
+const hookAgent = { id: "agent", workspaceId: "workspace", parentAgentId: null, provider: "codex", cwd: "/repo/checkout", title: "Worker", background: false, metadata: {} } as PluginHookAgent;
 const ended: TelemetryEvent = { id: "end-event", agentId: "agent", agentTitle: "Worker", at, type: "turn_completed", label: "Turn completed" };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const placement = { projectKey: "repository", projectName: "Repository project", workspaceName: "Feature checkout",

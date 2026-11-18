@@ -9,7 +9,7 @@ export type AgentDirectoryUpdate =
   | { kind: "upsert"; agent: AgentSource; project?: AgentProjectPlacement | null }
   | { kind: "remove"; agentId: string };
 export interface AgentDirectoryListOptions {
-  filter: { includeArchived: boolean; requiresAttention?: boolean };
+  filter: { includeArchived: boolean; requiresAttention?: boolean; includeBackground?: true };
   sort: Array<{ key: "updated_at"; direction: "desc" }>;
   page: { limit: number; cursor?: string };
   timeout: number;
@@ -36,6 +36,11 @@ export interface ObservatoryState {
 }
 interface DirectoryOptions {
   includeArchived: boolean;
+  /**
+   * Agents in background workspaces too (「显示后台工作区里的 Agent」). Asked for only when on: Paseo's SDK refuses `includeBackground` on a
+   * host older than 0.12, which has no background workspaces.
+   */
+  backgroundWorkspaces?: boolean;
   maxAgents?: number;
   pageSize?: number;
   /** Complete reads while no live observation is available. */
@@ -59,6 +64,8 @@ const OBSERVE_RETRY_DELAYS = [2_000, 5_000, 15_000, 30_000, 60_000];
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : t("sharedDirectoryStore.m001");
 }
+/** A Paseo 0.16 background agent reports to the Agent that made it, never to the user: never listed, whatever the scope. */
+const helper = (agent: AgentSource) => agent.background === true;
 
 function normalizeDirectoryAgent(source: AgentSource, project: AgentProjectPlacement | null | undefined, previous?: AgentRecord): AgentRecord {
   const sameWorkspace = previous !== undefined && (source.workspaceId ?? null) === previous.workspaceId;
@@ -91,6 +98,7 @@ export function createAgentDirectory(api: AgentDirectoryApi, options: DirectoryO
   const retryDelays = options.retryDelaysMs?.length ? options.retryDelaysMs : OBSERVE_RETRY_DELAYS;
   const now = options.now ?? Date.now;
   const notifyDelay = Math.max(0, options.notifyDelayMs ?? 200);
+  const scope = { includeArchived: options.includeArchived, ...(options.backgroundWorkspaces ? { includeBackground: true as const } : {}) };
   let state: ObservatoryState = { agents: [], loading: true, error: null, lastSyncedAt: null, isRefreshing: false, truncated: false, live: false };
   let records = new Map<string, AgentRecord>();
   // Live updates mark the published list stale; it is rebuilt when read (getSnapshot), at most once per batch. Updates
@@ -186,7 +194,7 @@ export function createAgentDirectory(api: AgentDirectoryApi, options: DirectoryO
     if (!api.observe || disposed || !active || !started || observation) return Promise.resolve();
     if (observing) return observing;
     const current = ++observeGeneration;
-    const request = Promise.resolve().then(() => api.observe!({ filter: { includeArchived: options.includeArchived },
+    const request = Promise.resolve().then(() => api.observe!({ filter: { ...scope },
       sort: [{ key: "updated_at", direction: "desc" }], page: { limit: 1 }, timeout: 12_000 })).then(handle => {
       if (current !== observeGeneration || disposed || !active) { void handle.release().catch(() => {}); return; }
       let bootstrapped = false;
@@ -226,7 +234,7 @@ export function createAgentDirectory(api: AgentDirectoryApi, options: DirectoryO
     return agent?.archivedAt && !options.includeArchived ? null : agent;
   }
   function handleUpdate(update: AgentDirectoryUpdate) {
-    if (disposed) return;
+    if (disposed || update.kind === "upsert" && helper(update.agent)) return;
     const id = update.kind === "remove" ? update.agentId : update.agent.id;
     const known = versions.get(id);
     const previous = records.get(id) ?? known?.agent ?? undefined;
@@ -288,7 +296,7 @@ export function createAgentDirectory(api: AgentDirectoryApi, options: DirectoryO
        while (!interrupted()) {
         if (snapshot.size >= maxAgents || pages >= 50) { truncated = true; break; }
         const page = await api.list({
-          filter: { includeArchived: options.includeArchived, ...(attentionOnly ? { requiresAttention: true } : {}) },
+          filter: { ...scope, ...(attentionOnly ? { requiresAttention: true } : {}) },
           sort: [{ key: "updated_at", direction: "desc" }],
           page: { limit: Math.min(pageSize, maxAgents - snapshot.size), ...(cursor ? { cursor } : {}) },
           timeout: 12_000,
@@ -296,7 +304,7 @@ export function createAgentDirectory(api: AgentDirectoryApi, options: DirectoryO
         if (interrupted()) return;
         pages += 1;
         for (const entry of page.entries) {
-          if (attentionOnly && entry.agent.requiresAttention !== true) continue;
+          if (attentionOnly && entry.agent.requiresAttention !== true || helper(entry.agent)) continue;
           const known = versions.get(entry.agent.id);
           const candidate = normalizeDirectoryAgent(entry.agent, entry.project, snapshot.get(entry.agent.id) ?? records.get(entry.agent.id) ?? known?.agent ?? undefined);
           const at = observedAt(candidate);

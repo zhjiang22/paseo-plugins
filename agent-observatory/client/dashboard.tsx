@@ -66,9 +66,13 @@ const noSnoozes: CompletionSnooze[] = [];
 let returningAt = 0;
 // Search text stays on this device for this app session. Synced, it followed people to other devices and emptied the list there.
 const sessionQueries = new Map<string, string>();
+// 显示后台工作区 per host as last read, so a page opened again reads the right directory before its settings arrive.
+const backgroundShown = new Map<string, boolean>();
 
 export function DashboardSurface(props: DashboardProps) {
-  const data = useObservatory({ includeArchived: props.archiveMode === true });
+  const [backgroundWorkspaces, setBackgroundWorkspaces] = useState(() => backgroundShown.get(props.host.id) ?? false);
+  const data = useObservatory({ includeArchived: props.archiveMode === true, backgroundWorkspaces });
+  const showBackground = useCallback((value: boolean) => { backgroundShown.set(props.host.id, value); setBackgroundWorkspaces(value); }, [props.host.id]);
   const [observing, setObserving] = useState(false);
   const telemetry = useTelemetry(props.host.id);
   // Observation analytics (明细 → 观测) is only read while it is on screen.
@@ -81,7 +85,7 @@ export function DashboardSurface(props: DashboardProps) {
   // ended may leave subagents working (后台执行中); the 看板 counts (read only while shown) follow too.
   // A turn's start or end also changes its 每轮小结 (out of date, then 更新中).
   useAgentActivity(() => { for (const queryKey of [telemetryQueryKey(props.host.id), readReceiptQueryKey, backgroundQueryKey(props.host.id), liveExtrasQueryKey(props.host.id), recapsQueryKey(props.host.id), ["agent-observatory", props.host.id, "stats"]]) void cache.invalidateQueries({ queryKey }); });
-  return <DashboardView key={props.host.id} {...props} readReceipts={readReceipts.data?.receipts} archiveOrigins={readReceipts.data?.archiveOrigins} readReceiptError={readReceipts.error?.message ?? readReceipts.data?.error ?? undefined} analytics={analytics.data} analyticsLoading={analytics.isPending} analyticsError={analytics.error?.message} data={data} telemetry={telemetry.data} telemetryError={telemetry.error?.message} background={background.data} onAnalyticsVisible={setObserving} onRefresh={() => { void data.refresh(); void telemetry.refetch(); if (observing) void analytics.refetch(); void readReceipts.refetch(); void cache.invalidateQueries({ queryKey: backgroundQueryKey(props.host.id) }); }} />;
+  return <DashboardView key={props.host.id} {...props} readReceipts={readReceipts.data?.receipts} archiveOrigins={readReceipts.data?.archiveOrigins} readReceiptError={readReceipts.error?.message ?? readReceipts.data?.error ?? undefined} analytics={analytics.data} analyticsLoading={analytics.isPending} analyticsError={analytics.error?.message} data={data} telemetry={telemetry.data} telemetryError={telemetry.error?.message} background={background.data} onAnalyticsVisible={setObserving} onBackgroundWorkspaces={showBackground} onRefresh={() => { void data.refresh(); void telemetry.refetch(); if (observing) void analytics.refetch(); void readReceipts.refetch(); void cache.invalidateQueries({ queryKey: backgroundQueryKey(props.host.id) }); }} />;
 }
 export function ArchivedSurface(props: DashboardProps) { return <DashboardSurface {...props} archiveMode />; }
 export function WorkspaceDashboard(props: PluginWorkspacePanelProps & ScheduleLink) { return <DashboardSurface {...props} />; }
@@ -90,10 +94,11 @@ const projectKey = (agent: AgentRecord) => agent.projectId || agent.projectRootP
 const checkoutKey = (agent: AgentRecord) => agent.worktreePath || agent.checkoutKind;
 const finished = (agent: AgentRecord) => ["completed", "closed", "canceled"].includes(agent.status);
 
-export function DashboardView({ theme, layout, host, navigation, workspaceId, initialAgentId, params, data, telemetry, telemetryError, background, analytics, analyticsLoading, analyticsError, readReceipts, archiveOrigins, readReceiptError, archiveMode = false, onOpenArchive, onOpenOverview, onOpenSchedules, onRefresh, onAnalyticsVisible }: DashboardProps & {
+export function DashboardView({ theme, layout, host, navigation, workspaceId, initialAgentId, params, data, telemetry, telemetryError, background, analytics, analyticsLoading, analyticsError, readReceipts, archiveOrigins, readReceiptError, archiveMode = false, onOpenArchive, onOpenOverview, onOpenSchedules, onRefresh, onAnalyticsVisible, onBackgroundWorkspaces }: DashboardProps & {
   data: ObservatoryData; readReceipts?: ReadReceipt[]; archiveOrigins?: Array<{agentId:string;archivedAt:string;lastUserMessageAt:string|null}>; readReceiptError?: string; analytics?: AnalyticsSnapshot; analyticsLoading?: boolean; analyticsError?: string; telemetry?: TelemetrySnapshot; telemetryError?: string;
   /** Provider subagents still working after their parent's turn (后台执行中). */ background?: BackgroundState;
   onRefresh: () => void; onAnalyticsVisible?: (visible: boolean) => void;
+  /** The host setting 显示后台工作区, once read: which directory `data` should come from. */ onBackgroundWorkspaces?: (shown: boolean) => void;
 }) {
   const { colors } = theme;
   const { compact, width: surfaceWidth, onLayout } = useCompactLayout(layout.compact);
@@ -196,6 +201,9 @@ export function DashboardView({ theme, layout, host, navigation, workspaceId, in
   const snoozedAt = useCallback((agent: AgentRecord) => isCompletionSnoozed(agent, snoozes, filterNow), [snoozes, filterNow]);
   // Host-wide settings (shared with the sidebar badge): child Agents' results count only when asked to (opus-F15).
   const settings = preferences.snapshot?.settings ?? defaultObservatorySettings;
+  // 显示后台工作区, host-wide like the badge's: once the settings are read, the page reads the directory they ask for.
+  const settingsKnown = !!preferences.snapshot, backgroundWorkspaces = settings.backgroundWorkspaces === true;
+  useEffect(() => { if (settingsKnown) onBackgroundWorkspaces?.(backgroundWorkspaces); }, [settingsKnown, backgroundWorkspaces, onBackgroundWorkspaces]);
   const attentionOf = useCallback((agent: AgentRecord) => needsAttention(agent, snoozedAt(agent), { childCompletions: settings.childCompletions }), [snoozedAt, settings.childCompletions]);
   // 待回复 counts the Agents waiting on your answer to a question; 待审批 the ones waiting on a permission or plan (opus-F12).
   const liveTally = useCallback((list: readonly AgentRecord[]) => { let attention = 0, approvals = 0, running = 0, unread = 0, snoozed = 0, idle = 0; for (const agent of list) { if (attentionOf(agent)) attention++; const waiting = agent.archivedAt ? null : waitingKind(agent); if (waiting && waiting !== "question") approvals++; if (matchesStatus(agent.status, "running")) running++; if (!agent.archivedAt && (waiting === "question" || (agent.status === "idle" && !agent.pendingPermissionCount))) idle++; if (isUnreadCompletion(agent)) { if (heldBySnooze(agent, snoozedAt(agent))) snoozed++; else unread++; } } return { attention, approvals, running, unread, snoozed, idle }; }, [attentionOf, snoozedAt]);
@@ -463,6 +471,14 @@ export function DashboardView({ theme, layout, host, navigation, workspaceId, in
         </View>
         <Switch theme={theme} label={t("coreDashboard.countCompletedSubagentsAsNeedingAttention")} value={settings.childCompletions} disabled={!preferences.ready}
           onChange={value => { void preferences.mutate({ settings: { childCompletions: value } }).catch(() => toast.error(t("coreDashboard.settingsWereNotSavedTryAgain"))); }} />
+      </View>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ color: colors.foreground, fontSize: fontSize.body, fontWeight: "500" }}>{t("coreDashboard.showAgentsInBackgroundWorkspaces")}</Text>
+          <Text style={{ color: colors.foregroundMuted, fontSize: fontSize.meta, lineHeight: 17 }}>{t("coreDashboard.offByDefaultLikePaseoBackgroundWorkspaces")}</Text>
+        </View>
+        <Switch theme={theme} label={t("coreDashboard.showAgentsInBackgroundWorkspaces")} value={backgroundWorkspaces} disabled={!preferences.ready}
+          onChange={value => { void preferences.mutate({ settings: { backgroundWorkspaces: value } }).catch(() => toast.error(t("coreDashboard.settingsWereNotSavedTryAgain"))); }} />
       </View>
       <AlertSettingsSections theme={theme} />
     </Sheet>

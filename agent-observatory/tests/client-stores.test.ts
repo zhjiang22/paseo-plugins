@@ -103,6 +103,25 @@ test("the page, the workspace panel and the inspector share one directory per co
   fourth.release(); t.mock.timers.tick(15_001);
 });
 
+test("显示后台工作区 reads its own shared directory, the only one that asks the host for background workspaces (issue 16)", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { retainDirectory } = await import("../client/use-observatory");
+  const filters: Array<{ includeBackground?: unknown }> = [];
+  const page = { entries: [], pageInfo: { nextCursor: null, hasMore: false } };
+  const paseo = { agents: { list: async (options: { subscribe?: object; filter: { includeBackground?: unknown } }) => {
+    filters.push(options.filter);
+    return options.subscribe ? { ...page, subscription: { subscribe: () => () => {}, release: async () => {} } } : page;
+  } } } as never;
+  const plain = retainDirectory(paseo, false), shown = retainDirectory(paseo, false, true), again = retainDirectory(paseo, false, true);
+  try {
+    assert.notEqual(plain.directory, shown.directory, "turning the setting on reads another directory");
+    assert.equal(shown.directory, again.directory, "shared like the plain one");
+    await tick(); await tick();
+    assert.equal(filters.filter(filter => filter.includeBackground === true).length, 3, "its observation and both reads ask for background workspaces");
+    assert.equal(filters.filter(filter => !("includeBackground" in filter)).length, 3, "the plain directory's requests are unchanged");
+  } finally { plain.release(); shown.release(); again.release(); t.mock.timers.tick(15_001); }
+});
+
 test("one badge store shares a single foreground clock, and hides stale counts while a read is stalled", async (t) => {
   t.mock.timers.enable({ apis: ["setInterval"] });
   const { createAttentionStore, attentionCount, ATTENTION_STALE_MS } = await import("../client/use-attention");

@@ -506,6 +506,8 @@
     "countCompletedSubagentsAsNeedsAttention": "子 Agent 完成也计入「需要处理」",
     "offByDefaultTheParentAgentAlready": "默认不计入：上级 Agent 已经拿到子 Agent 的结果。子 Agent 出错、撞额度、空轮或没收尾、等审批或提问时照常计入；它们的未读仍显示在上级那一行。",
     "countCompletedSubagentsAsNeedingAttention": "子 Agent 完成也计入需要处理",
+    "showAgentsInBackgroundWorkspaces": "显示后台工作区里的 Agent",
+    "offByDefaultLikePaseoBackgroundWorkspaces": "默认关闭，和 Paseo 一致：后台工作区里是 Paseo 不放进侧栏和列表的会话，例如 Paseo Bots 的聊天。打开后，这台主机的所有页面都会列出它们，并计入「需要处理」和侧栏角标。需要 Paseo 0.12 或更新版本。",
     "settingsWereNotSavedTryAgain": "设置没有保存，请重试",
     "viewSaved": "已保存视图"
   },

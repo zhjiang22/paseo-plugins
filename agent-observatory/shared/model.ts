@@ -158,6 +158,8 @@ export interface AgentSource {
   attentionReason?: string | null;
   attentionTimestamp?: string | null;
   requiresAttention?: boolean;
+  /** Paseo 0.16 background agent: a helper that reports to the Agent that made it, never to the user. */
+  background?: boolean;
   labels?: Record<string, string>;
   lastUsage?: {
     inputTokens?: number;

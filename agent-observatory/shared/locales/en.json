@@ -563,6 +563,8 @@
     "countCompletedSubagentsAsNeedsAttention": "Count completed subagents as \"Needs attention\"",
     "offByDefaultTheParentAgentAlready": "Off by default: the parent agent already has its subagents' results. Subagent errors, quota limits, empty or unfinished turns, approvals, and questions still count. Their unread results still appear on the parent's row.",
     "countCompletedSubagentsAsNeedingAttention": "Count completed subagents as needing attention",
+    "showAgentsInBackgroundWorkspaces": "Show agents in background workspaces",
+    "offByDefaultLikePaseoBackgroundWorkspaces": "Off by default, as in Paseo: background workspaces hold sessions Paseo keeps out of its sidebar and lists, such as Paseo Bots chats. When on, every page on this host lists them, and they count toward \"Needs attention\" and the sidebar badge. Needs Paseo 0.12 or later.",
     "settingsWereNotSavedTryAgain": "Settings were not saved. Try again",
     "viewSaved": "View saved"
   },

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+**Agents in background workspaces can be shown (Paseo Bots chats)**
+- Paseo 0.12 added background workspaces, which it keeps out of the sidebar and out of `agents.list` unless a request asks for `includeBackground`; Paseo Bots 0.3 keeps every chat in one, so its new chats never reached the session list, 需要处理 or the sidebar badge. A host setting in ··· → 观测设置, 「显示后台工作区里的 Agent」, lists them on every page of the host (archive included) and counts them in 需要处理 and the badge. It is off by default, as in Paseo, and only then does the observatory ask for `includeBackground`: with it off every request is exactly the one before. Needs Paseo 0.12 or newer.
+- Paseo 0.16 background agents — helpers that report to the agent that made them, never to the user — stay out even with the setting on. 同步到侧栏标签 never labels or pins a background workspace.
+
 ## 2.19.0 · 2026-11-16
 
 **Paseo 0.16 compatibility (0.11.1 and later still supported)**

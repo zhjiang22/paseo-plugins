@@ -24,8 +24,13 @@ export const completionSnoozeSchema = z.object({
 export const observatorySettingsSchema = z.object({
   /** 「子 Agent 完成计入需要处理」: off by default, the parent has the result already. */
   childCompletions: z.boolean(),
+  /**
+   * 「显示后台工作区里的 Agent」: Agents in background workspaces (Paseo 0.12+; Paseo Bots keeps its chats there) are listed and counted too.
+   * Off by default, as in Paseo's own lists. Optional so a reply from an older server still parses.
+   */
+  backgroundWorkspaces: z.boolean().optional(),
 });
-export const defaultObservatorySettings: ObservatorySettings = { childCompletions: false };
+export const defaultObservatorySettings: ObservatorySettings = { childCompletions: false, backgroundWorkspaces: false };
 export const preferencesSnapshotSchema = z.object({
   revision: z.number().int().nonnegative(), view: viewPreferencesSchema,
   savedViews: z.array(savedViewSchema).max(12), snoozes: z.array(completionSnoozeSchema).max(2000), error: z.string().nullable(),

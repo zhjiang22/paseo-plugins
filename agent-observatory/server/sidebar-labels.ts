@@ -36,8 +36,8 @@ const currentName = (name: string) => (Object.keys(LABELS) as AttentionPhase[]).
 
 /** What the plugin needs from the host: a workspace's labels and pin, its label catalog, and the label and pin writes. */
 export interface LabelHost {
-  /** The workspace's labels in order and its pin; null when it is gone. */
-  workspace(id: string): Promise<{ labels: string[]; pinnedAt: string | null } | null>;
+  /** The workspace's labels in order, its pin and whether it is a background workspace (Paseo 0.12+); null when it is gone. */
+  workspace(id: string): Promise<{ labels: string[]; pinnedAt: string | null; background?: boolean } | null>;
   /** The names of the host's labels (the catalog the label picker lists). */
   catalog(): Promise<string[]>;
   assign(workspaceId: string, label: WorkspaceLabel, assigned: boolean): Promise<void>;
@@ -57,7 +57,8 @@ export function bridgeLabelHost(bridge: Pick<ProviderBridge, "request">, paseo: 
   return {
     async workspace(id) {
       const workspace = await paseo.workspaces.ref(id).refresh();
-      return workspace ? { labels: (workspace.labels ?? []).filter((name): name is string => typeof name === "string"), pinnedAt: workspace.pinnedAt ?? null } : null;
+      return workspace ? { labels: (workspace.labels ?? []).filter((name): name is string => typeof name === "string"), pinnedAt: workspace.pinnedAt ?? null,
+        ...("background" in workspace && workspace.background === true ? { background: true } : {}) } : null;
     },
     async catalog() {
       const payload = await bridge.request({ type: "workspace.label.list.request" }, "workspace.label.list.response");
@@ -293,6 +294,8 @@ export class SidebarLabels {
   private async reconcile(host: LabelHost, workspaceId: string, want: WorkspaceLabel | null, catalog: () => Promise<Set<string>>): Promise<void> {
     const current = await host.workspace(workspaceId);
     if (!current) { this.forget(workspaceId); await this.save(); return; }
+    // A background workspace is not in the sidebar (显示后台工作区 only lists its Agents): no label or pin of the plugin's goes there.
+    if (current.background) want = null;
     const has = (name: string) => current.labels.some(present => labelKey(present) === labelKey(name));
     const owned = this.owned.labels[workspaceId] ?? [], mine = (name: string) => owned.some(own => labelKey(own) === labelKey(name));
     // A label of the plugin's the user took off is the user's decision: forgotten, not put back for the same reason.

@@ -89,6 +89,8 @@ export class AttentionIndex {
   private readonly todoEveryMs: number;
   private readonly maxTodoReads: number;
   private directory: ReturnType<typeof createAgentDirectory> | null = null;
+  /** The directory's scope: 显示后台工作区, the host setting the page follows too. */
+  private backgroundWorkspaces = false;
   private started: Promise<void> | null = null;
   private stream: EventStream | null = null;
   private paseo: PaseoApi | null = null;
@@ -130,18 +132,25 @@ export class AttentionIndex {
         handle.subscribe({ snapshot: () => {}, update: message => this.receive(message), error: () => { if (this.stream === handle) { this.stream = null; void handle.release().catch(() => {}); } } });
       } catch { this.stream = null; }
     }
-    if (!this.directory) {
-      const api: AgentDirectoryApi = {
-        list: options => paseo.agents.list(options) as never,
-        observe: options => paseo.agents.list({ ...options, subscribe: {} }).then(result => result.subscription as unknown as AgentDirectorySubscription),
-      };
-      const directory = createAgentDirectory(api, { includeArchived: false, notifyDelayMs: 0 });
-      this.directory = directory;
-      directory.subscribe(() => this.changed());
-      directory.start(true);
-      this.started = directory.refresh();
-    }
-    return this.started ?? Promise.resolve();
+    // The badge counts the Agents the page lists: with 显示后台工作区 on, those in background workspaces too. A change of the
+    // setting reads the other scope from the start.
+    return this.sources.preferences().then(({ settings }) => settings.backgroundWorkspaces === true, () => this.backgroundWorkspaces).then(backgroundWorkspaces => {
+      if (this.closed) return;
+      if (this.directory && backgroundWorkspaces !== this.backgroundWorkspaces) { this.directory.stop(); this.directory = null; this.started = null; }
+      this.backgroundWorkspaces = backgroundWorkspaces;
+      if (!this.directory) {
+        const api: AgentDirectoryApi = {
+          list: options => paseo.agents.list(options) as never,
+          observe: options => paseo.agents.list({ ...options, subscribe: {} }).then(result => result.subscription as unknown as AgentDirectorySubscription),
+        };
+        const directory = createAgentDirectory(api, { includeArchived: false, backgroundWorkspaces, notifyDelayMs: 0 });
+        this.directory = directory;
+        directory.subscribe(() => this.changed());
+        directory.start(true);
+        this.started = directory.refresh();
+      }
+      return this.started ?? undefined;
+    });
   }
 
   /** `agent_attention_required`: the note is what the host would notify with (the reply's start, the request's title). */

@@ -41,6 +41,7 @@ import { scheduleInsightSweeps } from "./server/grok-runner";
 import { registerProfiles } from "./server/profiles";
 import { registerClientChunks } from "./server/ui-chunk";
 import { alertSettings, defaultAlertSettings, type AlertSettings } from "./shared/alerts";
+import { displaySettings } from "./shared/display-settings";
 import { bridgeLabelHost, registerSidebarLabels, SidebarLabels } from "./server/sidebar-labels";
 import { registerCacheClock } from "./server/cache-clock";
 import { providerBasesReader } from "./server/provider-bases";
@@ -76,6 +77,8 @@ export default function contribute(host: PluginServerContext) {
   // 提醒 (2.17): the chime, the sidebar labels; one host setting of their own, read by the badge's summary and the label sync.
   let alerts: AlertSettings = defaultAlertSettings;
   const alertStore = server.registerSettings(alertSettings);
+  // Display switches (the running turn's progress bar): the client reads and saves the `display` host setting.
+  server.registerSettings(displaySettings);
   // The UI chunk the resident client fetches on first use (shared/ui-chunk.ts): in parts, each reply under 128 KiB.
   registerClientChunks(server);
   // One bridge to the host session for every raw request (subagents, restore, clear attention, schedules).

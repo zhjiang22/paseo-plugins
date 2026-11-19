@@ -3,7 +3,7 @@ import { currentLanguage } from "../shared/i18n";
 import { t } from "../shared/text";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Text, View } from "react-native";
-import { usePaseo, useRpc, type PluginSurfaceProps } from "@getpaseo/plugin/client";
+import { usePaseo, useRpc, useSettings, type PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { ScrollView, copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PluginTheme } from "@getpaseo/plugin";
@@ -45,6 +45,7 @@ import { describeRunError, knownRunError } from "../shared/schedules";
 import { CacheChip } from "./cache-clock";
 import { DeferredList, useDeferredQueue } from "./deferred";
 import { isScheduledView } from "./schedule-send";
+import { DISPLAY_DEFAULTS, displaySettings } from "../shared/display-settings";
 
 interface AgentDetailProps { hostId: string; agent: AgentRecord;
   /** The page's Agents (for 子任务); the panel passes none and reads the directory only while 子任务 is open. */ agents?: AgentRecord[]; theme: PluginTheme; compact: boolean; navigation?: PluginSurfaceProps["navigation"]; onSelectAgent: (id: string) => void;
@@ -67,6 +68,8 @@ export function AgentDetail({ hostId, agent, agents, theme, compact, navigation,
   const [tab, setTab] = useState<DetailTab>(initialEvidenceRef ? "timeline" : "result"), [focusRef, setFocusRef] = useState<string | null>(initialEvidenceRef ?? null), [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => { if (initialEvidenceRef) { setFocusRef(initialEvidenceRef); setTab("timeline"); } }, [initialEvidenceRef]);
   const paseo = usePaseo(), memory = useMemo(() => readingMemory(paseo, `detail:${agent.id}`), [paseo, agent.id]);
+  // 观测设置 → display: whether a running turn gets the sweeping bar (on while the setting loads, as it always was).
+  const display = useSettings(displaySettings);
   // A closed Agent (not loaded) is read once, not polled: each read loads it again, and Paseo 0.14 closes an idle Agent
   // after an hour, so a poll would keep loading and releasing it (a provider process each time for ACP and Codex).
   const closed = agent.rawStatus === "closed";
@@ -257,9 +260,9 @@ export function AgentDetail({ hostId, agent, agents, theme, compact, navigation,
       </View>
     </ScrollView>;
   const actionMenu = <ActionMenu theme={theme} title={t("coreAgentDetail.moreActions")} open={menuOpen} onClose={() => setMenuOpen(false)} actions={menu} />;
-  // A running turn sweeps a thin bar across the top of the pane.
-  const blue = hueColor(theme, "run");
-  const sweep = agent.status === "running" && !agent.archivedAt ? <Sweep color={blue} track={tint(blue, 0.14)} /> : <View style={{ height: 2 }} />;
+  // A running turn sweeps a thin bar across the top of the pane, unless display settings turn it off (its 2px stay either way).
+  const blue = hueColor(theme, "run"), runningBar = display.status === "ready" ? display.values.runningBar : DISPLAY_DEFAULTS.runningBar;
+  const sweep = runningBar && agent.status === "running" && !agent.archivedAt ? <Sweep color={blue} track={tint(blue, 0.14)} /> : <View style={{ height: 2 }} />;
   if (!compact) return <View testID="agent-detail" style={{ flex: 1, minHeight: 0 }}>
     {sweep}
     <View style={{ paddingHorizontal: inset, paddingTop: space.lg - 2, gap: space.md }}>{header}{tabBar}</View>

@@ -1,6 +1,7 @@
 import { t } from "../shared/text";
 import { LanguageSettings } from "./language-settings";
 import { AlertSettingsSections } from "./alert-settings";
+import { DisplaySettingsSection } from "./display-settings";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, View, type FlatList as NativeFlatList } from "react-native";
 import { usePaseo, type PluginSurfaceProps, type PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
@@ -480,6 +481,7 @@ export function DashboardView({ theme, layout, host, navigation, workspaceId, in
         <Switch theme={theme} label={t("coreDashboard.showAgentsInBackgroundWorkspaces")} value={backgroundWorkspaces} disabled={!preferences.ready}
           onChange={value => { void preferences.mutate({ settings: { backgroundWorkspaces: value } }).catch(() => toast.error(t("coreDashboard.settingsWereNotSavedTryAgain"))); }} />
       </View>
+      <DisplaySettingsSection />
       <AlertSettingsSections theme={theme} />
     </Sheet>
     <ProjectSheet theme={theme} open={sheet === "project"} onClose={() => setSheet(null)} projects={projects} total={ranged.length} value={project} onChange={value => { setProject(value); setWorkspace(workspaceDefault); setCheckout("all"); }} />

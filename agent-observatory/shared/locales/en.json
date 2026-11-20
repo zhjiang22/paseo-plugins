@@ -3311,5 +3311,10 @@
     "openSession": "Open session",
     "seenFailed": "Could not save: {reason}",
     "since": "since {time}"
+  },
+  "displaySettings": {
+    "title": "Display",
+    "runningBar": "Running session progress bar",
+    "runningBarHint": "A thin bar sweeps across the top of a session's detail while it runs. Turning it off leaves the status pill and timer in place."
   }
 }

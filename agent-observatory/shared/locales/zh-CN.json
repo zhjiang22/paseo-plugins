@@ -3077,5 +3077,10 @@
     "openSession": "打开会话",
     "seenFailed": "没能记下：{reason}",
     "since": "从 {time} 起"
+  },
+  "displaySettings": {
+    "title": "显示",
+    "runningBar": "执行中的会话顶部进度条",
+    "runningBarHint": "会话执行期间，详情顶部会有一条扫过的细进度条。关掉后状态标签和计时器照常显示。"
   }
 }

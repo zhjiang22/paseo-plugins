@@ -410,14 +410,23 @@ export function ToastHost() {
 
 
 // Host settings controls used by the in-app language, 提醒 and 每轮小结 sections. Only the fixture preview uses DOM elements.
+let displaySettingsValues = { runningBar: true };
+const displaySettingsListeners = new Set();
+function subscribeDisplaySettings(listener) { displaySettingsListeners.add(listener); return () => displaySettingsListeners.delete(listener); }
+function saveDisplaySettings(next) { displaySettingsValues = { ...displaySettingsValues, ...next }; for (const listener of displaySettingsListeners) listener(); }
 export function useSettings(definition) {
   // 每轮小结's host setting (`recap`): the same values the recap fixtures answer with.
   const [recap, setRecap] = useState(() => ({ ...fixtureRecapSettings }));
   useEffect(() => subscribeRecapSettings(() => setRecap({ ...fixtureRecapSettings })), []);
+  // The running bar's host setting (`display`): one shared value, so flipping the switch updates every open detail.
+  const [display, setDisplay] = useState(() => ({ ...displaySettingsValues }));
+  useEffect(() => subscribeDisplaySettings(() => setDisplay({ ...displaySettingsValues })), []);
   // The language setting starts from the preview's language; any other (提醒, 2.17) from its schema's defaults.
   const [values, setValues] = useState(() => definition?.id && definition.id !== "language" && definition.schema?.parse ? definition.schema.parse({}) : { language: previewLanguage });
   if (definition?.id === "recap") return { status: "ready", revision: "fixture", values: recap, saving: false, saveError: null,
     async save(next) { saveRecapSettings(next); return true; }, async reset() { saveRecapSettings({ enabled: false, suggestions: false, runner: { kind: "grok" } }); return true; }, async reload() {} };
+  if (definition?.id === "display") return { status: "ready", revision: "fixture", values: display, saving: false, saveError: null,
+    async save(next) { saveDisplaySettings(next); return true; }, async reset() { saveDisplaySettings({ runningBar: true }); return true; }, async reload() {} };
   return { status: "ready", revision: "fixture", values, saving: false, saveError: null,
     async save(next) { setValues(next); if (typeof next.language === "string") setPreviewLanguage(next.language === "auto" ? "zh-CN" : next.language); return true; } };
 }

@@ -5,6 +5,11 @@ export const REASONING_BODY_SLOT_SYMBOL = Symbol.for(
   "paseo.vividActivity.reasoningBodySlot.v1",
 );
 
+export interface ReasoningBodyRenderOverride {
+  readonly text?: string;
+  readonly phase?: "streaming" | "complete";
+}
+
 export interface ReasoningBodySlotProps {
   readonly agentId: string;
   readonly text: string;
@@ -15,8 +20,8 @@ export interface ReasoningBodySlotProps {
     readonly platform: "ios" | "android" | "web";
   };
   readonly timestamp: Date;
-  /** Renders vivid-activity's native ReasoningText as fallback. */
-  readonly renderDefault: () => ReactNode;
+  /** Renders vivid-activity's native ReasoningText, optionally with overridden text/phase. */
+  readonly renderDefault: (override?: ReasoningBodyRenderOverride) => ReactNode;
 }
 
 export interface ReasoningBodySlotProvider {

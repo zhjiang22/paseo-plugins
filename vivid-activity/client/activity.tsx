@@ -27,7 +27,7 @@ import { aria, Button } from "./kit";
 import { createLatestRows, forgetWith } from "./latest-rows";
 import { PiSubagentLifecycleSummary } from "./pi-subagent-summary";
 import { PinnedPrompt, usePromptPin } from "./prompt-pin";
-import { getReasoningBodySlotRegistry, type ReasoningBodySlotProvider } from "./reasoning-slot";
+import { getReasoningBodySlotRegistry, type ReasoningBodyRenderOverride, type ReasoningBodySlotProvider } from "./reasoning-slot";
 import { timingText, useLiveNow, useOnScreen, useRowTiming } from "./timing";
 import { useFollowBottom, useFollowOutput } from "./settings-hooks";
 import { useFx } from "./fx";
@@ -460,7 +460,15 @@ export function ReasoningBody({
     [layout.compact, layout.platform],
   );
   const renderDefault = useCallback(
-    () => <ReasoningText text={text} phase={phase} theme={theme} palette={palette} styles={styles} />,
+    (override?: ReasoningBodyRenderOverride) => (
+      <ReasoningText
+        text={override?.text ?? text}
+        phase={override?.phase ?? phase}
+        theme={theme}
+        palette={palette}
+        styles={styles}
+      />
+    ),
     [ReasoningText, palette, phase, styles, text, theme],
   );
   if (!slotProvider || !slotProvider.Component) return renderDefault();

@@ -6,7 +6,12 @@ import { activitySettings } from "../shared/settings";
 import { REASONING_RENDERER_KIND, REASONING_RENDERER_VERSION } from "../shared/timeline";
 import { ColorfulReasoning, ReasoningBody, ReasoningSlotBoundary } from "./activity";
 import { PlainDetail } from "./activity-lazy";
-import { createReasoningBodySlotRegistry, REASONING_BODY_SLOT_SYMBOL, type ReasoningBodySlotProvider } from "./reasoning-slot";
+import {
+  createReasoningBodySlotRegistry,
+  REASONING_BODY_SLOT_SYMBOL,
+  type ReasoningBodySlotProps,
+  type ReasoningBodySlotProvider,
+} from "./reasoning-slot";
 import { applyTakeover } from "./takeover";
 
 const host = vi.hoisted(() => ({ useSettings: vi.fn() }));
@@ -226,6 +231,30 @@ describe("reasoning body integration", () => {
     expect(children.props.theme).toBe(rowProps.theme);
     expect(children.props.timestamp).toBe(rowProps.timestamp);
     expect(renderDefault().type).toBe(PlainDetail);
+  });
+
+  it.each([
+    ["no override", undefined, rowProps.item.data.text, "streaming"],
+    ["text only", { text: "Overridden text" }, "Overridden text", "streaming"],
+    ["phase only", { phase: "complete" }, rowProps.item.data.text, "complete"],
+    ["text and phase", { text: "Overridden text", phase: "complete" }, "Overridden text", "complete"],
+    ["empty text", { text: "" }, "", "streaming"],
+  ] as const)("renders the native reasoning body with %s", (_, override, text, phase) => {
+    registry.registerProvider(provider);
+    const body = findReasoningBody(ColorfulReasoning(rowProps))!;
+    const slot: ReactElement<ReasoningBodySlotProps> = ReasoningBody(body.props).props.children;
+    const { renderDefault } = slot.props;
+    const fallback = override === undefined ? renderDefault() : renderDefault(override);
+    if (!isValidElement<Pick<BodyProps, "text" | "phase" | "theme" | "palette" | "styles">>(fallback)) {
+      throw new Error("renderDefault did not return a React element");
+    }
+
+    expect(fallback.type).toBe(PlainDetail);
+    expect(fallback.props.text).toBe(text);
+    expect(fallback.props.phase).toBe(phase);
+    expect(fallback.props.theme).toBe(body.props.theme);
+    expect(fallback.props.palette).toBe(body.props.palette);
+    expect(fallback.props.styles).toBe(body.props.styles);
   });
 });
 

@@ -29,7 +29,9 @@ export const useLayoutEffect = (fn, deps) => { __hooks++; __hookLog.push("layout
 export const useSyncExternalStore = (subscribe, snapshot) => { __hooks++; __hookLog.push("store"); return snapshot(); };
 export const createContext = (value) => ({ Provider: "ContextProvider", _value: value });
 export const useContext = (context) => context._value;
-export default { Fragment, createElement, useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect, useSyncExternalStore, createContext, useContext };`,
+export function Component(props, context, updater) { this.props = props; this.context = context; this.updater = updater; }
+Component.prototype.isReactComponent = {};
+export default { Fragment, Component, createElement, useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect, useSyncExternalStore, createContext, useContext };`,
   "react/jsx-runtime": `export const Fragment = Symbol.for("standin.fragment");
 export const jsx = (type, props) => ({ type, props: props ?? {} });
 export const jsxs = jsx;`,

@@ -91,8 +91,11 @@ describe("client mobile bundle compatibility", () => {
     // scalars and the windowed render in ReasoningText). 380 → 384 KiB for the optional timestamps (measured on the
     // merge with 0.11.0: 388 293 → 392 639 bytes): the turn-end renderer (client/turn-time.tsx) with its payload schema
     // and formatter (shared/turn-time.ts), about 2.5 KiB, and the foldTime reads and stamp slots of the rows, the fold
-    // summary and the settings schema, about 1.7 KiB.
-    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(384 * 1024);
+    // summary and the settings schema, about 1.7 KiB. 384 → 389 KiB for the cross-plugin reasoning body slot
+    // (392 663 → 398 177 bytes, +5 514 bytes): the slot registry (client/reasoning-slot.ts, about 2.6 KiB), the
+    // expanded-only ReasoningBody subscriber and ES5 ErrorBoundary (client/activity.tsx, about 2.3 KiB), and the host
+    // lifecycle registration in index.client.tsx (about 0.5 KiB).
+    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(389 * 1024);
     expect(bundle).toContain("function ChangeStat");
     expect(bundle).toContain("function TurnTokens");
     expect(bundle).not.toMatch(/function (?:RunningLoader|LoaderFrame|FoldChanges|sparkleStops|shiftStops)\b/);

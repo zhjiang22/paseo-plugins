@@ -1,7 +1,7 @@
 {
   "name": "paseo-project-notes",
   "private": true,
-  "version": "0.12.2",
+  "version": "0.12.3",
   "description": "Project Notes (拾页) for Paseo: tasks, prompts and ideas per project, a launcher that starts an agent from a note, and a CLI for agents",
   "license": "MIT",
   "scripts": {

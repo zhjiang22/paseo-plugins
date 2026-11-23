@@ -390,6 +390,11 @@ describe("colorful activity presentation", () => {
       "Random Number Agent 3 · pi/plexus/gpt-5.6-luna",
     );
     expect(paseoToolLabel("mcp__github__create_issue")).toBeNull();
+    // Paseo 0.17's watched pull request tools show the URL, as Paseo's own row does.
+    const watched = { url: "https://github.com/acme/app/pull/42" };
+    expect(paseoToolSummary("mcp__paseo__subscribe_change_request", watched)).toBe(watched.url);
+    expect(paseoToolSummary("mcp__paseo__unsubscribe_change_request", watched)).toBe(watched.url);
+    expect(paseoToolLabel("mcp__paseo__list_hosts")).toBe("List Hosts");
     expect(
       resolveToolCallPresentation({
         name: "mcp_paseo_create_agent",

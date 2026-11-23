@@ -2,7 +2,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import type { ReactNode } from "react";
 import { Text } from "react-native";
 import { emphasizeShellHead, highlightCodeSync, type HighlightToken } from "./highlight";
-import { vividSyntaxColors } from "./kit";
+import { vividSyntaxColors } from "./syntax-colors";
 
 /**
  * 0.11.0:「命令着色」：shell 行的行头命令按语法色渲染。只活在 fx 懒加载块里（Prism 不进常驻包）；

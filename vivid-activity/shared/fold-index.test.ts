@@ -78,6 +78,11 @@ describe("fold index rows", () => {
     expect(wireRowFromEntry(entry(11, heartbeat))).toMatchObject({ k: "b", w: "heartbeat" });
     expect(claimsToolCall(heartbeat)).toBe(false);
     expect(claimsToolCall({ ...heartbeat, callId: "toolu_heartbeat" })).toBe(true);
+    // Paseo 0.17 delivers an update of a watched pull or merge request as this row (agent-messages/envelope.js).
+    const update = call("change_request_update", { type: "plain_text", text: "New review on https://github.com/acme/app/pull/42" }, { callId: "paseo-change-request:u1" });
+    expect(wireRowFromEntry(entry(12, update))).toMatchObject({ k: "b", w: "change-request" });
+    expect(claimsToolCall(update)).toBe(false);
+    expect(claimsToolCall({ ...update, callId: "toolu_change_request_update" })).toBe(true);
   });
 
   it("mirrors how Paseo turns task-list tools into task rows or drops them", () => {

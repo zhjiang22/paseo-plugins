@@ -387,6 +387,12 @@ const PASEO_TOOL_LABELS: Readonly<Record<string, string>> = {
   browser_scroll: "Scroll Browser",
   browser_resize: "Resize Browser Viewport",
   browser_close_tab: "Close Browser Tab",
+  // Paseo 0.17: watch a pull or merge request (agents get its checks, reviews and comments), and browser hosts.
+  // list_hosts (connected hosts) has been in Paseo's catalog since 0.13.
+  list_hosts: "List Hosts",
+  subscribe_change_request: "Watch Change Request",
+  unsubscribe_change_request: "Stop Watching Change Request",
+  browser_list_hosts: "List Browser Hosts",
 };
 
 export const PASEO_TOOL_ICONS: Readonly<Record<string, string>> = {
@@ -452,6 +458,10 @@ export const PASEO_TOOL_ICONS: Readonly<Record<string, string>> = {
   browser_scroll: "Scroll",
   browser_resize: "Maximize2",
   browser_close_tab: "X",
+  list_hosts: "Server",
+  subscribe_change_request: "Eye",
+  unsubscribe_change_request: "EyeOff",
+  browser_list_hosts: "MonitorSmartphone",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -626,6 +636,7 @@ export function paseoToolSummary(toolName: string, input: unknown): string | und
   if (leafName.endsWith("_agent") && agentId) return agentId;
   if (leafName.includes("workspace") && workspaceId) return workspaceId;
   if (leafName.startsWith("browser_") && url) return url;
+  if (leafName.endsWith("_change_request") && url) return url;
   if (leafName.startsWith("browser_") && browserId) return browserId;
   if ((leafName === "create_schedule" || leafName === "create_heartbeat") && prompt) {
     return compactText(prompt);

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.12.0 (2026-11-22)
+
+- **Reasoning body slot for companion plugins** (#20, by @kogekiplay): another plugin, such as a translator or a
+  formatter of thinking text, can register on `globalThis[Symbol.for("paseo.vividActivity.reasoningBodySlot.v1")]`
+  to draw the expanded body of thinking rows, or hand changed text back to the built-in renderer with
+  `renderDefault({ text, phase })`. `hasActiveHost()` tells it whether Vivid Activity draws thinking rows right now;
+  the host unregisters when takeover is off or the plugin unloads. With no provider registered nothing changes,
+  collapsed rows subscribe to nothing, and a provider that throws falls back to the built-in text. The resident
+  bundle's test budget moves from 384 to 389 KiB.
+- **Paseo 0.17** (0.16 and earlier keep working):
+  - An update from a pull or merge request an agent watches (Paseo 0.17's Watch PRs and MRs) arrives as Paseo's own
+    row, like a message from another agent. It is left to Paseo and splits segments, so it no longer folds away with
+    the steps of the turn it wakes.
+  - The new Paseo tools have names and icons: Watch change request and Stop watching change request (with the pull
+    request's URL, as Paseo's own row shows it) and List browser hosts; List hosts (in Paseo since 0.13) has one too.
+    The resident bundle's test budget moves from 389 to 390 KiB.
+  - Checked on isolated Paseo 0.17.3 and 0.16.0 daemons with fake ACP, Claude, Pi and Codex agents and the web UI
+    on desktop and phone: no page or plugin errors, and the sidebar entry, the settings page, the lazy `fx` chunk
+    and the live tail of a running command all work.
+- A test fixture is typed for the Paseo 0.16 SDK and later (the turn-end payload's `background` and `metadata`).
+
 ## 0.11.1 (2026-11-16)
 
 - Subagent progress no longer fails when Paseo omits `detail.log` (optional since Paseo 0.14.1; the daemon keeps sending an empty string only until 2027-04-30): a missing log reads as empty. Checked on isolated Paseo 0.16.0 and 0.15.4 daemons, including the 0.16 web UI.

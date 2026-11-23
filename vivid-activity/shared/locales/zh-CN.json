@@ -113,7 +113,11 @@
     "readBrowserLogs": "读取浏览器日志",
     "evaluateBrowserJavascript": "在浏览器执行脚本",
     "scrollBrowser": "滚动页面",
-    "resizeBrowserViewport": "调整浏览器窗口"
+    "resizeBrowserViewport": "调整浏览器窗口",
+    "listHosts": "列出主机",
+    "watchChangeRequest": "关注 PR 动态",
+    "stopWatchingChangeRequest": "取消关注 PR",
+    "listBrowserHosts": "列出浏览器主机"
   },
   "modelLabel": {
     "read": "读取",

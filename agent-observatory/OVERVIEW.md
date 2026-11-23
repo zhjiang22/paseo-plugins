@@ -1,4 +1,4 @@
-Agent Observatory is a dashboard for every Paseo agent and subagent on a host. Each session opens on its result, timeline, subtasks, diagnostics and an execution review. It adds a sidebar count of what needs you (with reasons), in-place approvals and quick replies, an unread queue, usage statistics, local token counts (Claude Code, Codex, Grok CLI, Pi, Kimi Code, ZCode), every scheduled run, and optional AI reviews and turn summaries. Optional alerts: a chime, workspace labels for what needs you, a prompt-cache countdown and scheduled sends.
+Agent Observatory is a dashboard for every Paseo agent and subagent on a host. Each session opens on its result, timeline, subtasks, diagnostics and execution review. It adds a sidebar count of what needs you (with reasons), in-place approvals and quick replies, an unread queue, usage statistics, local token counts (Claude Code, Codex, Grok CLI, Pi, Kimi Code, ZCode), every scheduled run, and optional AI reviews and turn summaries. Optional alerts: a chime, workspace labels for what needs you, a prompt-cache countdown and scheduled sends.
 
 Pages: Agent Observatory, Archived sessions and Scheduled runs, plus workspace and agent panels, Command Center items and `/observe`. Clients get a small stub; the rest loads when first opened.
 
@@ -12,18 +12,18 @@ English and Simplified Chinese are built in. The device language is used unless 
 
 ## What it reads
 
-- From the daemon: agent events, attention notifications, the agent list (archived included; agents in background workspaces only with "Show agents in background workspaces" on), pending permissions of an agent you open, profiles and providers, usage windows (`providers.listUsage()`, only while shown), and timelines of what you open. In the background it reads only loaded agents.
-- Token logs: `$CLAUDE_CONFIG_DIR/projects` (default `~/.claude/projects`), `~/.config/claude/projects`, `$CODEX_HOME/sessions` and `archived_sessions` (default `~/.codex`), each Grok CLI session's `usage.json` only and Pi's sessions (default `~/.pi/agent/sessions`), plus Kimi Code wire logs under `$KIMI_CODE_HOME/sessions` (default `~/.kimi-code/sessions`) and the read-only ZCode SQLite database and WAL under `$ZCODE_HOME/cli/db` (default `~/.zcode/cli/db`), without following symlinks. ZCode ACP ids are resolved through `v2/acp-lazy-sessions.json`. Only counters, model names, working directories and session ids are kept, never prompts or output.
+- From the daemon: agent events, attention notifications, the agent list (archived included; background-workspace agents only with "Show agents in background workspaces" on), pending permissions of an agent you open, profiles and providers, usage windows (`providers.listUsage()`, only while shown), and timelines of what you open. In the background it reads only loaded agents.
+- Token logs: `$CLAUDE_CONFIG_DIR/projects` (default `~/.claude/projects`), `~/.config/claude/projects`, `$CODEX_HOME/sessions` and `archived_sessions` (default `~/.codex`), each Grok CLI session's `usage.json` only and Pi's sessions (default `~/.pi/agent/sessions`), Kimi Code wire logs under `$KIMI_CODE_HOME/sessions` (default `~/.kimi-code/sessions`) and the read-only ZCode SQLite database and WAL under `$ZCODE_HOME/cli/db` (default `~/.zcode/cli/db`), without following symlinks. ZCode ACP ids are resolved through `v2/acp-lazy-sessions.json`. Only counters, model names, working directories and session ids are kept, never prompts or output.
 - For custom providers based on these: a literal `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, `KIMI_CODE_HOME`, `ZCODE_HOME`, `PI_CODING_AGENT_SESSION_DIR` or `PI_CODING_AGENT_DIR` in the provider's `env`, command line or launcher script (read as text, at most 64 KB, never run), and Pi's `sessionDir` setting.
 - To confirm a resume, the agent's own Claude Code, Codex or Pi log is searched for that run's ids (compared, not kept); the cache countdown reads a Claude-based session's last cache write and TTL from its log.
-- Scheduled runs: `$PASEO_HOME/schedules/*.json`, `projects/workspaces.json`, and the records of agents the daemon no longer lists. It never writes them.
+- Scheduled runs (read only): `$PASEO_HOME/schedules/*.json`, `projects/workspaces.json` and records of agents the daemon no longer lists.
 - The daemon config's provider list (which providers take mid-turn messages or share a usage limit).
 
-The plugin makes no network requests of its own.
+It makes no network requests of its own. Imports and scans are capped (for example 20,000 token logs).
 
 ## What it writes
 
-Everything goes to `$PASEO_HOME/plugin-data/agent-observatory` (folder 0700; files 0600, bounded, replaced atomically): telemetry, statistics, token counts, usage-limit history, read receipts, preferences, review settings, reports and suggestions, turn summaries, the schedule and resume ledgers, the device's time zone name, the send ledger (messages on their way, with any scheduled time, then a week of short previews), its own workspace labels and pins, the language state and translation templates.
+Everything goes to `$PASEO_HOME/plugin-data/agent-observatory` (folder 0700; files 0600, bounded, replaced atomically): telemetry, statistics, token counts, usage-limit history, read receipts, preferences, review settings, reports and suggestions, turn summaries, the schedule and resume ledgers, the device's time zone name, the send ledger (messages on their way, with any scheduled time, then a week of short previews), its own workspace labels and pins, language state and translation templates.
 
 The schedule ledger keeps run times, status, ids, host errors (300 characters), links without credentials, schedule names and cadences, never replies or prompts. Usage-limit history hashes account names. Telemetry keeps why a turn stopped, never the reply. Reports and summaries can quote sessions.
 
@@ -33,7 +33,7 @@ The plugin acts on the daemon only when you ask:
 
 - marking a result, question or error read; archiving agents (bulk needs a second tap); restoring a workspace or an archived session;
 - answering one permission request with the provider's own options, never in bulk or automatically;
-- sending a quick reply (the button's words), an AI suggestion or a review finding to an agent: steered into the running turn where supported, else after you confirm the interruption or when the turn ends; a retry is delivered at most once;
+- sending a quick reply (the button's words), AI suggestion or review finding to an agent: steered into the running turn where supported, else after you confirm the interruption or when the turn ends; a retry is delivered at most once;
 - scheduling a one-off heartbeat, at a time you confirm, that resumes an agent after its usage limit resets; it is never resent when delivery cannot be proven, and only the plugin's own resume heartbeats are deleted;
 - handing a stopped agent to another profile, or starting one from a suggestion;
 - sending a scheduled message at the time you picked;
@@ -50,9 +50,5 @@ Nothing is reviewed until you start one; automatic reviews are off by default. A
 - Automatic choice (the default): the Grok CLI when found, otherwise an enabled Claude Code or Codex provider.
 
 Turn summaries are off by default too. When on, 10 seconds after a top-level agent's turn ends, the runner (default: Grok CLI, low effort) reads that turn and up to 8 earlier ones (messages only, masked, at most 32 KB) and writes a one-line goal, progress and next step, optionally with a suggested reply. Turning them off deletes them.
-
-## Limits
-
-- Imports and scans are capped (for example 20,000 token logs).
 
 The scheduled runs page is modeled on the schedule-runs plugin by panrafal.

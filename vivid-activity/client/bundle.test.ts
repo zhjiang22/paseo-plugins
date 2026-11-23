@@ -94,8 +94,10 @@ describe("client mobile bundle compatibility", () => {
     // summary and the settings schema, about 1.7 KiB. 384 → 389 KiB for the cross-plugin reasoning body slot
     // (392 663 → 398 293 bytes, +5 630 bytes): the slot registry (client/reasoning-slot.ts, about 2.6 KiB), the
     // expanded-only ReasoningBody subscriber and ES5 ErrorBoundary (client/activity.tsx, about 2.4 KiB), and the host
-    // lifecycle registration in index.client.tsx (about 0.5 KiB).
-    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(389 * 1024);
+    // lifecycle registration in index.client.tsx (about 0.5 KiB). 389 → 390 KiB for Paseo 0.17 (398 293 → 399 059
+    // bytes, +766 bytes): the watched pull request's update row as a segment boundary and the labels and icons of the
+    // three new Paseo tools (shared/fold-index.ts, shared/presentation.ts, shared/vivid-model.ts).
+    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(390 * 1024);
     expect(bundle).toContain("function ChangeStat");
     expect(bundle).toContain("function TurnTokens");
     expect(bundle).not.toMatch(/function (?:RunningLoader|LoaderFrame|FoldChanges|sparkleStops|shiftStops)\b/);
@@ -123,8 +125,9 @@ describe("client mobile bundle compatibility", () => {
     // 0.8.0: 72 KiB for the animations and the change list. 0.11.0: 128 KiB — Command colors (client/command-tokens.tsx)
     // pulls in the shared highlight module (Prism core and the language grammars; the shell grammar itself is the small
     // local one in client/highlight.ts). The chunk still downloads only when one of its features is actually used
-    // (client/fx.ts useFx(enabled)).
-    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(128 * 1024);
+    // (client/fx.ts useFx(enabled)). Measured without esbuild's "// <module path>" lines: they are relative to where the
+    // test runs, so a checkout whose node_modules is a link elsewhere (export-oss --verify) adds about 700 bytes of path.
+    expect(Buffer.byteLength(bundle.replace(/^\/\/ \S+\.(?:[cm]?[jt]sx?|json)$/gm, ""))).toBeLessThanOrEqual(128 * 1024);
   });
 
   it("keeps the chunk independent of the eager fold and takeover state", async () => {

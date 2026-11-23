@@ -70,7 +70,8 @@ class Host {
   sent: Array<Record<string, unknown>> = [];
   /** The daemon's agent manager as the host's own `executeSchedule` uses it (tests fill in what a run needs). */
   // Paseo 0.14+ checks this barrier before every prompt. These test sessions are always current.
-  readonly manager: Record<string, unknown> = { reloadStalePluginSession: async () => {} };
+  // Paseo 0.17+ lists an Agent's heartbeats in its Background work through the last two; these tests keep no such list.
+  readonly manager: Record<string, unknown> = { reloadStalePluginSession: async () => {}, setDaemonBackgroundWork: () => {}, removeDaemonBackgroundWork: () => {} };
   agents = new Map<string, { title: string; archivedAt: string | null; lastUserMessageAt: string | null; attentionTimestamp?: string | null; persistence?: { provider: string; sessionId: string } | null }>();
   service: ScheduleServiceLike;
   constructor(private readonly Service: new (options: unknown) => ScheduleServiceLike, private readonly home: string) { this.service = this.start(); }

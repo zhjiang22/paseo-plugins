@@ -2,7 +2,7 @@
   "name": "paseo-terracotta-themes",
   "private": true,
   "type": "module",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Twelve color themes for Paseo, six dark and six light, derived from one perceptual tonal ladder, plus a live custom theme tuned with sliders",
   "license": "MIT",
   "scripts": {

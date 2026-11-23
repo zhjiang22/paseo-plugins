@@ -1,6 +1,6 @@
 {
   "name": "paseo-ferry",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Move a Paseo conversation to another provider and back: native continuation where providers share a session store, a budgeted handoff everywhere else, and only the missed part when switching back.",
   "license": "MIT",

@@ -1,5 +1,5 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
-import { Children, Component, isValidElement, type ComponentProps, type ReactElement, type ReactNode } from "react";
+import { Children, Component, forwardRef, isValidElement, memo, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import contribute from "../index.client";
 import { activitySettings } from "../shared/settings";
@@ -208,6 +208,41 @@ describe("reasoning body integration", () => {
       palette: body.props.palette,
       styles: body.props.styles,
     });
+  });
+
+  it("falls back to the native body when a provider Component accessor throws", () => {
+    const getComponent = vi.fn(() => { throw new Error("broken provider accessor"); });
+    const broken = Object.defineProperty({ id: "broken" }, "Component", { get: getComponent }) as ReasoningBodySlotProvider;
+    registry.registerProvider(broken);
+    const body = findReasoningBody(ColorfulReasoning(rowProps))!;
+
+    const fallback = ReasoningBody(body.props);
+    expect(fallback.type).toBe(PlainDetail);
+    expect(fallback.props.text).toBe(rowProps.item.data.text);
+    expect(getComponent).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves a provider Component accessor only once per render", () => {
+    const getComponent = vi.fn().mockReturnValueOnce(provider.Component).mockImplementation(() => {
+      throw new Error("Component was read twice");
+    });
+    const accessor = Object.defineProperty({ id: "accessor" }, "Component", { get: getComponent }) as ReasoningBodySlotProvider;
+    registry.registerProvider(accessor);
+    const body = findReasoningBody(ColorfulReasoning(rowProps))!;
+
+    const result = ReasoningBody(body.props);
+    expect(result.type).toBe(ReasoningSlotBoundary);
+    expect(result.props.children.type).toBe(provider.Component);
+    expect(getComponent).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["memo", memo(() => null)],
+    ["forwardRef", forwardRef<unknown, ReasoningBodySlotProps>(() => null)],
+  ] as const)("preserves a valid %s provider component", (_, Component) => {
+    registry.registerProvider({ id: "wrapped", Component });
+    const body = findReasoningBody(ColorfulReasoning(rowProps))!;
+    expect(ReasoningBody(body.props).props.children.type).toBe(Component);
   });
 
   it.each(["streaming", "complete"] as const)("passes the seven %s slot props through the error boundary", (phase) => {

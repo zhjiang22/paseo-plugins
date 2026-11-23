@@ -471,8 +471,15 @@ export function ReasoningBody({
     ),
     [ReasoningText, palette, phase, styles, text, theme],
   );
-  if (!slotProvider || !slotProvider.Component) return renderDefault();
-  const SlotComponent = slotProvider.Component;
+  let SlotComponent: ReasoningBodySlotProvider["Component"] | undefined;
+  try {
+    // A companion plugin may expose Component through an accessor. Resolve it once,
+    // and keep accessor errors outside React's child boundary from breaking the row.
+    SlotComponent = slotProvider?.Component;
+  } catch {
+    // An unreadable component uses the same fallback as an absent provider.
+  }
+  if (!slotProvider || !SlotComponent) return renderDefault();
   return (
     <ReasoningSlotBoundary provider={slotProvider} renderDefault={renderDefault}>
       <SlotComponent

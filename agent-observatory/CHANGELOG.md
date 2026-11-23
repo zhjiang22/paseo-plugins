@@ -1,10 +1,17 @@
 # Changelog
 
-## Unreleased
+## 2.20.0 · 2026-11-22
 
-**Agents in background workspaces can be shown (Paseo Bots chats)**
+**Agents in background workspaces can be shown (Paseo Bots chats)** (#17, for issue #16)
 - Paseo 0.12 added background workspaces, which it keeps out of the sidebar and out of `agents.list` unless a request asks for `includeBackground`; Paseo Bots 0.3 keeps every chat in one, so its new chats never reached the session list, 需要处理 or the sidebar badge. A host setting in ··· → 观测设置, 「显示后台工作区里的 Agent」, lists them on every page of the host (archive included) and counts them in 需要处理 and the badge. It is off by default, as in Paseo, and only then does the observatory ask for `includeBackground`: with it off every request is exactly the one before. Needs Paseo 0.12 or newer.
 - Paseo 0.16 background agents — helpers that report to the agent that made them, never to the user — stay out even with the setting on. 同步到侧栏标签 never labels or pins a background workspace.
+
+**The running session's progress bar can be turned off** (#18, by @arkylin)
+- A new switch, 显示 → 执行中的会话顶部进度条 (Display → Running session progress bar), in the board's 观测设置 sheet and on the plugin's settings screen, on by default. Off drops the thin bar that sweeps across the top of a running session's detail; the status pill, the timer and its 2 px space stay. It is the host setting `display` (`$PASEO_HOME/plugin-settings/agent-observatory/display.json`), so every device shows the same.
+
+**Paseo 0.17 compatibility (0.16 and earlier still supported)**
+- No code change was needed. Paseo 0.17 queues messages from one agent to another by default, but only sends that name an agent sender; quick replies, 发给这个 Agent and scheduled sends are plugin sends without one, so interrupt and steer work as before.
+- Checked on isolated Paseo 0.17.3 and 0.16.0 daemons with scripted turns of fake ACP, Claude, Pi and Codex agents (permissions, background tasks, a sub-agent, a heartbeat) and the web UI on desktop and phone: hooks fire, the read RPCs answer with the same shapes on both, and there are no page or plugin errors.
 
 ## 2.19.0 · 2026-11-16
 

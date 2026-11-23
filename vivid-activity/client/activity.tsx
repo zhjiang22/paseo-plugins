@@ -7,7 +7,7 @@ import { useAgent, useSettings } from "@getpaseo/plugin/client";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { type NativeScrollEvent, type ScrollView as NativeScrollView, type NativeSyntheticEvent } from "react-native";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Component, useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { z } from "zod";
 import { parsePiSubagentCall, piSubagentOperation } from "../shared/pi-subagents";
@@ -27,6 +27,7 @@ import { aria, Button } from "./kit";
 import { createLatestRows, forgetWith } from "./latest-rows";
 import { PiSubagentLifecycleSummary } from "./pi-subagent-summary";
 import { PinnedPrompt, usePromptPin } from "./prompt-pin";
+import { getReasoningBodySlotRegistry, type ReasoningBodyRenderOverride, type ReasoningBodySlotProvider } from "./reasoning-slot";
 import { timingText, useLiveNow, useOnScreen, useRowTiming } from "./timing";
 import { useFollowBottom, useFollowOutput } from "./settings-hooks";
 import { useFx } from "./fx";
@@ -387,6 +388,113 @@ function ActivityHeader({
   );
 }
 
+export interface ReasoningSlotBoundaryProps {
+  readonly provider: ReasoningBodySlotProvider;
+  readonly renderDefault: () => ReactNode;
+  readonly children: ReactNode;
+}
+
+interface ReasoningSlotBoundaryState {
+  readonly failed: boolean;
+  readonly provider: ReasoningBodySlotProvider;
+}
+
+type ReasoningSlotBoundaryInstance = Component<ReasoningSlotBoundaryProps, ReasoningSlotBoundaryState>;
+
+function ReasoningSlotBoundaryCtor(
+  this: ReasoningSlotBoundaryInstance,
+  props: ReasoningSlotBoundaryProps,
+  context?: unknown,
+  updater?: unknown,
+) {
+  (Component as unknown as (props: ReasoningSlotBoundaryProps, context?: unknown, updater?: unknown) => void).call(
+    this,
+    props,
+    context,
+    updater,
+  );
+  this.state = { failed: false, provider: props.provider };
+}
+
+ReasoningSlotBoundaryCtor.prototype = Object.create(Component.prototype);
+ReasoningSlotBoundaryCtor.prototype.constructor = ReasoningSlotBoundaryCtor;
+ReasoningSlotBoundaryCtor.getDerivedStateFromError = (): Partial<ReasoningSlotBoundaryState> => ({ failed: true });
+ReasoningSlotBoundaryCtor.getDerivedStateFromProps = (
+  nextProps: ReasoningSlotBoundaryProps,
+  prevState: ReasoningSlotBoundaryState,
+): ReasoningSlotBoundaryState | null =>
+  nextProps.provider !== prevState.provider ? { failed: false, provider: nextProps.provider } : null;
+ReasoningSlotBoundaryCtor.prototype.componentDidCatch = () => undefined;
+ReasoningSlotBoundaryCtor.prototype.render = function renderReasoningSlotBoundary(this: ReasoningSlotBoundaryInstance) {
+  return this.state.failed ? this.props.renderDefault() : this.props.children;
+};
+
+export const ReasoningSlotBoundary = ReasoningSlotBoundaryCtor as unknown as ComponentType<ReasoningSlotBoundaryProps>;
+
+export function ReasoningBody({
+  agentId,
+  text,
+  phase,
+  theme,
+  layout,
+  timestamp,
+  palette,
+  styles,
+}: {
+  agentId: string;
+  text: string;
+  phase: ReasoningItemData["phase"];
+  theme: Theme;
+  layout: PluginTimelineItemProps["layout"];
+  timestamp: Date;
+  palette: ActivityPalette;
+  styles: ActivityStyles;
+}) {
+  const { ReasoningText } = useActivityDetails();
+  const registry = getReasoningBodySlotRegistry();
+  const subscribe = useCallback((listener: () => void) => registry.subscribe(listener), [registry]);
+  const getActiveProvider = useCallback(() => registry.getActiveProvider(), [registry]);
+  const slotProvider = useSyncExternalStore(subscribe, getActiveProvider, getActiveProvider);
+  const slotLayout = useMemo(
+    () => ({ compact: layout.compact, platform: layout.platform }),
+    [layout.compact, layout.platform],
+  );
+  const renderDefault = useCallback(
+    (override?: ReasoningBodyRenderOverride) => (
+      <ReasoningText
+        text={override?.text ?? text}
+        phase={override?.phase ?? phase}
+        theme={theme}
+        palette={palette}
+        styles={styles}
+      />
+    ),
+    [ReasoningText, palette, phase, styles, text, theme],
+  );
+  let SlotComponent: ReasoningBodySlotProvider["Component"] | undefined;
+  try {
+    // A companion plugin may expose Component through an accessor. Resolve it once,
+    // and keep accessor errors outside React's child boundary from breaking the row.
+    SlotComponent = slotProvider?.Component;
+  } catch {
+    // An unreadable component uses the same fallback as an absent provider.
+  }
+  if (!slotProvider || !SlotComponent) return renderDefault();
+  return (
+    <ReasoningSlotBoundary provider={slotProvider} renderDefault={renderDefault}>
+      <SlotComponent
+        agentId={agentId}
+        text={text}
+        phase={phase}
+        theme={theme}
+        layout={slotLayout}
+        timestamp={timestamp}
+        renderDefault={renderDefault}
+      />
+    </ReasoningSlotBoundary>
+  );
+}
+
 export function ColorfulReasoning({
   agentId,
   item,
@@ -395,7 +503,6 @@ export function ColorfulReasoning({
   layout,
 }: PluginTimelineItemProps<ReasoningItemData>) {
   useI18n();
-  const { ReasoningText } = useActivityDetails();
   const palette = usePalette(theme);
   const metrics = densityMetrics(useDensity(), layout.compact, layout.platform !== "web");
   const styles = useActivityStyles(theme, palette, metrics);
@@ -448,7 +555,16 @@ export function ColorfulReasoning({
       />
       {expanded ? (
         <View {...cmonoViewEscape} style={styles.details}>
-          <ReasoningText text={item.data.text} phase={item.data.phase} theme={theme} palette={palette} styles={styles} />
+          <ReasoningBody
+            agentId={agentId}
+            text={item.data.text}
+            phase={item.data.phase}
+            theme={theme}
+            layout={layout}
+            timestamp={timestamp}
+            palette={palette}
+            styles={styles}
+          />
         </View>
       ) : null}
     </View>

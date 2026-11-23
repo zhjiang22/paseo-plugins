@@ -23,6 +23,7 @@ import { LoaderMark } from "./client/vivid";
 import { foldRuntime } from "./client/fold-runtime";
 import { BOUNDARY_ITEM_TYPES, configurePiNotices, observeBoundary, transformReasoning, transformToolCall } from "./client/transform";
 import { applyTakeover, isSettingsChange, setLiveTakeover, startTakeover, type TakeoverPart } from "./client/takeover";
+import { getReasoningBodySlotRegistry } from "./client/reasoning-slot";
 import { installColorfulFonts } from "./client/web";
 import { foldIndexRpc } from "./shared/fold-index";
 import { activitySettings, DEFAULT_TAKEOVER, foldFromValues } from "./shared/settings";
@@ -193,6 +194,13 @@ export default function contribute(client: PluginClientContext) {
   configureFx(createChunkLoader(client, { rpc: getClientChunk, manifest: FX_CHUNK, label: () => t("boot.name"), text: i18n }));
 
   const readSettings = settingsRpc(activitySettings.id).read;
+  let unregisterReasoningSlotHost: (() => void) | null = null;
+  const releaseReasoningSlotHost = () => {
+    if (!unregisterReasoningSlotHost) return;
+    const release = unregisterReasoningSlotHost;
+    unregisterReasoningSlotHost = null;
+    release();
+  };
   const register = (part: TakeoverPart) => {
     if (part === "tool-calls") {
       return client.addTimelineTransformer({ id: "tool-calls", query: { itemType: "tool_call" }, transform: transformToolCall });
@@ -211,6 +219,9 @@ export default function contribute(client: PluginClientContext) {
     } catch {
       // Older host: the fold index still splits segments at notifications, just later.
     }
+    releaseReasoningSlotHost();
+    unregisterReasoningSlotHost = getReasoningBodySlotRegistry().registerHost("vivid-activity");
+    removals.push(releaseReasoningSlotHost);
     return () => {
       for (const remove of removals) remove();
     };
@@ -238,6 +249,7 @@ export default function contribute(client: PluginClientContext) {
     i18n.dispose();
     setLiveTakeover(null);
     takeover.stop();
+    releaseReasoningSlotHost();
     configurePiNotices(null);
     configureFx(null);
     setPiNoticeReader(null);

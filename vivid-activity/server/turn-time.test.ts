@@ -40,12 +40,14 @@ function ended(turnId: string | null = "t1", kind: "completed" | "failed" | "can
       : kind === "canceled"
         ? ({ kind: "canceled", reason: "stopped" } as const)
         : ({ kind: "completed" } as const);
+  // Cast, not annotated: the payload type gained `background` and `metadata` and lost `timeline` in the Paseo 0.16 SDK,
+  // and the daemon still sends `timeline: []` until 2027-05-31; one fixture typechecks against the pinned and newer SDKs.
   return {
-    agent: { id: "a1", workspaceId: null, parentAgentId: null, provider: "codex", cwd: "/tmp", title: null },
+    agent: { id: "a1", workspaceId: null, parentAgentId: null, provider: "codex", cwd: "/tmp", title: null, background: false, metadata: {} },
     turnId,
     outcome,
     timeline: [],
-  };
+  } as PluginLifecycleEvents["agent.turn_ended"];
 }
 
 describe("TurnTimePublisher", () => {

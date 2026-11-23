@@ -113,7 +113,11 @@
     "readBrowserLogs": "Read browser logs",
     "evaluateBrowserJavascript": "Evaluate browser JavaScript",
     "scrollBrowser": "Scroll browser",
-    "resizeBrowserViewport": "Resize browser viewport"
+    "resizeBrowserViewport": "Resize browser viewport",
+    "listHosts": "List hosts",
+    "watchChangeRequest": "Watch change request",
+    "stopWatchingChangeRequest": "Stop watching change request",
+    "listBrowserHosts": "List browser hosts"
   },
   "modelLabel": {
     "read": "Read",

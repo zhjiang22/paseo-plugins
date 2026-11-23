@@ -181,6 +181,10 @@ export const PASEO_TOOL_ZH: Readonly<Record<string, string>> = translatedTable({
   "Evaluate Browser JavaScript": "modelPaseo.evaluateBrowserJavascript",
   "Scroll Browser": "modelPaseo.scrollBrowser",
   "Resize Browser Viewport": "modelPaseo.resizeBrowserViewport",
+  "List Hosts": "modelPaseo.listHosts",
+  "Watch Change Request": "modelPaseo.watchChangeRequest",
+  "Stop Watching Change Request": "modelPaseo.stopWatchingChangeRequest",
+  "List Browser Hosts": "modelPaseo.listBrowserHosts",
 });
 
 /** 上游英文标签 → 中文（行标题、详情小节名）。原始工具名（MCP 工具、未知工具）属于数据，保留原文。 */

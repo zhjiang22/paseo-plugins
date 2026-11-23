@@ -138,6 +138,9 @@ function disclaimed(item: { name: string; callId?: unknown; status?: unknown; de
   // A schedule or heartbeat prompt: Paseo 0.14 records it as this row (0.13 dropped it), and the app starts a turn on it
   // (turn folding, history paging). Taken over, its turn would merge into the previous one.
   if (item.name === "heartbeat" && typeof item.callId === "string" && item.callId.startsWith("paseo-system:")) return "heartbeat";
+  // An update from a pull or merge request an agent watches (Paseo 0.17, new checks, reviews or comments): a message to the
+  // agent like the two above, so it is left to Paseo and splits segments instead of folding away with the steps it wakes.
+  if (item.name === "change_request_update" && typeof item.callId === "string" && item.callId.startsWith("paseo-change-request:")) return "change-request";
   return pluginCardOf(item);
 }
 

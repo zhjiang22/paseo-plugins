@@ -92,7 +92,7 @@ test("the plugin locale service supports custom coverage, invalid placeholders, 
     await service.ready;
     assert.equal(service.language(), "ko");
     assert.equal((await call("i18n.catalog", { device: "en-US", part: 0 })).language, "ko");
-  } finally { service.dispose(); await rm(home, { recursive: true, force: true }); useChinese(); }
+  } finally { service.dispose(); await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }); useChinese(); }
 });
 
 

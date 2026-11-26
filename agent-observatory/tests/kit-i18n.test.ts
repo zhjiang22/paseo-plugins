@@ -165,7 +165,7 @@ async function readCatalog(server: FakeServer, device: string): Promise<{ langua
 
 test("the locale service serves the chosen language, the user's files and keeps the folder ready", async (context) => {
   const home = await mkdtemp(join(tmpdir(), "kit-i18n-"));
-  context.after(() => rm(home, { recursive: true, force: true }));
+  context.after(() => rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }));
   const server = fakeServer();
   const service = createLocaleService(server.context, { pluginId: "demo", home, builtins: { "zh-CN": [zhPlugin, kitZh as Catalog], en: [enPlugin, kitEn as Catalog] } });
   await service.ready;
@@ -237,7 +237,7 @@ test("the locale service serves the chosen language, the user's files and keeps 
 
 test("a large catalog travels in several parts", async (context) => {
   const home = await mkdtemp(join(tmpdir(), "kit-i18n-"));
-  context.after(() => rm(home, { recursive: true, force: true }));
+  context.after(() => rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }));
   const many: Record<string, string> = {};
   for (let index = 0; index < 4000; index++) many[`m${index}`] = `第 ${index} 条消息，用来把目录撑到超过一个分片的大小：{count}`;
   const manyEn: Record<string, string> = {};
@@ -256,7 +256,7 @@ test("a large catalog travels in several parts", async (context) => {
 
 test("a boot-only request gets the boot text alone, in the chosen language", async (context) => {
   const home = await mkdtemp(join(tmpdir(), "kit-i18n-"));
-  context.after(() => rm(home, { recursive: true, force: true }));
+  context.after(() => rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }));
   const server = fakeServer("zh-CN");
   const service = createLocaleService(server.context, { pluginId: "demo", home, builtins: { "zh-CN": [zhPlugin, kitZh as Catalog], en: [enPlugin, kitEn as Catalog] } });
   await service.ready;

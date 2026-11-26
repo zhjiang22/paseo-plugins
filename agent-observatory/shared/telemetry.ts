@@ -20,6 +20,11 @@ export const agentTelemetrySchema = z.object({
   /** The latest turn's final reply: when it was written and whether it hands the next step to the user (待回复). Never its text. */
   replyAt: z.iso.datetime().nullable().optional(),
   replyAsks: z.boolean().nullable().optional(),
+  /**
+   * When the user marked the Agent answered (待回复 → 已答复) although they sent nothing: a reply that asks counts as answered
+   * while it was written at or before this time, so a newer reply asks again. Null or absent: not marked.
+   */
+  replyAnsweredAt: z.iso.datetime().nullable().optional(),
   /** What that reply invites (快捷回复, opus-B26), its category only; cleared with `replyAsks` by the next turn. */
   replyNudge: z.enum(REPLY_NUDGES).nullable().optional(),
   /** The user message (its time) a backfill already read the reply for, so each turn's tail is fetched at most once. */
@@ -83,6 +88,16 @@ export const getTelemetry = defineRpc({
 });
 
 export type AgentTelemetry = z.infer<typeof agentTelemetrySchema>;
+
+/**
+ * Mark an Agent awaiting a reply as answered without sending it anything, or undo that (`answered: false`). `replyAt` names
+ * the reply the user saw: when a newer reply has replaced it the answer is `stale` and nothing changes.
+ */
+export const setReplyAnswered = defineRpc({
+  name: "observatory.reply.answered",
+  input: z.object({ agentId: z.string().min(1).max(256), replyAt: z.iso.datetime(), answered: z.boolean() }),
+  output: z.object({ status: z.enum(["ok", "stale"]), replyAnsweredAt: z.iso.datetime().nullable(), message: z.string().max(300) }),
+});
 export type TelemetryEvent = z.infer<typeof telemetryEventSchema>;
 export type TelemetrySnapshot = z.infer<typeof telemetrySnapshotSchema>;
 export type TelemetryResponse = z.infer<typeof telemetryResponseSchema>;

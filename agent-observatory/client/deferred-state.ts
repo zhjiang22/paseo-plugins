@@ -10,7 +10,10 @@ import { contentKey, newMessageId, type Consent } from "./send-plan";
 
 /** Where a message comes from: its key and its row both name it. */
 // i18n-ignore: persisted ledger source prefixes are also message identity keys; translate only their display.
-export const SOURCES = { quickReply: "快捷回复", finding: "分析建议" } as const;
+export const SOURCES = { quickReply: "快捷回复", finding: "分析建议", reply: "手写回复" } as const;
+
+/** The ledger's rows for the user's own typed or dictated replies. */
+export const isReplyMessage = (view: { source: string }) => view.source === SOURCES.reply;
 
 /** What makes two messages the same request: the ledger keeps one per Agent and key on its way. */
 export function messageKey(source: string, text: string): string {
@@ -164,6 +167,7 @@ export function onItsWayLabel(view: Pick<DeferredView, "state">): string {
 export function deferredSourceLabel(source: string): string {
   if (source === SOURCES.quickReply) return t("coreDeferredState.quickReplySource");
   if (source === SOURCES.finding) return t("coreDeferredState.findingSource");
+  if (source === SOURCES.reply) return t("coreDeferredState.replySource");
   const prefix = source.startsWith(SOURCES.finding) ? SOURCES.finding : source.startsWith(SOURCES.quickReply) ? SOURCES.quickReply : null;
   if (!prefix) return source;
   // i18n-ignore: strip the persisted quotation marks, including a source truncated at the ledger's length limit.

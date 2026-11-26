@@ -18,6 +18,7 @@ import {
 import type { StopReason } from "../shared/stop-reason";
 import { REPLY_NUDGES, type ReplyNudge } from "../shared/reply";
 import { withoutUserinfo } from "../shared/change-request";
+import { replyStillAsks } from "../shared/model";
 
 /** Only a well-formed link is kept; anything else (a malformed URL, an oversized label) is dropped, never stored. */
 /** A stored link, without the `user:password@` that versions before 2.15.1 kept. */
@@ -381,6 +382,28 @@ export class TelemetryStore {
   }
 
   /**
+   * 已答复 / 待回复: mark the Agent's latest reply that asks as answered without sending anything, or undo that. Applies only
+   * while `replyAt` is still that reply (a newer one replaced it otherwise: `stale`), and writes it out before answering.
+   */
+  setReplyAnswered(agentId: string, replyAt: string, answered: boolean): Promise<{ status: "ok" | "stale"; replyAnsweredAt: string | null }> {
+    const stale = { status: "stale" as const, replyAnsweredAt: null };
+    if (this.closed || !agentId || agentId.length > 256) return Promise.resolve(stale);
+    const task = this.mutations.then(() => {
+      const state = this.agents.get(agentId), summary = state?.summary;
+      if (!state || !summary || summary.replyAsks !== true || !summary.replyAt || Date.parse(summary.replyAt) !== Date.parse(replyAt)) return { ...stale, changed: false };
+      const covered = !!summary.replyAnsweredAt && Date.parse(summary.replyAnsweredAt) >= Date.parse(summary.replyAt);
+      if (answered === covered) return { status: "ok" as const, replyAnsweredAt: summary.replyAnsweredAt ?? null, changed: false };
+      // Marked now, so it covers this reply (written earlier) and no later one; undone by clearing it.
+      summary.replyAnsweredAt = answered ? new Date(Math.max(this.now(), Date.parse(summary.replyAt))).toISOString() : null;
+      this.markChanged(agentId);
+      this.dirty = true;
+      return { status: "ok" as const, replyAnsweredAt: summary.replyAnsweredAt, changed: true };
+    }).catch(() => ({ ...stale, changed: false }));
+    this.mutations = task.then(() => {});
+    return task.then(async ({ changed, ...result }) => { if (changed) await this.flush(); return result; });
+  }
+
+  /**
    * Whether the reply to the user message sent at `userAt` still has to be read from the timeline. A reply recorded as
    * newer than the Agent's own last update came from an import-time timestamp and is read again (then capped).
    */
@@ -399,7 +422,7 @@ export class TelemetryStore {
     const awaiting = new Set<string>();
     for (const agent of agents) {
       const summary = this.agents.get(agent.id)?.summary;
-      if (!summary?.replyAsks || agent.archivedAt || agent.activeTurn || agent.status === "running" || agent.status === "initializing") continue;
+      if (!summary || !replyStillAsks(summary) || agent.archivedAt || agent.activeTurn || agent.status === "running" || agent.status === "initializing") continue;
       const since = Math.max(Date.parse(agent.lastUserMessageAt ?? "") || 0, Date.parse(summary.turnStartedAt ?? "") || 0);
       if ((Date.parse(summary.replyAt ?? "") || 0) >= since) awaiting.add(agent.id);
     }

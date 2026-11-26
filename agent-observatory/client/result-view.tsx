@@ -64,13 +64,14 @@ export function PinnedInput({ theme, message, confirmed, loading, inset }: { the
 }
 
 const outcomeBadge = { passed: { get label() { return t("secondaryResultView.passed"); }, tone: "success", icon: "CircleCheck" }, failed: { get label() { return t("secondaryResultView.failed"); }, tone: "danger", icon: "CircleX" }, unknown: { get label() { return t("secondaryResultView.unconfirmed"); }, tone: "neutral", icon: "CircleHelp" } } as const;
-export function ResultView({ theme, agent, data, loading, error, header, lead, inset, compact = inset < space.xl, pending = 0, permissions = [], suggestion = null, onResolvePermissions, onPermissionsChanged, onReplied, onOpenEvidence, onRefresh }: {
+export function ResultView({ theme, agent, data, loading, error, header, lead, inset, compact = inset < space.xl, pending = 0, permissions = [], suggestion = null, onResolvePermissions, onPermissionsChanged, onReplied, onTypeReply, onOpenEvidence, onRefresh }: {
   theme: PluginTheme; agent: AgentRecord; data?: ResultData; loading: boolean; error?: string | null; header?: ReactNode; inset: number; compact?: boolean; pending?: number; permissions?: readonly Record<string, unknown>[];
   /** The current recap's suggested next message (AI 建议), offered under the reply beside the quick replies. */ suggestion?: string | null;
   /** Shown before the reply, e.g. the 定时任务 card of an Agent a schedule created. */ lead?: ReactNode;
   onResolvePermissions?: () => void;
   /** A request was answered here (or found answered elsewhere): read the Agent's pending requests again. */ onPermissionsChanged?: () => void;
   /** A quick reply went out. */ onReplied?: () => void;
+  /** 回复: open the sheet to type or dictate an answer; offered under the reply while the Agent awaits one. */ onTypeReply?: () => void;
   onOpenEvidence: (ref: string) => void; onRefresh: () => void;
 }) {
   const { colors } = theme;
@@ -98,6 +99,9 @@ export function ResultView({ theme, agent, data, loading, error, header, lead, i
             <Button theme={theme} label={t("secondaryResultView.copy")} icon="Copy" variant="ghost" size="sm" accessibilityLabel={t("secondaryResultView.copyLatestReply")} onPress={copy} />
             <Button theme={theme} label={t("secondaryResultView.viewInTimeline")} icon="ListTree" variant="ghost" size="sm" accessibilityLabel={t("secondaryResultView.viewReplyContext")} onPress={() => onOpenEvidence(reply.ref)} />
           </View>
+          {onTypeReply && agent.status === "idle" && !agent.archivedAt ? <View style={{ alignItems: "flex-start" }}>
+            <Button theme={theme} label={t("secondaryResultView.typeAnswer")} icon="MessageSquareText" variant="secondary" accessibilityLabel={t("secondaryResultView.typeAnswerHint")} onPress={onTypeReply} testID="type-answer" />
+          </View> : null}
           {nudge || ai ? <View style={{ padding: space.md, borderRadius: radius.lg, borderWidth: hairline, borderColor: hue(theme, "violet", "line"), backgroundColor: hue(theme, "violet", "soft") }}>
             <QuickReplies key={`${agent.id}:${agent.lastUserMessageAt ?? ""}:${agent.observedTurnStartedAt ?? ""}:${nudge}:${ai ?? ""}`} theme={theme} agentId={agent.id} agentTitle={agent.title || t("secondaryResultView.unnamedAgent")} nudge={nudge} suggestion={ai} expectPrompt={agent.lastUserMessageAt} expectRound={agent.observedTurnStartedAt ?? null} compact={compact} onSent={onReplied} />
           </View> : null}

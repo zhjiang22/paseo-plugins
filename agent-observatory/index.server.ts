@@ -4,7 +4,7 @@ import { t } from "./shared/text";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { createProcessBridge, registerProviderSubagents } from "./server/provider-subagents";
 import { TelemetryStore } from "./server/telemetry";
-import { getTelemetry } from "./shared/telemetry";
+import { getTelemetry, setReplyAnswered } from "./shared/telemetry";
 import { getAnalytics } from "./shared/analytics";
 import { createAnalyticsEnrichment } from "./server/analytics-enrichment";
 import { registerInsights } from "./server/insights";
@@ -234,6 +234,12 @@ export default function contribute(host: PluginServerContext) {
   registerSendLedger(server, deferred);
   server.handle(getStats, (input, { paseo }) => { zones.note(input.timeZone); void background.tracker.attach(paseo); tokens.discover(paseo); return stats.read(input, paseo); });
   server.handle(getTelemetry, (input, { paseo }) => { void background.tracker.attach(paseo); tokens.discover(paseo); void replyCheck.refresh(paseo); return telemetry.read(input); });
+  // 已答复 / 待回复: take an Agent off 待回复 without sending it anything, or put it back.
+  server.handle(setReplyAnswered, async ({ agentId, replyAt, answered }) => {
+    const result = await telemetry.setReplyAnswered(agentId, replyAt, answered);
+    const message = result.status === "stale" ? t("serverTelemetry.replyAnsweredStale") : answered ? t("serverTelemetry.replyMarkedAnswered") : t("serverTelemetry.replyMarkedAwaiting");
+    return { ...result, message };
+  });
   server.handle(getAnalytics, (input, { paseo }) => { zones.note(input.timeZone); analytics.refreshRecent(paseo); return telemetry.analyticsRead(input); });
   return async () => {
     locales.dispose();

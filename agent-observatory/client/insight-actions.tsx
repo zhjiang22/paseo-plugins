@@ -19,7 +19,7 @@ import { checkSend, ledgerInput, outgoingMessage, sendChecked, type LedgerAnswer
 import { isSlashCommand, type Consent, type SendPlan } from "./send-plan";
 import { onItsWay, type DeferredView } from "../shared/deferred-rpc";
 import { DeferredList, useDeferredQueue } from "./deferred";
-import { SOURCES, ledgerNotice, messageKey, onItsWayLabel, rememberUnanswered, requestId, settleRequest, unansweredId } from "./deferred-state";
+import { SOURCES, ledgerNotice, messageKey, onItsWayLabel, rememberUnanswered, requestId, settleRequest, unansweredId, isReplyMessage } from "./deferred-state";
 import { SchedulePicker, scheduleWhen } from "./schedule-send";
 
 /**
@@ -51,6 +51,7 @@ export function actionPrompt(action: SuggestionAction): string {
 const NEVER_SENT: ReadonlySet<DeferredView["state"]> = new Set(["canceled", "discarded", "expired"]);
 /** The ledger's rows for findings sent to an Agent, here and beside the analysis. */
 export const isFindingMessage = (view: DeferredView) => view.source.startsWith(SOURCES.finding);
+
 /** How a finding's message is named in the ledger's list: its row shows beside that finding's 发给这个 Agent. */
 // i18n-ignore: persisted ledger source format matches existing messages across language changes.
 export const findingSource = (finding: Pick<Finding, "title">) => `${SOURCES.finding}「${finding.title}」`.slice(0, 200);
@@ -65,8 +66,13 @@ type Problem = { tone: "danger" | "warning"; message: string; retry: boolean };
  * answer was lost; the same text on its way (here, on another screen or device) locks the send, and its row has 仍然发送 /
  * 取消排队.
  */
-export function SendToAgentSheet({ theme, open, onClose, agentId, agentTitle, finding, onSent }: { theme: PluginTheme; open: boolean; onClose: () => void; agentId: string; agentTitle: string;
-  finding: Finding | null; onSent?: () => void }) {
+export function SendToAgentSheet({ theme, open, onClose, agentId, agentTitle, finding, reply = false, onSent }: { theme: PluginTheme; open: boolean; onClose: () => void; agentId: string; agentTitle: string;
+  finding: Finding | null;
+  /**
+   * 回复: the user's own answer to an Agent awaiting a reply instead of a finding. The sheet opens empty and focused,
+   * says how to dictate into it (the system's dictation: any text field takes it), and lists only these replies.
+   */
+  reply?: boolean; onSent?: () => void }) {
   const paseo = usePaseo(), toast = useToast(), { colors } = theme;
   // Without the host's lists only the built-in steering providers steer; a custom one is asked about first.
   const query = useSteerableProviders(open), capabilities = query.data ?? (query.isError ? BUILTIN_SEND : undefined);
@@ -80,8 +86,9 @@ export function SendToAgentSheet({ theme, open, onClose, agentId, agentTitle, fi
   // 定时发 (2.17): the time picker is open.
   const [scheduling, setScheduling] = useState(false);
   // The message being sent: every try of this text goes out with its id; another text is another message.
-  const message = useRef<OutgoingMessage | null>(null), slash = isSlashCommand(text), body = text.trim(), key = messageKey(SOURCES.finding, body);
-  useEffect(() => { if (open && finding) { setText(findingMessage(finding)); setProblem(null); setConfirming(null); setScheduling(false); message.current = null; } }, [open, finding?.id]);
+  const source = reply ? SOURCES.reply : SOURCES.finding;
+  const message = useRef<OutgoingMessage | null>(null), slash = isSlashCommand(text), body = text.trim(), key = messageKey(source, body);
+  useEffect(() => { if (open && (finding || reply)) { setText(finding && !reply ? findingMessage(finding) : ""); setProblem(null); setConfirming(null); setScheduling(false); message.current = null; } }, [open, finding?.id, reply]);
   useEffect(() => {
     if (!open || !capabilities) return;
     let live = true;
@@ -104,7 +111,7 @@ export function SendToAgentSheet({ theme, open, onClose, agentId, agentTitle, fi
   const current = (): OutgoingMessage => {
     const kept = message.current, record = kept && listed.current.find(view => view.messageId === kept.messageId);
     if (!kept || kept.text !== body || record && NEVER_SENT.has(record.state))
-      message.current = outgoingMessage(agentId, body, { what: t("coreInsightActions.message2"), key, source: findingSource({ title: finding?.title ?? body.split("\n")[0]! }), messageId: requestId(agentId, key, listed.current) });
+      message.current = outgoingMessage(agentId, body, { what: t("coreInsightActions.message2"), key, source: reply ? SOURCES.reply : findingSource({ title: finding?.title ?? body.split("\n")[0]! }), messageId: requestId(agentId, key, listed.current) });
     return message.current!;
   };
   /** Whether the list drawn last shows this text on its way, or this sheet's message settled: then nothing is sent again. */
@@ -198,14 +205,15 @@ export function SendToAgentSheet({ theme, open, onClose, agentId, agentTitle, fi
   };
   const plan = confirming?.check.plan ?? check?.plan, offer = confirming?.offer;
   const locked = !!onWay || !!delivered;
-  return <Sheet title={t("coreInsightActions.sendToThisAgent")} open={open} onClose={onClose}>
+  return <Sheet title={reply ? t("coreInsightActions.replyToAgent", { title: agentTitle }) : t("coreInsightActions.sendToThisAgent")} open={open} onClose={onClose}>
     <MetaLine theme={theme} numberOfLines={2} parts={[t("coreInsightActions.willReceiveThisMessageInItsOriginal", { value1: agentTitle }), plan?.note]} />
-    <TextField theme={theme} label={t("coreInsightActions.message2")} value={text} onChangeText={setText} multiline minHeight={200} />
+    <TextField theme={theme} label={reply ? t("coreInsightActions.yourAnswer") : t("coreInsightActions.message2")} value={text} onChangeText={setText} multiline minHeight={reply ? 140 : 200} autoFocus={reply}
+      {...(reply ? { placeholder: t("coreInsightActions.yourAnswerPlaceholder"), hint: t("coreInsightActions.dictationHint") } : {})} />
     {confirming?.check.plan.confirm ? <Banner theme={theme} tone="warning" message={confirming.check.plan.confirm} /> : null}
     {offer ? <Text style={{ color: colors.foregroundMuted, fontSize: fontSize.meta, lineHeight: 17 }}>{t("coreInsightActions.message3", { value1: offer.label, value2: offer.note })}</Text> : null}
     {problem ? <Banner theme={theme} tone={problem.tone} message={problem.message} /> : null}
     {delivered ? <Banner theme={theme} tone={delivered.state === "sent" ? "success" : "warning"} message={delivered.state === "sent" ? t("coreInsightActions.thisMessageHasBeenDeliveredEditingIts") : t("coreInsightActions.thisMessageMayAlreadyHaveArrivedOpen")} /> : null}
-    <DeferredList theme={theme} queue={deferred} only={isFindingMessage} />
+    <DeferredList theme={theme} queue={deferred} only={reply ? isReplyMessage : isFindingMessage} />
     {scheduling && !locked ? <SchedulePicker theme={theme} busy={busy} onClose={() => setScheduling(false)} onPick={at => void schedule(at)} /> : null}
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm, justifyContent: "flex-end" }}>
       <Button theme={theme} tone="sky" variant={scheduling ? "secondary" : "ghost"} icon="AlarmClock" label={t("alertsSchedule.scheduleButton")} disabled={busy || !body || locked || plan?.kind === "unavailable"}

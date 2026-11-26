@@ -152,7 +152,14 @@
     "couldNotOpenParent": "Couldn't open the parent agent: {value1}",
     "parentOnHost": "On {host}, opens in Paseo",
     "anotherHost": "another host",
-    "parentHost": "Parent agent's host"
+    "parentHost": "Parent agent's host",
+    "markAnswered": "Mark answered",
+    "markAnsweredHint": "No reply needed: take it off Awaiting reply. A newer reply puts it back",
+    "markAwaitingReply": "Mark awaiting reply",
+    "markAwaitingReplyHint": "Undo Mark answered: show it under Awaiting reply again",
+    "couldNotChangeAnswered": "Could not change the answered state. Try again later",
+    "typeAnswer": "Type answer",
+    "thisAgent": "this agent"
   },
   "coreAgentDigest": {
     "modelTimeShare": "{fraction} of the time was spent thinking and writing replies.",
@@ -1190,7 +1197,8 @@
     "mayJustHaveBeenSent": "may just have been sent",
     "wasJustSent": "was just sent",
     "quotedItem": "\"{item}\"",
-    "quickReplySourceWithTitle": "Quick reply \"{title}\""
+    "quickReplySourceWithTitle": "Quick reply \"{title}\"",
+    "replySource": "Your reply"
   },
   "coreInsightActions": {
     "highPriority": "High priority",
@@ -1229,7 +1237,11 @@
     "mode": "Mode {value1}",
     "task": "Task",
     "start": "Start",
-    "profileName": "Profile {name}"
+    "profileName": "Profile {name}",
+    "replyToAgent": "Reply to {title}",
+    "yourAnswer": "Your answer",
+    "yourAnswerPlaceholder": "Type your answer, or dictate it",
+    "dictationHint": "To dictate: on a Mac press Fn (🌐) twice or use Edit › Start Dictation; on a phone tap the keyboard's microphone. For Paseo's own voice input, open the session instead."
   },
   "secondaryResultView": {
     "openInBrowser": "Open in browser",
@@ -1280,7 +1292,9 @@
     "answer": "Answer",
     "viewPlan": "View plan",
     "review": "Review",
-    "pendingRequest": "Pending request"
+    "pendingRequest": "Pending request",
+    "typeAnswer": "Type or dictate an answer",
+    "typeAnswerHint": "Answer this agent here: type, or dictate with your system's dictation"
   },
   "secondaryScheduleBoard": {
     "lastRuns": {
@@ -2654,7 +2668,10 @@
     "m016": "Request approved",
     "m017": "Request denied or withdrawn",
     "m018": "Archived",
-    "m019": "Untitled agent"
+    "m019": "Untitled agent",
+    "replyMarkedAnswered": "Marked as answered. It is off Awaiting reply until the agent asks again.",
+    "replyMarkedAwaiting": "Marked as awaiting reply again.",
+    "replyAnsweredStale": "The agent has replied since. Nothing was changed; check the latest reply."
   },
   "serverTokensData": {
     "m001": "Unknown"

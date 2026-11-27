@@ -69,7 +69,7 @@ function Thumbnail({ theme, hostId, item, enabled }: { theme: Theme; hostId: str
   });
   const frame = enabled && running ? thumbnail.data : null;
   return <View style={{ aspectRatio: 16 / 10, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-    {frame ? <Image accessibilityIgnoresInvertColors source={{ uri: frame.dataUrl }} resizeMode="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+    {frame ? <Image fadeDuration={0} accessibilityIgnoresInvertColors source={{ uri: frame.dataUrl }} resizeMode="cover" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
       : <View style={{ alignItems: 'center', gap: space.xs }}>
         <Icon name={running ? 'Globe' : item.session.status === 'error' ? 'CircleAlert' : 'MonitorOff'} size={20} color={colors.foregroundMuted} />
         <Text numberOfLines={1} style={{ color: colors.foregroundMuted, fontSize: fontSize.meta, maxWidth: 200 }}>{running ? pageHost(item.session.url) : idleThumbnail(item.session.status) ?? t("browserOverview.browserHasNotStarted")}</Text>

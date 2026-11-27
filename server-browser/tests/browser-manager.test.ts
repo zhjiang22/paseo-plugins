@@ -14,6 +14,8 @@ import { normalizeNavigationUrl } from '../server/browser-manager';
 test('navigation permits websites and rejects local files, code and embedded passwords',()=>{
   assert.equal(normalizeNavigationUrl('example.com'),'https://example.com/');
   assert.equal(normalizeNavigationUrl('http://127.0.0.1:6767/'),'http://127.0.0.1:6767/');
+  for(const [bare,url] of [['127.0.0.1:5173','http://127.0.0.1:5173/'],['localhost:3000/app','http://localhost:3000/app'],['web--demo.localhost:6767','http://web--demo.localhost:6767/'],['[::1]:8080','http://[::1]:8080/'],['localhost','http://localhost/'],['example.com:8443','https://example.com:8443/']]) assert.equal(normalizeNavigationUrl(bare),url,bare);
+  assert.equal(normalizeNavigationUrl('https://127.0.0.1:5173'),'https://127.0.0.1:5173/');
   for(const url of ['file:///etc/passwd','javascript:alert(1)','data:text/html,hello','https://user:password@example.com','\n']) assert.throws(()=>normalizeNavigationUrl(url));
 });
 

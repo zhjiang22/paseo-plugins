@@ -1619,7 +1619,10 @@ test("background-only swimlanes survive an empty event log and obey project filt
   await page.getByRole("tab", { name: /^事件/ }).click();
   const lane = page.getByRole("button", { name: /^泳道 整理性能基线：执行中 / });
   await expect(lane).toBeVisible();
-  await expect(page.getByText(/^0 轮 · 峰值 2 个同时执行/)).toBeVisible();
+  // Only provider subagents draw a background bar. 重构支付服务 waits on a Paseo sub-agent, whose work belongs on that
+  // sub-agent's own lane, never on the parent's, so the parent gets no lane and the peak is 1.
+  await expect(page.getByText(/^0 轮 · 峰值 1 个同时执行/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^泳道 重构支付服务：/ })).toHaveCount(0);
   await expect(page.getByText("这个时间窗内没有记录到对话轮次", { exact: true })).toHaveCount(0);
   await noHorizontalOverflow(page);
   await page.getByRole("tab", { name: /^会话/ }).click();

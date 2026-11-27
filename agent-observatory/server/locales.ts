@@ -3,12 +3,13 @@ import { join } from "node:path";
 import zh from "../shared/locales/zh-CN.json";
 import en from "../shared/locales/en.json";
 import ru from "../shared/locales/ru.json";
+import ko from "../shared/locales/ko.json";
 import kitZh from "../shared/locales/kit/zh-CN.json";
 import kitEn from "../shared/locales/kit/en.json";
 import { catalogName, currentLanguage, normalizeLanguage, type Catalog } from "../shared/i18n";
 import { paseoHome } from "./i18n-server";
 
-export const BUILTIN_CATALOGS = { "zh-CN": [zh, kitZh], en: [en, kitEn], ru: [ru] };
+export const BUILTIN_CATALOGS = { "zh-CN": [zh, kitZh], en: [en, kitEn], ru: [ru], ko: [ko] };
 
 /** The language requested for a new analysis. Stored reports are never translated again. */
 export function languageName(): string {

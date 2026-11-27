@@ -475,7 +475,7 @@ export class BrowserManager{
  private async syncPages(session:LiveSession):Promise<void>{if(!session.context||session.stopping)return;await Promise.allSettled(session.context.pages().filter(page=>!page.isClosed()).map(page=>this.trackPage(session,page)));}
  private async viewport(page:Page,session:LiveSession):Promise<{width:number;height:number}>{try{const size=await withTimeout(page.evaluate<{width:number;height:number}|null>('({width:window.innerWidth,height:window.innerHeight})'),this.budgets.viewportProbeMs,()=>null);if(size&&Number.isFinite(size.width)&&Number.isFinite(size.height)&&size.width>0&&size.height>0)return size;}catch{}return page.viewportSize()??{width:session.width,height:session.height};}
  /** Start Chromium and wait for its DevTools port. An exit before that is the caller's to handle, not a crash to recover from. */
- private async launchChromium(session:LiveSession,generation:number,launch:{executable:string;args:string[];environment:NodeJS.ProcessEnv;activePortFile:string},spawned:ChildProcess[]):Promise<{child:ChildProcess;port:number}>{
+ private async launchChromium(session:LiveSession,generation:number,launch:{executable:string;args:string[];environment:NodeJS.ProcessEnv;activePortFile:string},spawned:ChildProcess[]):Promise<{child:ChildProcess;port:number;browserPath:string}>{
   const stopped=()=>this.disposed||this.retired.has(session.workspaceId)||generation!==session.generation||session.stopping||!session.desiredRunning;
   if(stopped())throw new Error(t('runtime.startStopped'));
   await unlink(launch.activePortFile).catch(()=>{});
@@ -490,7 +490,7 @@ export class BrowserManager{
   while(Date.now()<deadline){
    if(launchError)throw new Error(launchError);if(stopped())throw new Error(t('runtime.startStopped'));
    if(child.exitCode!==null||child.signalCode!==null)throw Object.assign(new Error(startupLog.includes('error while loading shared libraries')?t('runtime.librariesMissing'):t('runtime.startFailed')),{exitedEarly:true,startupLog});
-   try{const candidate=Number((await readFile(launch.activePortFile,'utf8')).split('\n')[0]);if(Number.isInteger(candidate)&&candidate>0&&candidate<65536){listening=true;return {child,port:candidate};}}catch{}
+   try{const [line,browserPath='']=(await readFile(launch.activePortFile,'utf8')).split('\n'),candidate=Number(line);if(Number.isInteger(candidate)&&candidate>0&&candidate<65536&&/^\/devtools\/browser\/[\w-]+$/.test(browserPath)){listening=true;return {child,port:candidate,browserPath};}}catch{}
    await sleep(100);
   }
   throw new Error(t('runtime.startTimeout'));
@@ -511,7 +511,7 @@ export class BrowserManager{
   const attempts=mode==='on'?[true]:mode==='off'||this.sandboxUnavailable?[false]:[true,false];
   const spawned:ChildProcess[]=[];
   try{
-   let launched:{child:ChildProcess;port:number}|undefined,sandboxed=false,fallbackReason:string|undefined;
+   let launched:{child:ChildProcess;port:number;browserPath:string}|undefined,sandboxed=false,fallbackReason:string|undefined;
    for(const [index,sandbox] of attempts.entries()){
     if(stopped())return;
     try{launched=await this.launchChromium(session,generation,{executable,args:chromiumArguments({profileDir,width:session.width,height:session.height,proxy,sandbox}),environment,activePortFile},spawned);sandboxed=sandbox;break;}
@@ -526,7 +526,9 @@ export class BrowserManager{
    if(fallbackReason)this.sandboxUnavailable=fallbackReason;
    session.sandbox={enabled:sandboxed,mode,...(!sandboxed&&mode==='auto'&&this.sandboxUnavailable?{fallbackReason:this.sandboxUnavailable}:{})};
    session.cdpEndpoint=`http://127.0.0.1:${launched.port}`;
-   const browser=await this.playwright().chromium.connectOverCDP(session.cdpEndpoint,{timeout:15000});if(stopped()){await withTimeout(browser.close().catch(()=>{}),3000,()=>undefined);return;}session.browser=browser;session.browserVersion=typeof browser.version==='function'?browser.version():'';const context=browser.contexts()[0];if(!context)throw new Error(t('runtime.persistentSessionMissing'));session.context=context;context.setDefaultTimeout(15000);context.setDefaultNavigationTimeout(30000);
+   // Connect over the WebSocket from DevToolsActivePort: given the http:// endpoint, Playwright fetches /json/version through
+   // http_proxy unless no_proxy lists 127.0.0.1, and with NODE_USE_ENV_PROXY=1 Node rejects that request outright.
+   const browser=await this.playwright().chromium.connectOverCDP(`ws://127.0.0.1:${launched.port}${launched.browserPath}`,{timeout:15000});if(stopped()){await withTimeout(browser.close().catch(()=>{}),3000,()=>undefined);return;}session.browser=browser;session.browserVersion=typeof browser.version==='function'?browser.version():'';const context=browser.contexts()[0];if(!context)throw new Error(t('runtime.persistentSessionMissing'));session.context=context;context.setDefaultTimeout(15000);context.setDefaultNavigationTimeout(30000);
    context.on('page',page=>{if(generation===session.generation)void this.trackPage(session,page).catch(()=>{});});await this.syncPages(session);
    let activeId:string|null=null;
    for(let index=0;index<savedTabs.length;index++){

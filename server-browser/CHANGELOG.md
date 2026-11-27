@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- daemon 环境设了 `http_proxy` 且 `no_proxy` 不含 `127.0.0.1` 时（尤其加上 `NODE_USE_ENV_PROXY=1`），启动浏览器报 `connectOverCDP: The property 'Host in options.headers' must match the request authority`：daemon 改为直接用 `DevToolsActivePort` 里的 WebSocket 地址连接 Chromium，不再经代理请求 `/json/version`。
+- 地址栏输入不带协议的本地地址（`127.0.0.1:5173`、`localhost:3000`、`*.localhost`、IP 地址）时补 `http://`，不再补 `https://` 导致 `ERR_SSL_PROTOCOL_ERROR`；其他域名仍补 `https://`。
+- 地址栏有时停在旧地址：输入框获得焦点或留有未提交的输入时错过一次地址变化，之后就一直不再同步。现在地址栏空闲时总是显示当前页面地址，失焦时也会同步；未提交的输入保留到页面跳转为止。
+- 页面跳转、点击、切换标签页后画面不再先变黑：上一幅画面留在原处（不可点击，显示「正在获取画面…」），直到新画面加载完；画面图片关掉 Android 默认的 300 ms 淡入。
+- Android 上手动控制页面时，在画面上左右滑不再拉出 Paseo 的侧边抽屉：画面放进原生 ScrollView 抢先接管拖动，画面本身由原生驱动的反向位移固定不动，松手后换算成一次页面滚动。由 `client/swipe-shield.tsx` 实现。
+
 ## 0.13.5 - 2026-11-22
 
 - 适配 Paseo 0.17（0.16 及更早照常可用）：不用改代码。界面懒加载块用 Paseo 0.15 起的编译器重建（以前是 0.14 的编译器生成的，内容等价，只有压缩后的写法不同）。在隔离的 Paseo 0.17.3 和 0.16.0 daemon 上加载、跑脚本回合并打开网页端（桌面和手机），没有错误。

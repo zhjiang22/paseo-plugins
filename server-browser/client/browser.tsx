@@ -23,6 +23,7 @@ import { effectiveQuality, frameDelay, frameLimits, frameTargetMs, initialPacing
 import { deviceOpenableUrl } from './local-open';
 import { ActionMenu, Badge, Banner, BottomBar, Button, IconButton, MetaLine, ProjectMark, StatusDot, fontSize, hairline, hue, radius, space, toneColor, useCompactLayout, withAlpha, type MenuAction, type Tone } from './kit';
 import { StateGlyph } from './looks';
+import { SwipeShield } from './swipe-shield';
 import { Ping } from './motion';
 import { PORTS_POLL_MS, mergePorts, portsRequest, type PortsData } from './agent-ports-model';
 import type { AgentPortsView } from './agent-ports';
@@ -208,6 +209,11 @@ function BrowserScreen({ theme, host, layout, navigation, workspaceId, workspace
   const [frameNode, setFrameNode] = useState<unknown>(null);
   // The last picture whose image finished loading: stays under the next one until it loads, so typing never flashes blank.
   const [loadedFrame, setLoadedFrame] = useState<Frame | null>(null);
+  const loadedFrameRef = useRef<Frame | null>(null);
+  loadedFrameRef.current = loadedFrame;
+  // The picture a page change took away: drawn under the stage, never clickable, until the next picture has loaded, so a
+  // navigation, click or tab switch never blanks the stage while the new picture is on its way.
+  const [staleFrame, setStaleFrame] = useState<Frame | null>(null);
   // The last frame this app saw of this browser: shown dimmed until the live frame arrives, so switching feels instant.
   const [placeholder, setPlaceholder] = useState(() => recallFrame(host.id, workspaceId));
   const alive = useRef(true);
@@ -275,6 +281,8 @@ function BrowserScreen({ theme, host, layout, navigation, workspaceId, workspace
   }, []);
   const clearFrame = useCallback(() => {
     setPlaceholder(undefined);
+    const lastLoaded = loadedFrameRef.current;
+    if (lastLoaded) setStaleFrame(lastLoaded);
     displayedRef.current = null; frameRef.current = null; frameIdRef.current = null;
     setDisplayedId(null); setFrame(null); setLoadedFrame(null);
   }, []);
@@ -313,8 +321,9 @@ function BrowserScreen({ theme, host, layout, navigation, workspaceId, workspace
       setReading(null);
       setPageChecks(null);
     }
-    if (!addressFocused.current && !addressDraft.current.dirty && value.url !== previousUrl) setAddress(value.url);
-    if (value.status !== 'running') frameCache.delete(host.id, workspaceId);
+    // An idle address bar always shows the page; an unsubmitted edit left behind on blur lasts until the page moves on.
+    if (!addressFocused.current && (!addressDraft.current.dirty || value.url !== previousUrl)) { addressDraft.current = emptyDraft(); setAddress(value.url); }
+    if (value.status !== 'running') { frameCache.delete(host.id, workspaceId); setStaleFrame(null); }
     if (value.error) {
       setFrameError(value.error);
       if (value.status === 'error') setError(value.error);
@@ -587,12 +596,14 @@ function BrowserScreen({ theme, host, layout, navigation, workspaceId, workspace
     if (Math.abs(deltaX) + Math.abs(deltaY) < 1) return;
     enqueueLive({ kind: 'scroll', deltaX, deltaY }, undefined, eventTarget ?? displayedRef.current);
   }, [enqueueLive]);
+  // On Android the SwipeShield's scroll views own drags while you control the page, so the drawer cannot take them.
+  const shieldRef = useRef(false);
   const panResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponderCapture: (_event, gesture) => {
       if (gesture.numberActiveTouches <= 1) panTarget.current = displayedRef.current ? { ...displayedRef.current } : null;
       return false;
     },
-    onMoveShouldSetPanResponderCapture: (_event, gesture) => controllerRef.current.canControl && Math.abs(gesture.dx) + Math.abs(gesture.dy) > 10,
+    onMoveShouldSetPanResponderCapture: (_event, gesture) => controllerRef.current.canControl && !shieldRef.current && Math.abs(gesture.dx) + Math.abs(gesture.dy) > 10,
     onPanResponderGrant: () => { suppressFrameClick.current = true; pressLocation.current = null; },
     onPanResponderTerminationRequest: () => false,
     onPanResponderRelease: (_event, gesture) => { suppressFrameClick.current = true; if (panTarget.current) queueScroll(-gesture.dx, -gesture.dy, panTarget.current); panTarget.current = null; },
@@ -615,6 +626,7 @@ function BrowserScreen({ theme, host, layout, navigation, workspaceId, workspace
   controllerRef.current = { canControl, canType, scale: geometry.scale > 0 ? 1 / geometry.scale : 1 };
   // The keyboard stays bound while you control the page, through picture refreshes; keys typed between pictures still count.
   const keyboardOn = !!manualMode && !session?.dialog;
+  shieldRef.current = Platform.OS === 'android' && keyboardOn && stageSize.width > 0 && stageSize.height > 0;
   useEffect(() => {
     if (!keyboardOn || !frameNode) return;
     const wheel = bindFrameWheel(frameNode, queueScroll);
@@ -749,7 +761,7 @@ function BrowserScreen({ theme, host, layout, navigation, workspaceId, workspace
   const navigable = !!running && !busy && (session?.mode === 'agent' || !session?.agentBusy);
   const back = <IconButton theme={theme} icon="ArrowLeft" label={t("browserUi.back")} size={size} disabled={!navigable} testID="server-browser-back" onPress={() => navigateOrTakeOver({ kind: 'back' }, t("browserUi.goingBack"))} />;
   const reload = <IconButton theme={theme} icon="RotateCw" label={t("browserUi.reloadPage")} size={size} disabled={!navigable} testID="server-browser-reload" onPress={() => navigateOrTakeOver({ kind: 'reload' }, t("browserUi.reloading"))} />;
-  const addressField = <AddressField theme={theme} value={address} onChangeText={(value) => { addressDraft.current = editDraft(addressDraft.current, value, displayedRef.current); setAddress(value); }} onSubmit={navigate} editable={navigable} busy={!!busy} compact={compactChrome} onFocusChange={(focused) => { addressFocused.current = focused;  }} />;
+  const addressField = <AddressField theme={theme} value={address} onChangeText={(value) => { addressDraft.current = editDraft(addressDraft.current, value, displayedRef.current); setAddress(value); }} onSubmit={navigate} editable={navigable} busy={!!busy} compact={compactChrome} onFocusChange={(focused) => { addressFocused.current = focused; if (!focused && !addressDraft.current.dirty && sessionRef.current) setAddress(sessionRef.current.url); }} />;
   const tabsButton = hasBrowser ? <TabCountButton theme={theme} size={size} count={session.tabs.length} onPress={() => setSheet('tabs')} /> : null;
   const keyboardButton = hasBrowser && session.mode === 'manual' ? <IconButton theme={theme} icon="Keyboard" label={t("browserUi.pageKeyboardInput")} size={size} active={inputOpen} disabled={!canControl} testID="server-browser-keyboard" onPress={() => setInputOpen((open) => !open)} /> : null;
   const moreButton = <IconButton theme={theme} icon="Ellipsis" label={t("browserUi.moreActions")} size={size} testID="server-browser-menu" onPress={() => setSheet('menu')} />;
@@ -764,13 +776,15 @@ function BrowserScreen({ theme, host, layout, navigation, workspaceId, workspace
 
   const shown = frame && !recovering && !frameError ? frame : null;
   const ghost = !shown && placeholder && !recovering && !frameError && !session ? placeholder : null;
+  const stale = staleFrame && running && !recovering && !frameError ? staleFrame : null;
+  const staleGeometry = stale ? computeViewportLayout({ containerWidth: stageSize.width, containerHeight: stageSize.height, frameWidth: stale.width, frameHeight: stale.height }) : null;
   const ghostGeometry = ghost ? computeViewportLayout({ containerWidth: stageSize.width, containerHeight: stageSize.height, frameWidth: ghost.width, frameHeight: ghost.height }) : null;
   let stageState: ReactNode = null;
   if (!shown && !ghost) {
     if (recovering) stageState = <StageMessage theme={theme} busy tone="warning" icon="RefreshCw" title={t("browserUi.recoveringTheBrowser")} />;
     else if (frameError && running) stageState = <StageMessage theme={theme} tone="danger" icon="WifiOff" title={t("browserUi.viewDisconnected")} message={frameError} action={{ label: t("browserUi.reconnect"), icon: 'RefreshCw', tone: 'info', testID: 'server-browser-frame-retry', onPress: () => { void refreshFrame(); } }} />;
     else if (!session) stageState = <StageMessage theme={theme} busy tone="info" icon="Globe" title={t("browserUi.connectingToTheBrowser")} />;
-    else if (running) stageState = <StageMessage theme={theme} busy tone="info" icon="Globe" title={t("browserUi.fetchingTheView")} />;
+    else if (running && !stale) stageState = <StageMessage theme={theme} busy tone="info" icon="Globe" title={t("browserUi.fetchingTheView")} />;
     else stageState = <StageMessage theme={theme} tone={session.status === 'starting' ? 'info' : 'gray'} icon="Globe" title={session.status === 'starting' ? t("browserUi.browserIsStarting") : t("browserUi.browserHasNotStarted")} message={workspace.projectTitle ? t("browserUi.workspaceIdentity", { project: workspace.projectTitle, workspace: workspaceTitle }) : workspaceTitle}
       action={{ label: busy || t("browserUi.startBrowser"), icon: busy ? undefined : 'Play', primary: true, busy: !!busy, disabled: !!busy || stateMutation.isPending, testID: 'server-browser-start', onPress: () => { void startBrowser(); } }} />;
   }
@@ -817,30 +831,36 @@ function BrowserScreen({ theme, host, layout, navigation, workspaceId, workspace
 
     <View testID="server-browser-stage" onLayout={(event) => { const { width, height } = event.nativeEvent.layout; setStageHidden(width <= 0 || height <= 0); setStageSize((current) => current.width === width && current.height === height ? current : { width, height }); }}
       {...panResponder.panHandlers} style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative', backgroundColor: colors.surface1 }}>
+      <SwipeShield enabled={keyboardOn} width={stageSize.width} height={stageSize.height} onSwipe={(dx, dy) => { suppressFrameClick.current = true; queueScroll(-dx, -dy); }}>
       {/* The page edge shows who drives it: violet while the Agent is in control, amber while you are. */}
       {shown ? <View pointerEvents="none" style={{ position: 'absolute', left: geometry.offsetX - 2, top: geometry.offsetY - 2, width: geometry.imageWidth + 4, height: geometry.imageHeight + 4, borderWidth: 2, borderColor: withAlpha(hue(theme, controlLooks[session?.mode === 'manual' ? 'manual' : 'agent'].hue), 0.6) }} /> : null}
+      {stale && staleGeometry ? <View pointerEvents="none" style={{ position: 'absolute', left: staleGeometry.offsetX, top: staleGeometry.offsetY, width: staleGeometry.imageWidth, height: staleGeometry.imageHeight }}>
+        <Image fadeDuration={0} accessibilityLabel={t("browserUi.lastPageView")} source={{ uri: stale.dataUrl }} resizeMode="contain" style={{ width: '100%', height: '100%' }} />
+      </View> : null}
+      {/* Every picture is a new Image; fadeDuration 0 stops Android fading each one in from the stage background. */}
       {/* The frame node stays mounted while the browser runs, so keyboard focus survives every picture change; without a picture it shrinks to 1 px. */}
       {hasBrowser ? <Pressable ref={setFrameNode} testID="server-browser-frame" accessibilityRole="imagebutton" accessibilityLabel={agentControlled ? t("browserUi.pageViewControlledByTheAgent") : t("browserUi.pageViewClickToTypeOrSwipe")} disabled={!shown}
         onPressIn={(event) => { suppressFrameClick.current = false; pressTarget.current = displayedRef.current ? { ...displayedRef.current } : null; const { locationX, locationY } = event.nativeEvent; pressLocation.current = Number.isFinite(locationX) && Number.isFinite(locationY) ? { x: locationX, y: locationY } : null; }} onPress={pressFrame}
         style={shown ? { position: 'absolute', inset: 0, ...(agentControlled ? { cursor: 'auto' } : manualMode && !canClick ? webCursor('progress') : null) } : { position: 'absolute', left: 0, top: 0, width: 1, height: 1, opacity: 0 }}>
         {shown ? <View pointerEvents="none" style={{ position: 'absolute', left: geometry.offsetX, top: geometry.offsetY, width: geometry.imageWidth, height: geometry.imageHeight }}>
-          {loadedFrame && loadedFrame.id !== shown.id ? <Image key={loadedFrame.id} accessibilityLabel={t("browserUi.previousPageView")} source={{ uri: loadedFrame.dataUrl }} resizeMode="contain" style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }} /> : null}
-          <Image key={shown.id} testID="server-browser-image" accessibilityLabel={t("browserUi.serverPage")} source={{ uri: shown.dataUrl }} resizeMode="contain" style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }}
-            onLoad={() => { if (frameRef.current?.id === shown.id && frameInScope(shown, sessionRef.current)) { displayedRef.current = { tabId: shown.tabId, viewRevision: shown.viewRevision, ...(shown.inputScope ? { inputScope: shown.inputScope } : {}), ...(shown.documentScope ? { documentScope: shown.documentScope } : {}) }; setDisplayedId(shown.id); setLoadedFrame(shown); } }} onError={() => { setFrameError(t("browserUi.viewFailedToLoad")); clearFrame(); }} />
+          {loadedFrame && loadedFrame.id !== shown.id ? <Image key={loadedFrame.id} fadeDuration={0} accessibilityLabel={t("browserUi.previousPageView")} source={{ uri: loadedFrame.dataUrl }} resizeMode="contain" style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }} /> : null}
+          <Image key={shown.id} fadeDuration={0} testID="server-browser-image" accessibilityLabel={t("browserUi.serverPage")} source={{ uri: shown.dataUrl }} resizeMode="contain" style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }}
+            onLoad={() => { if (frameRef.current?.id === shown.id && frameInScope(shown, sessionRef.current)) { displayedRef.current = { tabId: shown.tabId, viewRevision: shown.viewRevision, ...(shown.inputScope ? { inputScope: shown.inputScope } : {}), ...(shown.documentScope ? { documentScope: shown.documentScope } : {}) }; setDisplayedId(shown.id); setLoadedFrame(shown); setStaleFrame(null); } }} onError={() => { setFrameError(t("browserUi.viewFailedToLoad")); clearFrame(); }} />
         </View> : null}
       </Pressable> : null}
+      </SwipeShield>
       {/* The slot that composes is invisible, so what the input method holds is shown here until it is committed. */}
       {composing !== null && shown ? <View pointerEvents="none" testID="server-browser-composing" style={{ position: 'absolute', top: space.sm, right: space.sm, zIndex: 6, maxWidth: '70%', flexDirection: 'row', alignItems: 'center', gap: space.xs, padding: 3, paddingLeft: space.sm, borderRadius: radius.md, backgroundColor: colors.surface0, borderWidth: hairline, borderColor: withAlpha(toneColor(theme, 'warning', 'mark'), 0.5) }}>
         <View style={{ width: 10, height: 10, alignItems: 'center', justifyContent: 'center' }}><Ping size={8} color={toneColor(theme, 'warning', 'mark')} /><StatusDot theme={theme} tone="warning" size={8} /></View>
         <Badge theme={theme} solid tone="warning" icon="Languages" label={composing ? t("browserUi.composingInput", { value1: lastChars(composing, 16) }) : t("browserUi.composingInput2")} />
       </View> : null}
       {ghost && ghostGeometry ? <View pointerEvents="none" style={{ position: 'absolute', left: ghostGeometry.offsetX, top: ghostGeometry.offsetY, width: ghostGeometry.imageWidth, height: ghostGeometry.imageHeight, opacity: 0.45 }}>
-        <Image accessibilityLabel={t("browserUi.lastPageView")} source={{ uri: ghost.dataUrl }} resizeMode="contain" style={{ width: '100%', height: '100%' }} />
+        <Image fadeDuration={0} accessibilityLabel={t("browserUi.lastPageView")} source={{ uri: ghost.dataUrl }} resizeMode="contain" style={{ width: '100%', height: '100%' }} />
       </View> : null}
       {stageState}
       {running && !session.dialog ? <View pointerEvents="none" style={{ position: 'absolute', bottom: space.sm, right: space.sm, paddingHorizontal: space.sm, paddingVertical: space.xs, borderRadius: radius.md, backgroundColor: colors.surface0 }}><MetaLine theme={theme} parts={[t("browserUi.viewers", { count: session.viewerCount ?? 0 })]} /></View> : null}
       {banner ? <View style={{ position: 'absolute', top: space.sm, left: space.sm, right: space.sm, zIndex: 10, borderRadius: radius.md, backgroundColor: colors.surface0 }}>{banner}</View> : null}
-      {busy && hasBrowser ? <BusyPill theme={theme} label={busy} tone={busyTone(busyKind)} /> : hint && hasBrowser ? <BusyPill theme={theme} icon="MousePointerClick" label={hint} tone="info" /> : ghost ? <BusyPill theme={theme} label={t("browserUi.fetchingTheView")} tone="info" /> : running && session.mode === 'manual' && session.agentBusy ? <BusyPill theme={theme} label={t("browserUi.waitingForTheAgentToFinishThe")} tone="info" />
+      {busy && hasBrowser ? <BusyPill theme={theme} label={busy} tone={busyTone(busyKind)} /> : hint && hasBrowser ? <BusyPill theme={theme} icon="MousePointerClick" label={hint} tone="info" /> : ghost || (stale && !loadedFrame) ? <BusyPill theme={theme} label={t("browserUi.fetchingTheView")} tone="info" /> : running && session.mode === 'manual' && session.agentBusy ? <BusyPill theme={theme} label={t("browserUi.waitingForTheAgentToFinishThe")} tone="info" />
         : paused && running ? <BusyPill theme={theme} icon="Pause" label={t("browserUi.viewPausedTapToResume")} tone="warning" onPress={() => { setPaused(false); void refreshFrame(); }} /> : null}
     </View>
 

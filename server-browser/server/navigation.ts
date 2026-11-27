@@ -31,10 +31,18 @@ export function blockedHostResolverRules(): string {
   ].map(host => `MAP ${host} ~NOTFOUND`).join(', ');
 }
 
+/** localhost, *.localhost, or an IP literal (URL hostnames keep IPv6 in brackets). */
+function isLocalAddress(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, '');
+  return host === 'localhost' || host.endsWith('.localhost') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || host.startsWith('[');
+}
+
 export function normalizeNavigationUrl(value: string): string {
   const trimmed = value.trim(); if (!trimmed || /[\u0000-\u001f]/.test(trimmed)) throw new Error(t('navigation.invalidAddress'));
   const explicitScheme = /^[A-Za-z][A-Za-z0-9+.-]*:/.test(trimmed), hostWithPort = /^(localhost|[\w.-]+):\d+(?:[/?#]|$)/i.test(trimmed);
   const url = new URL(explicitScheme && !hostWithPort ? trimmed : `https://${trimmed}`);
+  // A bare local address is almost always a dev server without TLS, so it gets http:// as in a browser's address bar.
+  if (!(explicitScheme && !hostWithPort) && isLocalAddress(url.hostname)) url.protocol = 'http:';
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error(t('navigation.httpOnly'));
   if (url.username || url.password) throw new Error(t('navigation.noCredentials'));
   if (isBlockedHost(url.hostname)) throw new Error(t('navigation.blockedAddress'));

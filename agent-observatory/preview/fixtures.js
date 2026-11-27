@@ -137,13 +137,14 @@ export function readFixtureInNative(agentId) {
   updateFixtureAgent(agentId, { requiresAttention: false, attentionReason: null, attentionTimestamp: null });
   return true;
 }
-export function completeFixtureAgent(agentId) {
+/** A new turn ends with a result; with `asks`, its reply asks the user something (待回复), as 规划下一轮迭代's does. */
+export function completeFixtureAgent(agentId, { asks = false } = {}) {
   const agent = rawAgents.find(candidate => candidate.id === agentId);
   if (!agent) return null;
   const at = new Date(Math.max(Date.now(), Date.parse(agent.attentionTimestamp ?? agent.updatedAt) + 1)).toISOString();
   const lastUserMessageAt = new Date(Date.parse(at) - 1000).toISOString();
   const observed = fixtureTelemetry.agents.find(record => record.agentId === agentId);
-  if (observed) Object.assign(observed, { turnStartedAt: lastUserMessageAt, turnEndedAt: at, outcome: "completed" });
+  if (observed) Object.assign(observed, { turnStartedAt: lastUserMessageAt, turnEndedAt: at, outcome: "completed", ...(asks ? { replyAt: at, replyAsks: true } : {}) });
   const sequence = (agent.previewReply?.seq ?? 1000) + 1;
   return updateFixtureAgent(agentId, { status: "idle", activeTurn: null, pendingPermissions: [], lastUserMessageAt, attentionReason: "finished", requiresAttention: true, attentionTimestamp: at, updatedAt: at,
     previewReply: { seq: sequence, at, text: `新一轮结果：${agent.title} 已更新，当前结果版本 ${sequence}。` } });

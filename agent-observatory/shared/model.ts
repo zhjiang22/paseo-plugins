@@ -116,6 +116,10 @@ export interface AgentRecord {
   stop?: ObservedStop | null;
   /** What the latest final reply invites (快捷回复), only while the user has not written since (as 待回复). */
   replyNudge?: ReplyNudge | null;
+  /** The latest final reply that asks the user (待回复), when it was written; null when the latest reply asks nothing. */
+  replyAskedAt?: string | null;
+  /** True while the user has marked that reply answered without sending anything; a newer reply asks again. */
+  replyAnswered?: boolean;
   /** The closing sentence that invites it, redacted (live extras from the turn's end, memory only): the popover quotes it. */
   replyAsk?: string | null;
   /** The running turn's todo progress (live extras from the server). */
@@ -178,6 +182,8 @@ export interface LifecycleOutcome {
   /** When the latest turn's final reply was written and whether it asks the user something (待回复). */
   replyAt?: string | null;
   replyAsks?: boolean | null;
+  /** The user marked a reply that asks as answered at this time: replies written at or before it no longer count as 待回复. */
+  replyAnsweredAt?: string | null;
   /** What that reply invites (快捷回复), as a category; null when nothing or unknown. */
   replyNudge?: ReplyNudge | null;
   /** Why the latest turn stopped (usage limit, empty, unfinished); null when it simply ended. */
@@ -518,6 +524,17 @@ export function preserveCompletionEvidence(previous: AgentRecord | undefined, cu
     lastExecutionAt: execution, lastActivityAt: current.archivedAt ? execution ?? current.lastActivityAt : latestDate([current.lastActivityAt, execution]) };
 }
 
+/** Whether the latest reply asks the user and they have not marked it answered since it was written (待回复). */
+export function replyStillAsks(lifecycle?: Pick<LifecycleOutcome, "replyAsks" | "replyAt" | "replyAnsweredAt"> | null): boolean {
+  if (lifecycle?.replyAsks !== true) return false;
+  const answered = timestamp(lifecycle.replyAnsweredAt), reply = timestamp(lifecycle.replyAt);
+  return answered === null || reply === null || answered < reply;
+}
+/** Whether a reply that asks has been marked answered (the override the user can undo). */
+export function replyMarkedAnswered(lifecycle?: Pick<LifecycleOutcome, "replyAsks" | "replyAt" | "replyAnsweredAt"> | null): boolean {
+  return lifecycle?.replyAsks === true && !replyStillAsks(lifecycle);
+}
+
 export function classifyAgentStatus(source: Omit<AgentSource, "id">, lifecycle?: LifecycleOutcome): AgentStatus {
   const pending = source.pendingPermissions?.length ?? source.pendingPermissionCount ?? 0;
   const attentionAt = timestamp(source.attentionTimestamp);
@@ -529,8 +546,8 @@ export function classifyAgentStatus(source: Omit<AgentSource, "id">, lifecycle?:
   if (source.status === "initializing") return "initializing";
   if (source.status === "error") return "error";
   if (source.status === "canceled" || source.status === "cancelled") return "canceled";
-  // A completed turn whose final reply asks the user is 待回复 until they send the next message.
-  const asks = lifecycle?.replyAsks === true && (timestamp(lifecycle.replyAt) ?? -1) >= latestPromptAt;
+  // A completed turn whose final reply asks the user is 待回复 until they send the next message, or mark it answered.
+  const asks = replyStillAsks(lifecycle) && (timestamp(lifecycle!.replyAt) ?? -1) >= latestPromptAt;
   const settled = (status: AgentStatus): AgentStatus => status === "completed" && asks ? "idle" : status;
   if (source.status === "completed") return settled("completed");
   const lifecycleResult = currentLifecycleOutcome(source, lifecycle);
@@ -644,7 +661,8 @@ function currentStop(agent: AgentRecord, lifecycle: LifecycleOutcome): ObservedS
 /** What the latest final reply invites, while it still answers the latest prompt (the rule 待回复 uses). */
 function currentNudge(agent: AgentRecord, lifecycle: LifecycleOutcome): ReplyNudge | null {
   const latestPrompt = Math.max(timestamp(agent.lastUserMessageAt) ?? 0, timestamp(agent.activeTurnStartedAt) ?? 0, timestamp(lifecycle.turnStartedAt) ?? 0);
-  return lifecycle.replyNudge && (timestamp(lifecycle.replyAt) ?? -1) >= latestPrompt ? lifecycle.replyNudge : null;
+  // A reply marked answered offers no quick replies either.
+  return lifecycle.replyNudge && !replyMarkedAnswered(lifecycle) && (timestamp(lifecycle.replyAt) ?? -1) >= latestPrompt ? lifecycle.replyNudge : null;
 }
 
 /** Known outcomes enrich idle/closed history; current live work always takes precedence. */
@@ -653,7 +671,12 @@ export function applyTelemetry(agent: AgentRecord, lifecycle?: LifecycleOutcome 
   const stop = currentStop(agent, lifecycle), nudge = currentNudge(agent, lifecycle);
   const enriched = applyLifecycle(agent, lifecycle);
   const stopped = stop ? { ...enriched, stop } : enriched.stop ? { ...enriched, stop: null } : enriched;
-  return nudge ? { ...stopped, replyNudge: nudge } : stopped.replyNudge ? { ...stopped, replyNudge: null } : stopped;
+  const nudged = nudge ? { ...stopped, replyNudge: nudge } : stopped.replyNudge ? { ...stopped, replyNudge: null } : stopped;
+  // The reply the 已答复 / 待回复 actions name: the latest prompt's reply, only when it asks.
+  const latestPrompt = Math.max(timestamp(agent.lastUserMessageAt) ?? 0, timestamp(agent.activeTurnStartedAt) ?? 0, timestamp(lifecycle.turnStartedAt) ?? 0);
+  const current = lifecycle.replyAsks === true && (timestamp(lifecycle.replyAt) ?? -1) >= latestPrompt;
+  const replyAskedAt = current ? validDate(lifecycle.replyAt) : null, replyAnswered = current && replyMarkedAnswered(lifecycle);
+  return (nudged.replyAskedAt ?? null) === replyAskedAt && !!nudged.replyAnswered === replyAnswered ? nudged : { ...nudged, replyAskedAt, replyAnswered };
 }
 
 function applyLifecycle(agent: AgentRecord, lifecycle: LifecycleOutcome): AgentRecord {

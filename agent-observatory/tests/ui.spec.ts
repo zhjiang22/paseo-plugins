@@ -6,7 +6,7 @@ type Fixture = typeof globalThis & {
   __previewOpenedAgent?: string; __previewClipboard?: string; __previewAgentOperations: Array<{ type: string; agentId?: string; workspaceId?: string; input?: unknown }>;
   __previewRpcCalls: Array<{ name: string; input: { agentId?: string; attentionTimestamp?: string } }>; __previewTimelineCalls: unknown[];
   __previewTimelineActive(id: string): number; __previewGetAgent(id: string): { attentionTimestamp: string; pendingPermissions: unknown[] };
-  __previewCompleteAgent(id: string): { attentionTimestamp: string; previewReply: { text: string } }; __previewNativeReadAgent(id: string): boolean;
+  __previewCompleteAgent(id: string, options?: { asks?: boolean }): { attentionTimestamp: string; previewReply: { text: string } }; __previewNativeReadAgent(id: string): boolean;
   __previewUpdateAgent(id: string, changes: object): void; __previewSetResume(entry: { agentId: string; status: string; reason: string | null }): void;
   __previewRestoreAudit?: { before: { agentId: string; agentCount: number; userMessages: number }; after: { agentId: string; agentCount: number; userMessages: number } };
 };
@@ -1089,6 +1089,41 @@ test("快捷回复 whose round the plugin's own record cannot vouch for is not s
   await replies.getByRole("button", { name: "重试", exact: true }).click();
   await expect.poll(() => sends(page)).toEqual([expect.objectContaining({ agentId: "iteration-plan", input: "继续，按你说的做。" })]);
   await expect(toast(page, "已回复「规划下一轮迭代」：继续，按你说的做")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("输入回复 opens the reply sheet on a wide screen as on a phone, and an unsent answer stays until it is sent", async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await open(page, testInfo);
+  await page.getByRole("button", { name: "查看 规划下一轮迭代，待回复", exact: true }).click();
+  const detail = page.getByTestId("agent-detail");
+  const sheet = page.getByRole("dialog", { name: "回复「规划下一轮迭代」", exact: true });
+  const answer = sheet.getByRole("textbox", { name: "你的回复", exact: true });
+  // 输入回复 sits beside 打开会话 on a wide screen and in the bottom bar on a phone: the sheet opens empty and focused.
+  await detail.getByRole("button", { name: "输入回复", exact: true }).click();
+  await expect(answer).toBeFocused();
+  await expect(answer).toHaveValue("");
+  await expect(sheet.getByText(/^口述：/)).toBeVisible();
+  await noHorizontalOverflow(page);
+  await screenshot(page, testInfo, "reply-sheet");
+  // Closed without sending, the answer is kept: 输入或口述回复 under the latest reply opens the sheet again with it in place.
+  await answer.fill("先把登录改版排进这一轮");
+  await sheet.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  await detail.getByRole("button", { name: "在这里回复这个 Agent：直接输入，或用系统听写口述", exact: true }).click();
+  await expect(answer).toHaveValue("先把登录改版排进这一轮");
+  // Sent, it goes out once through the ledger as the user's own reply.
+  await sheet.getByRole("button", { name: "发送", exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(toast(page, "已发给「规划下一轮迭代」")).toBeVisible();
+  await expect.poll(() => sends(page)).toEqual([expect.objectContaining({ agentId: "iteration-plan", input: "先把登录改版排进这一轮", options: expect.objectContaining({ messageId: expect.any(String) }) })]);
+  expect((await rpcCalls(page, "observatory.deferred.send")).map(call => call.source)).toEqual(["手写回复"]);
+  // The Agent asks again: the next answer starts empty, and the one sent is listed as delivered.
+  await page.evaluate(() => (globalThis as Fixture).__previewCompleteAgent("iteration-plan", { asks: true }));
+  await detail.getByRole("button", { name: "输入回复", exact: true }).click();
+  await expect(sheet.getByLabel("已送达：你的回复", { exact: true })).toBeVisible();
+  await expect(answer).toHaveValue("");
   expect(errors).toEqual([]);
 });
 

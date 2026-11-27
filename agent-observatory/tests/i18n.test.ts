@@ -8,10 +8,11 @@ import { tmpdir } from "node:os";
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import zh from "../shared/locales/zh-CN.json";
 import en from "../shared/locales/en.json";
+import ko from "../shared/locales/ko.json";
 import kitZh from "../shared/locales/kit/zh-CN.json";
 import kitEn from "../shared/locales/kit/en.json";
 import { auditCatalogs, findMessageIds, findUntranslated } from "../server/i18n-audit";
-import { bindTranslator, catalogIds, createTranslator, currentLanguage, type Catalog } from "../shared/i18n";
+import { assembleCatalog, bindTranslator, catalogIds, createTranslator, currentLanguage, type Catalog } from "../shared/i18n";
 import { t } from "../shared/text";
 import { BUILTIN_CATALOGS } from "../server/locales";
 import { createLocaleService } from "../server/i18n-server";
@@ -24,6 +25,8 @@ const dynamicPrefixes: readonly string[] = [];
 
 test("all built-in messages have matching IDs and placeholders and English has no CJK", () => {
   assert.deepEqual(auditCatalogs({ zh, en }), []);
+  assert.deepEqual(auditCatalogs({ zh: assembleCatalog([zh, kitZh]), en: assembleCatalog([en, kitEn]), others: { ko } }), []);
+  assert.deepEqual(catalogIds(ko).sort(), catalogIds(assembleCatalog([en, kitEn])).sort());
 });
 
 test("all remaining CJK source literals document their data role", () => {
@@ -74,25 +77,42 @@ test("the plugin locale service supports custom coverage, invalid placeholders, 
     assert.equal(currentLanguage(), "en");
     const folder = join(home, "plugin-data", "agent-observatory", "locales");
     await mkdir(folder, { recursive: true });
-    await writeFile(join(folder, "ko.json"), JSON.stringify({ $meta: { name: "한국어" }, boot: { screenTitle: "에이전트 관측소", archivesTitle: "{invalid}" } }));
+    await writeFile(join(folder, "ja.json"), JSON.stringify({ $meta: { name: "日本語" }, boot: { screenTitle: "エージェント観測台", archivesTitle: "{invalid}" } }));
     const list = await call("i18n.languages", { device: "en-US" });
-    const korean = list.languages.find((language: { code: string }) => language.code === "ko");
-    assert.ok(korean.coverage > 0 && korean.coverage < 1);
-    assert.ok(korean.issues.some((issue: { code: string; detail?: string }) => issue.code === "badPlaceholder" && issue.detail?.includes("invalid")));
-    values = { language: "ko" };
+    const builtInKorean = list.languages.find((language: { code: string }) => language.code === "ko");
+    assert.equal(builtInKorean.builtIn, true);
+    assert.equal(builtInKorean.coverage, 1);
+    assert.deepEqual(builtInKorean.issues, []);
+    const japanese = list.languages.find((language: { code: string }) => language.code === "ja");
+    assert.ok(japanese.coverage > 0 && japanese.coverage < 1);
+    assert.ok(japanese.issues.some((issue: { code: string; detail?: string }) => issue.code === "badPlaceholder" && issue.detail?.includes("invalid")));
+    values = { language: "ja" };
     for (const listener of listeners) listener({ status: "ready", values });
     const first = await call("i18n.catalog", { device: "en-US", part: 0 });
     let text = first.text;
     for (let part = 1; part < first.parts; part++) text += (await call("i18n.catalog", { device: "en-US", hash: first.hash, part })).text;
-    const translated = createTranslator("ko", [JSON.parse(text) as Catalog]);
-    assert.equal(translated.t("boot.screenTitle"), "에이전트 관측소");
+    const translated = createTranslator("ja", [JSON.parse(text) as Catalog]);
+    assert.equal(translated.t("boot.screenTitle"), "エージェント観測台");
     assert.equal(translated.t("boot.archivesTitle"), "Archived sessions");
     service.dispose();
     service = createLocaleService(host, { pluginId: "agent-observatory", builtins: BUILTIN_CATALOGS, home });
     await service.ready;
-    assert.equal(service.language(), "ko");
-    assert.equal((await call("i18n.catalog", { device: "en-US", part: 0 })).language, "ko");
+    assert.equal(service.language(), "ja");
+    assert.equal((await call("i18n.catalog", { device: "en-US", part: 0 })).language, "ja");
+    values = { language: "auto" };
+    for (const listener of listeners) listener({ status: "ready", values });
+    assert.equal((await call("i18n.catalog", { device: "ko-KR", part: 0 })).language, "ko");
   } finally { service.dispose(); await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }); useChinese(); }
+});
+
+test("Korean registration, language screen and kit controls render together", () => {
+  bindTranslator(createTranslator("ko", [ko]));
+  try {
+    assert.equal(t("boot.screenTitle"), "Agent Observatory");
+    assert.equal(t("boot.archivesTitle"), "보관된 세션");
+    assert.equal(t("boot.schedulesTitle"), "예약 실행");
+    assert.equal(createTranslator("ko", [ko]).t("kitLanguage.title"), "언어");
+  } finally { useChinese(); }
 });
 
 

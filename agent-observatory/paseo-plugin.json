@@ -16,6 +16,10 @@
     "zh-CN": {
       "name": "Agent 观测台",
       "description": "所有 Paseo Agent 与子 Agent 的结果优先看板：未读队列、时间线、用量与 Token 统计、定时运行、可选的智能分析与每轮小结，以及提醒和定时发送。支持英文、简体中文和用户自定义语言。"
+    },
+    "ko": {
+      "name": "Agent Observatory",
+      "description": "모든 Paseo Agent와 Subagent를 위한 결과 우선 대시보드: 읽지 않음 대기열, 타임라인, 사용량 및 Token 통계, 예약 실행, 선택적 AI 분석 및 턴 요약, 알림과 예약 전송을 제공합니다. 영어, 중국어(간체), 러시아어, 한국어 및 사용자 정의 언어를 지원합니다."
     }
   }
 }

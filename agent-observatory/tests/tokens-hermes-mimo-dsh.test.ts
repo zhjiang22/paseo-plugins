@@ -113,38 +113,62 @@ test("MiMoCode: assistant messages of mimocode.db count like OpenCode's, minus s
   assert.equal(tokenSourceNames.mimo, "MiMoCode");
 }));
 
-test("dsh: a closed day emits one call per session per provider-model; today's key waits under both calendars", () => ingest(root => [{ source: "dsh", path: root }], async (root, ingester, calls) => {
-  const costMeter = join(root, "storages", "cost-meter");
-  await mkdir(costMeter, { recursive: true });
+test("dsh: a closed day emits one call per session per provider-model; today's key waits under both calendars", async t => {
   const modelRow = (input: number, out: number, read: number, write: number, reason: number, calls: number) => ({ input, output: out, cacheRead: read, cacheWrite: write, reasoning: reason, calls, cost: 0 });
   const CLOSED = "2026-10-01";
   const sessionRow = (id: string, at: number, input: number, out: number, read: number, write: number, reason: number, calls: number) =>
     ({ id, input, output: out, cacheRead: read, cacheWrite: write, reasoning: reason, calls, cost: 0, at, title: "t", byProviderModel: { "dsh:deepseek-v4": modelRow(input, out, read, write, reason, calls) } });
-  // dsh keys its ledger on this device without a documented calendar: the running day is skipped under the local and the UTC one.
-  const todayLocal = dshToday(), todayUtc = new Date().toISOString().slice(0, 10);
-  const days: Record<string, unknown> = {
-    [CLOSED]: {
-      date: CLOSED, input: 1_300, output: 240, cacheRead: 3_000, cacheWrite: 100, reasoning: 25, calls: 3, cost: 0,
-      byProviderModel: { "dsh:deepseek-v4": modelRow(1_300, 240, 3_000, 100, 25, 3) },
-      sessions: [
-        sessionRow("session-abc", NOW - DAY, 1_000, 200, 2_500, 100, 20, 2),
-        sessionRow("session-def", NOW - DAY + 60_000, 300, 40, 500, 0, 5, 1),
-      ],
-    },
-    [todayLocal]: { date: todayLocal, input: 9, output: 9, cacheRead: 0, cacheWrite: 0, reasoning: 0, calls: 1, cost: 0,
-      byProviderModel: { "dsh:deepseek-v4": modelRow(9, 9, 0, 0, 0, 1) },
-      sessions: [sessionRow("session-today", NOW, 500, 50, 0, 0, 0, 1)] },
-  };
-  if (todayUtc !== todayLocal) days[todayUtc] = { date: todayUtc, input: 9, output: 9, cacheRead: 0, cacheWrite: 0, reasoning: 0, calls: 1, cost: 0, byProviderModel: {}, sessions: [sessionRow("session-utc", NOW, 700, 70, 0, 0, 0, 1)] };
-  await writeFile(join(costMeter, "ledger.json"), JSON.stringify({ version: 5, days }));
-  await ingester.backfillAll();
-  const rows = [...calls.values()].sort((a, b) => a.at - b.at);
-  assert.deepEqual(rows.map(call => [call.source, call.sessionId, call.model, call.input, call.cacheRead, call.cacheWrite, call.output, call.reasoning, call.at, call.subagent]), [
-    ["dsh", "session-abc", "dsh:deepseek-v4", 1_000, 2_500, 100, 200, 20, NOW - DAY, false],
-    ["dsh", "session-def", "dsh:deepseek-v4", 300, 500, 0, 40, 5, NOW - DAY + 60_000, false],
-  ], "one call per session per provider-model of a closed day; today's key waits under both calendars");
+  const day = (date: string, session: ReturnType<typeof sessionRow>) => ({ date, input: session.input, output: session.output, cacheRead: 0, cacheWrite: 0, reasoning: 0, calls: 1, cost: 0,
+    byProviderModel: session.byProviderModel, sessions: [session] });
+  // dsh keys its ledger on this device without a documented calendar, local or UTC, and only ever adds days after its newest
+  // one. That newest key waits while it is today under either calendar. A key before it is a day dsh's own calendar has
+  // closed, even when it is still today under the other calendar, so it counts. The clock is pinned just before and at UTC
+  // and local midnight, in this process's zone and in one zone west and one east of UTC: on any machine the two calendars
+  // then disagree both ways at some of these instants, and the time of day never matters.
+  const ambient = process.env.TZ;
+  t.mock.timers.enable({ apis: ["Date"] });
+  try {
+    for (const zone of new Set([ambient, "America/Los_Angeles", "Pacific/Kiritimati"])) {
+      if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone;
+      const utcMidnight = Date.UTC(2026, 9, 11), localMidnight = new Date(2026, 9, 11).getTime();
+      for (const instant of [utcMidnight - 1, utcMidnight, localMidnight - 1, localMidnight]) {
+        t.mock.timers.setTime(instant);
+        const todayLocal = dshToday(new Date(instant)), todayUtc = new Date(instant).toISOString().slice(0, 10);
+        for (const [calendar, today, other] of [["local", todayLocal, todayUtc], ["UTC", todayUtc, todayLocal]] as const) {
+          // The other calendar's today is yesterday for a ledger keyed this way when it is the earlier date; when it is later, dsh never wrote it.
+          const yesterday = other < today ? other : null;
+          await ingest(root => [{ source: "dsh", path: root }], async (root, ingester, calls) => {
+            const costMeter = join(root, "storages", "cost-meter");
+            await mkdir(costMeter, { recursive: true });
+            const days: Record<string, unknown> = {
+              [CLOSED]: {
+                date: CLOSED, input: 1_300, output: 240, cacheRead: 3_000, cacheWrite: 100, reasoning: 25, calls: 3, cost: 0,
+                byProviderModel: { "dsh:deepseek-v4": modelRow(1_300, 240, 3_000, 100, 25, 3) },
+                sessions: [
+                  sessionRow("session-abc", NOW - DAY, 1_000, 200, 2_500, 100, 20, 2),
+                  sessionRow("session-def", NOW - DAY + 60_000, 300, 40, 500, 0, 5, 1),
+                ],
+              },
+              [today]: day(today, sessionRow("session-today", NOW, 500, 50, 0, 0, 0, 1)),
+            };
+            if (yesterday) days[yesterday] = day(yesterday, sessionRow("session-yesterday", NOW - 3_600_000, 700, 70, 0, 0, 0, 1));
+            await writeFile(join(costMeter, "ledger.json"), JSON.stringify({ version: 5, days }));
+            await ingester.backfillAll();
+            const rows = [...calls.values()].sort((a, b) => a.at - b.at);
+            assert.deepEqual(rows.map(call => [call.source, call.sessionId, call.model, call.input, call.cacheRead, call.cacheWrite, call.output, call.reasoning, call.at, call.subagent]), [
+              ["dsh", "session-abc", "dsh:deepseek-v4", 1_000, 2_500, 100, 200, 20, NOW - DAY, false],
+              ["dsh", "session-def", "dsh:deepseek-v4", 300, 500, 0, 40, 5, NOW - DAY + 60_000, false],
+              ...(yesterday ? [["dsh", "session-yesterday", "dsh:deepseek-v4", 700, 0, 0, 70, 0, NOW - 3_600_000, false]] : []),
+            ], `a ledger on the ${calendar} calendar in ${zone ?? "the system zone"} at ${new Date(instant).toISOString()} (local ${todayLocal}, UTC ${todayUtc}): one call per session per provider-model of a closed day; today's key waits`);
+          });
+        }
+      }
+    }
+  } finally {
+    if (ambient === undefined) delete process.env.TZ; else process.env.TZ = ambient;
+  }
   assert.equal(tokenSourceNames.dsh, "DeepSeek Harness");
-}));
+});
 
 test("dsh: a ledger whose newest day is in the past counts it (intermittent use never rewrites it)", () => ingest(root => [{ source: "dsh", path: root }], async (root, ingester, calls) => {
   const costMeter = join(root, "storages", "cost-meter");

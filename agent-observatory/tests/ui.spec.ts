@@ -1459,6 +1459,9 @@ test("each state has its own mark: live work moves and ticks, a change flashes o
   // Completing the turn flashes the row once in its new state (changes while data is still arriving right after open do not).
   await page.waitForTimeout(3100);
   await page.evaluate(() => (globalThis as Fixture).__previewCompleteAgent("payment-root"));
+  // Its sub-agent 实现幂等请求 still works: the parent stays 执行中 in the background and its result waits for it (2.18).
+  await expect(running.getByText(/^后台 \d+:\d{2}$/)).toBeVisible();
+  await page.evaluate(() => (globalThis as Fixture).__previewCompleteAgent("payment-idempotency"));
   const finished = page.getByRole("button", { name: "查看 重构支付服务，已完成", exact: true });
   await expect(finished.getByText("未读", { exact: true })).toBeVisible();
   expect(await moving(finished)).toBeGreaterThan(0);

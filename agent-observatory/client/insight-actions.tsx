@@ -88,7 +88,10 @@ export function SendToAgentSheet({ theme, open, onClose, agentId, agentTitle, fi
   // The message being sent: every try of this text goes out with its id; another text is another message.
   const source = reply ? SOURCES.reply : SOURCES.finding;
   const message = useRef<OutgoingMessage | null>(null), slash = isSlashCommand(text), body = text.trim(), key = messageKey(source, body);
-  useEffect(() => { if (open && (finding || reply)) { setText(finding && !reply ? findingMessage(finding) : ""); setProblem(null); setConfirming(null); setScheduling(false); message.current = null; } }, [open, finding?.id, reply]);
+  // A finding's message is written afresh each time the sheet opens. A reply keeps what was typed or dictated while the sheet
+  // closes and opens again for this Agent; it is cleared once it went out or was queued (`finished`), and for another Agent.
+  useEffect(() => { if (open && (finding || reply)) { if (finding && !reply) setText(findingMessage(finding)); setProblem(null); setConfirming(null); setScheduling(false); message.current = null; } }, [open, finding?.id, reply]);
+  useEffect(() => { if (reply) setText(""); }, [agentId]);
   useEffect(() => {
     if (!open || !capabilities) return;
     let live = true;
@@ -124,6 +127,8 @@ export function SendToAgentSheet({ theme, open, onClose, agentId, agentTitle, fi
     const words = (reason instanceof Error ? reason.message : String(reason)).replace(/[。.]$/, "");
     setProblem({ tone: "danger", retry: true, message: next.tried ? t("coreInsightActions.noSendResultReceivedIfTheMessage", { value1: words }) : words });
   };
+  /** The message went out or is on its way (queued, scheduled): the sheet closes, and a reply starts empty next time. */
+  const finished = () => { if (reply) setText(""); onClose(); };
   /**
    * The ledger's answer for this message, sent now or queued, by its state (codex-obs-send-ui-R2): sent, or queued to go out
    * when the turn ends, closes the sheet; sending says so and stays; held waits for the user (its row below has the reason,
@@ -134,14 +139,14 @@ export function SendToAgentSheet({ theme, open, onClose, agentId, agentTitle, fi
     if (view.messageId !== next.messageId) {
       // Sent a moment ago or on its way: its row below says so.
       toast.show(view.state === "sent" ? t("coreInsightActions.thisMessageWasJustSent") : t("coreInsightActions.thisMessageSeeBelow", { value1: onItsWayLabel(view) }), { variant: view.state === "maybe-sent" ? "warning" : "success" });
-      if (view.state === "sent") onClose();
+      if (view.state === "sent") finished();
       return;
     }
     const notice = ledgerNotice(view, agentTitle);
     if (notice.kind === "sent" || view.state === "queued") {
       toast.show(notice.kind === "sent" ? sentWords : notice.text, { variant: "success" });
       if (notice.kind === "sent") onSent?.();
-      onClose(); return;
+      finished(); return;
     }
     if (notice.kind === "waiting" || notice.kind === "attention" || notice.kind === "uncertain") toast.show(notice.text, { variant: notice.tone === "danger" ? "error" : notice.tone });
     else setProblem({ tone: notice.tone === "danger" ? "danger" : "warning", message: notice.text, retry: false });
@@ -196,7 +201,7 @@ export function SendToAgentSheet({ theme, open, onClose, agentId, agentTitle, fi
       setConfirming(null); setScheduling(false);
       if (view.messageId === next.messageId && view.state === "queued" && view.notBefore !== undefined) {
         toast.show(t("alertsSchedule.scheduledMessage", { title: agentTitle, when: scheduleWhen(view.notBefore) }), { variant: "success" });
-        onClose();
+        finished();
       } else answeredWith(next, view, t("coreInsightActions.sentTo", { value1: agentTitle }));
     } catch (reason) {
       setConfirming(null); setScheduling(false);

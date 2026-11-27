@@ -286,11 +286,15 @@ export function AgentDetail({ hostId, agent, agents, theme, compact, navigation,
   // A running turn sweeps a thin bar across the top of the pane, unless display settings turn it off (its 2px stay either way).
   const blue = hueColor(theme, "run"), runningBar = display.status === "ready" ? display.values.runningBar : DISPLAY_DEFAULTS.runningBar;
   const sweep = runningBar && agent.status === "running" && !agent.archivedAt ? <Sweep color={blue} track={tint(blue, 0.14)} /> : <View style={{ height: 2 }} />;
+  // 回复 (输入回复 and 输入或口述回复) on both layouts; keyed, so an unsent answer survives a switch between them.
+  const replySheet = <SendToAgentSheet key="reply-sheet" theme={theme} open={replying} onClose={() => setReplying(false)} agentId={agent.id} agentTitle={agent.title || t("coreAgentDetail.thisAgent")} finding={null} reply
+    onSent={() => { void queryCache.invalidateQueries({ queryKey: telemetryQueryKey(hostId) }); invalidateAttention(hostId); }} />;
   if (!compact) return <View testID="agent-detail" style={{ flex: 1, minHeight: 0 }}>
     {sweep}
     <View style={{ paddingHorizontal: inset, paddingTop: space.lg - 2, gap: space.md }}>{header}{tabBar}</View>
     {body}
     {actionMenu}
+    {replySheet}
   </View>;
   // Awaiting a reply on a phone: answer in Paseo, or type / dictate it here (Mark read moves to the menu).
   const bottom = (agent.archivedAt ? [open, restoreAction] : replyAction ? [open, replyAction] : read ? [read, open] : readState === "read" ? [archive, open] : [open]).filter((item): item is Action => !!item);
@@ -307,8 +311,7 @@ export function AgentDetail({ hostId, agent, agents, theme, compact, navigation,
       return <Button key={action.key} theme={theme} label={action.label} icon={primary ? undefined : action.key === "archive" ? action.icon : undefined} variant={primary ? "primary" : action.key === "archive" ? "ghost" : "secondary"} grow={action.key !== "archive"} busy={action.busy} disabled={action.disabled} onPress={action.onPress} />;
     })}</BottomBar> : null}
     {actionMenu}
-    <SendToAgentSheet theme={theme} open={replying} onClose={() => setReplying(false)} agentId={agent.id} agentTitle={agent.title || t("coreAgentDetail.thisAgent")} finding={null} reply
-      onSent={() => { void queryCache.invalidateQueries({ queryKey: telemetryQueryKey(hostId) }); invalidateAttention(hostId); }} />
+    {replySheet}
   </View>;
 }
 

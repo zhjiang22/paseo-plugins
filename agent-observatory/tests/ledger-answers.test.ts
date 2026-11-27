@@ -72,12 +72,12 @@ test("发给这个 Agent's 等这一轮结束再发 closes only on a queued or s
   const run = async (answer: DeferredView) => {
     const toast = toasts(), seen = { problem: [] as unknown[], closed: [] as unknown[], onSent: [] as unknown[], lost: [] as unknown[] };
     const next = { agentId: "a", text: "请复查", what: "消息", source: "分析建议「复查」", key: "k-go", messageId: "message-0001", tried: false };
-    const { defer } = callbacks("insight-actions.tsx", ["defer", "answeredWith"], {
+    const { defer } = callbacks("insight-actions.tsx", ["defer", "answeredWith", "finished"], {
       body: "请复查", busy: false, current: () => next, taken: () => false, setBusy: () => {}, setConfirming: () => {},
       // Made in the sandbox: copied out, so they compare as plain objects.
       setProblem: (value: unknown) => { if (value) seen.problem.push(JSON.parse(JSON.stringify(value))); },
       deferred: { enqueue: async () => answer }, ledgerInput, settleRequest: () => {}, agentId: "a", agentTitle: "重构支付服务", toast, ledgerNotice, onItsWayLabel,
-      onSent: () => seen.onSent.push(true), onClose: () => seen.closed.push(true), lost: (...args: unknown[]) => seen.lost.push(args),
+      reply: false, setText: () => {}, onSent: () => seen.onSent.push(true), onClose: () => seen.closed.push(true), lost: (...args: unknown[]) => seen.lost.push(args),
     });
     await defer();
     return { toasts: toast.shown, ...seen };
@@ -100,4 +100,26 @@ test("发给这个 Agent's 等这一轮结束再发 closes only on a queued or s
   // The same text already on its way under another id: its row says so; the sheet stays.
   const other = await run(view("queued", { messageId: "message-0002" }));
   assert.deepEqual([other.toasts, other.closed], [[["success", "这条消息已在排队，见下方。"]], []]);
+});
+
+test("回复: a typed answer is cleared once it went out or was queued; one that waits, may have arrived or ended stays to edit", async () => {
+  const answer = (state: DeferredView["state"], patch: Partial<DeferredView> = {}) => view(state, { source: "手写回复", ...patch });
+  const run = async (ledgerView: DeferredView, how: "defer" | "schedule" = "defer") => {
+    const seen = { closed: [] as unknown[], text: [] as unknown[], lost: [] as unknown[] };
+    const next = { agentId: "a", text: "先把登录改版排进这一轮", what: "消息", source: "手写回复", key: "k-go", messageId: "message-0001", tried: false };
+    const sheet = callbacks("insight-actions.tsx", ["defer", "schedule", "answeredWith", "finished"], {
+      body: next.text, busy: false, current: () => next, taken: () => false, setBusy: () => {}, setConfirming: () => {}, setProblem: () => {}, setScheduling: () => {},
+      deferred: { enqueue: async () => ledgerView }, ledgerInput, settleRequest: () => {}, agentId: "a", agentTitle: "规划下一轮迭代", toast: toasts(), ledgerNotice, onItsWayLabel,
+      scheduleWhen: () => "明天 09:00", reply: true, setText: (value: unknown) => seen.text.push(value), onSent: () => {}, onClose: () => seen.closed.push(true),
+      lost: (...args: unknown[]) => seen.lost.push(args),
+    });
+    await (how === "schedule" ? sheet.schedule!(Date.now() + 3_600_000) : sheet.defer!());
+    return seen;
+  };
+  const cleared = { closed: [true], text: [""], lost: [] }, kept = { closed: [], text: [], lost: [] };
+  for (const state of ["queued", "sent"] as const) assert.deepEqual(await run(answer(state)), cleared, state);
+  assert.deepEqual(await run(answer("queued", { notBefore: Date.now() + 3_600_000 }), "schedule"), cleared, "scheduled");
+  // Already sent under another id (a second tap, another device): it went out all the same.
+  assert.deepEqual(await run(answer("sent", { messageId: "message-0002" })), cleared, "sent elsewhere");
+  for (const state of ["held", "maybe-sent", "sending", "canceled", "expired", "discarded"] as const) assert.deepEqual(await run(answer(state)), kept, state);
 });

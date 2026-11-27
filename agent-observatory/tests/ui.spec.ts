@@ -532,12 +532,12 @@ test("AI analysis exposes cancellation and insufficient-trajectory states withou
 test("normal history excludes archives even in all-time view and opens the separate archive page", async ({ page }, testInfo) => {
   await open(page, testInfo);
   await expect(page.getByRole("button", { name: "含已归档", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "查看 上周版本报告，已关闭", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "查看 上周版本报告，未载入", exact: true })).toHaveCount(0);
   let filters = await openFilters(page);
   await filters.getByRole("button", { name: "当前会话", exact: true }).click();
   await closeFilters(page);
   await expect(page.getByRole("button", { name: /^查看 重构支付服务，/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "查看 上周版本报告，已关闭", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "查看 上周版本报告，未载入", exact: true })).toHaveCount(0);
   filters = await openFilters(page);
   await filters.getByRole("button", { name: "历史会话", exact: true }).click();
   await closeFilters(page);
@@ -545,15 +545,15 @@ test("normal history excludes archives even in all-time view and opens the separ
   await expect(page.getByRole("button", { name: /^查看 重构支付服务，/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "查看 整理性能基线，已完成", exact: true })).toBeVisible();
   await selectRange(page, "全部时间");
-  await expect(page.getByRole("button", { name: "查看 上周版本报告，已关闭", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "查看 上周版本报告，未载入", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "查看 十二天前的归档迭代，已完成", exact: true })).toHaveCount(0);
   await menu(page, "已归档会话");
   await expect(page.getByText(/^1 个会话 · 1 个项目$/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "查看 上周版本报告，已关闭", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "查看 上周版本报告，未载入", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /^查看 重构支付服务，/ })).toHaveCount(0);
   await menu(page, "返回观测台");
   await expect(page.getByRole("button", { name: /^需要处理/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "查看 上周版本报告，已关闭", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "查看 上周版本报告，未载入", exact: true })).toHaveCount(0);
 });
 
 test("search text stays on this device: an old synced query is ignored, typing is never saved, and the archive round trip keeps it", async ({ page }, testInfo) => {
@@ -590,7 +590,7 @@ test("待回复 lists only Agents whose last reply asks you; a stopped Agent wit
 test("separate archive history uses execution dates for seven-day and longer ranges", async ({ page }, testInfo) => {
   await open(page, testInfo, "archives");
   await search(page, "上周版本报告");
-  await expect(page.getByRole("button", { name: "查看 上周版本报告，已关闭", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "查看 上周版本报告，未载入", exact: true })).toBeVisible();
   await search(page, "十二天前的归档迭代");
   await expect(page.getByRole("button", { name: "查看 十二天前的归档迭代，已完成", exact: true })).toHaveCount(0);
   await selectRange(page, "最近 30 天");
@@ -2025,7 +2025,7 @@ test.describe("定时运行", () => {
     const errors = collectErrors(page);
     await open(page, testInfo);
     await search(page, "归档环境诊断");
-    const row = page.getByRole("button", { name: "查看 归档环境诊断，已关闭", exact: true });
+    const row = page.getByRole("button", { name: "查看 归档环境诊断，未载入", exact: true });
     await expect(row.getByLabel("由定时任务创建", { exact: true })).toBeVisible();
     await row.click();
     const card = page.getByTestId("agent-detail").getByTestId("schedule-run-card");
@@ -2055,7 +2055,7 @@ test.describe("定时运行", () => {
   test("an archived schedule Agent shows the recorded reply first and loads the session only on tap", async ({ page }, testInfo) => {
     await open(page, testInfo, "archives");
     await search(page, "上周版本报告");
-    const row = page.getByRole("button", { name: "查看 上周版本报告，已关闭", exact: true });
+    const row = page.getByRole("button", { name: "查看 上周版本报告，未载入", exact: true });
     await expect(row.getByLabel("由定时任务创建", { exact: true })).toBeVisible();
     await row.click();
     const detail = page.getByTestId("agent-detail");
@@ -2074,7 +2074,7 @@ test.describe("定时运行", () => {
   test("an archived schedule Agent with nothing recorded reads its session as before", async ({ page }, testInfo) => {
     await open(page, testInfo, "schedule-no-reply&archives=1");
     await search(page, "上周版本报告");
-    await page.getByRole("button", { name: "查看 上周版本报告，已关闭", exact: true }).click();
+    await page.getByRole("button", { name: "查看 上周版本报告，未载入", exact: true }).click();
     const detail = page.getByTestId("agent-detail");
     await expect(detail.getByTestId("schedule-run-card")).toBeVisible();
     await expect.poll(async () => (await rpcCalls(page, "observatory.results.get")).filter(call => call.agentId === "old-report").length).toBe(1);
@@ -2085,7 +2085,7 @@ test.describe("定时运行", () => {
   test("a schedule Agent whose session cannot be read still shows the reply its run recorded", async ({ page }, testInfo) => {
     await open(page, testInfo, "schedule-session-error");
     await search(page, "归档环境诊断");
-    await page.getByRole("button", { name: "查看 归档环境诊断，已关闭", exact: true }).click();
+    await page.getByRole("button", { name: "查看 归档环境诊断，未载入", exact: true }).click();
     const detail = page.getByTestId("agent-detail");
     await expect(detail.getByText("会话读取失败：会话无法恢复：这个 ACP Agent 不支持重新载入。下面是定时任务记录的回复。", { exact: true })).toBeVisible();
     await expect(detail.getByText("预发布环境正常：数据库连接 12 ms，队列无积压，证书还有 64 天到期。", { exact: true })).toBeVisible();

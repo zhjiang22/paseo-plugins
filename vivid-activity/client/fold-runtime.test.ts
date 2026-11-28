@@ -75,10 +75,21 @@ function fakeTimeline(epoch = "e1") {
     },
     async rpc(this: { calls: FoldIndexInput[] }, input: FoldIndexInput): Promise<FoldIndexOutput> {
       this.calls.push(input);
-      if (input.direction === "tail") return page(rows);
+      const older = (end: number) => {
+        const start = Math.max(0, end - (input.limit ?? end));
+        return page(rows.slice(start, end), {
+          startCursor: start < end ? { epoch, seq: rows[start]!.row.s } : null,
+          hasOlder: start > 0,
+        });
+      };
+      if (input.direction === "tail") return older(rows.length);
       if (reset) {
         reset = false;
         return page([], { reset: true });
+      }
+      if (input.direction === "before") {
+        const end = rows.findIndex(({ row }) => row.s >= input.cursor!.seq);
+        return older(end < 0 ? rows.length : end);
       }
       const after = input.cursor?.seq ?? 0;
       return page(rows.filter((entry) => entry.revision > after));
@@ -108,6 +119,171 @@ function setup() {
   };
   return { clock, timeline, runtime, project, nudges: () => nudges };
 }
+
+describe("fold runtime history paging", () => {
+  it("publishes a complete historical fold before its first projection without nudging", async () => {
+    const { clock, timeline, runtime, project, nudges } = setup();
+    timeline.append(user);
+    timeline.append({ k: "r", key: "r:history" });
+    timeline.append(shell("old"));
+    timeline.append(text);
+    runtime.acquire("agent-1");
+    await clock.advance(0);
+
+    expect(project("r:history", "t:old")).toEqual({ "r:history": "fold", "t:old": "hide" });
+    await clock.advance(FOLD_TIMING.minGap.auto);
+    expect(nudges()).toBe(0);
+  });
+
+  it("keeps an existing summary on its row while a prepend supplies the segment start", async () => {
+    const { clock, timeline, runtime, project } = setup();
+    const keys = Array.from({ length: 10 }, (_, index) => `t:s${index + 1}`);
+    for (const key of keys) timeline.append(shell(key.slice(2)));
+    for (let index = 0; index < FOLD_TIMING.tailLimit - 5; index++) timeline.append(text);
+    timeline.setRunning(false);
+    runtime.acquire("agent-1");
+    await clock.advance(0);
+
+    project(...keys.slice(5));
+    await clock.advance(0);
+    runtime.toggle("agent-1", "6", false);
+    expect(project(...keys.slice(5))["t:s6"]).toBe("fold");
+    await clock.advance(FOLD_TIMING.rowDelay);
+    expect(runtime.roleFor("t:s6")).toMatchObject({ kind: "fold", summary: { segment: "1", expanded: false } });
+    expect(runtime.isExpanded("agent-1", "1")).toBe(false);
+    expect(Object.values(project(...keys.slice(0, 5)))).toEqual(Array(5).fill("hide"));
+    await clock.advance(0);
+    expect(runtime.roleFor("t:s6")).toMatchObject({ kind: "fold", summary: { steps: 10 } });
+
+    // The batched nudge has not run yet, so the visible summary still sends its old segment ID.
+    runtime.toggle("agent-1", "6", true);
+    expect(runtime.roleFor("t:s1")).toMatchObject({ kind: "fold", summary: { expanded: true } });
+    expect(runtime.roleFor("t:s6")).toEqual(SHOW);
+    project(...keys);
+    runtime.toggle("agent-1", "1", false);
+    expect(runtime.roleFor("t:s1")).toMatchObject({ kind: "fold", summary: { expanded: false } });
+    expect(runtime.roleFor("t:s6").kind).toBe("hide");
+  });
+
+  it("splits an unseen prefold around a tool another plugin projected", async () => {
+    const { clock, timeline, runtime, project, nudges } = setup();
+    timeline.append(user);
+    for (const id of ["first", "second", "foreign", "fourth", "fifth"]) timeline.append(shell(id));
+    timeline.append(text);
+    runtime.acquire("agent-1");
+    await clock.advance(0);
+    expect(runtime.roleFor("t:first")).toMatchObject({ kind: "fold", summary: { steps: 5 } });
+
+    expect(project("t:first", "t:second", "t:fourth", "t:fifth")).toEqual({
+      "t:first": "fold", "t:second": "hide", "t:fourth": "hide", "t:fifth": "hide",
+    });
+    await clock.advance(FOLD_TIMING.delay.soon);
+    expect(runtime.roleFor("t:first")).toMatchObject({ kind: "fold", summary: { steps: 2 } });
+    expect(runtime.roleFor("t:foreign")).toEqual(SHOW);
+    expect(runtime.roleFor("t:fourth")).toMatchObject({ kind: "fold", summary: { steps: 2 } });
+    project("t:first", "t:second", "t:fourth", "t:fifth");
+    await clock.advance(FOLD_TIMING.minGap.auto);
+    expect(nudges()).toBe(1);
+  });
+
+  it.each(["project", "mount", "before tail load"] as const)("prefetches at the oldest %s edge, with one request per cursor", async (entry) => {
+    const { clock, timeline, runtime, project } = setup();
+    timeline.setRunning(false);
+    for (let index = 1; index <= 2 * FOLD_TIMING.tailLimit + 1; index++) timeline.append(shell(`r${index}`));
+    const start = FOLD_TIMING.tailLimit + 2;
+    const edge = start + FOLD_TIMING.beforePrefetchRows - 1;
+    if (entry === "before tail load") project(`t:r${edge}`);
+    runtime.acquire("agent-1");
+    await clock.advance(0);
+
+    if (entry !== "before tail load") {
+      project(`t:r${edge + 1}`);
+      runtime.noteRow("agent-1", `t:r${edge + 1}`, "completed", (edge + 1) * 1000);
+      await clock.advance(FOLD_TIMING.pokeDelay);
+      expect(timeline.calls.map((call) => call.direction)).toEqual(["tail"]);
+    }
+    if (entry === "project") project(`t:r${edge}`, `t:r${start}`);
+    if (entry === "mount") runtime.noteRow("agent-1", `t:r${edge}`, "completed", edge * 1000);
+    await clock.advance(FOLD_TIMING.rowDelay - 1);
+    expect(timeline.calls.map((call) => call.direction)).toEqual(["tail"]);
+    await clock.advance(1);
+    expect(timeline.calls[1]).toEqual({ agentId: "agent-1", direction: "before", cursor: { epoch: "e1", seq: start }, limit: 240 });
+    project(`t:r${edge}`, `t:r${start}`);
+    await clock.advance(FOLD_TIMING.pokeDelay);
+    expect(timeline.calls.map((call) => call.direction)).toEqual(["tail", "before"]);
+  });
+
+  it("stops prefetching when a host reports older rows but returns the same cursor", async () => {
+    const { clock, timeline, runtime, project } = setup();
+    timeline.setRunning(false);
+    for (let index = 0; index < FOLD_TIMING.tailLimit + 2; index++) timeline.append(shell(`r${index}`));
+    const read = timeline.rpc.bind(timeline);
+    timeline.rpc = async (input) => {
+      const page = await read(input);
+      return input.direction === "before" ? { ...page, rows: [], startCursor: input.cursor!, hasOlder: true } : page;
+    };
+    runtime.acquire("agent-1");
+    await clock.advance(0);
+    project("t:r2");
+    await clock.advance(FOLD_TIMING.pokeDelay);
+    project("t:r2", "t:r3");
+    runtime.noteRow("agent-1", "t:r4", "completed", 5000);
+    await clock.advance(FOLD_TIMING.pokeDelay);
+    expect(timeline.calls.map((call) => call.direction)).toEqual(["tail", "before"]);
+  });
+
+  it("throttles before reads while running and backs off when they fail", async () => {
+    const { clock, timeline, runtime, project } = setup();
+    for (let index = 0; index < FOLD_TIMING.tailLimit + 2; index++) timeline.append(shell(`r${index}`));
+    const read = timeline.rpc.bind(timeline);
+    let failures = 2;
+    const beforeReads = () => timeline.calls.filter((call) => call.direction === "before");
+    timeline.rpc = async (input) => {
+      const page = await read(input);
+      if (input.direction === "before" && failures-- > 0) throw new Error("offline");
+      return page;
+    };
+    runtime.acquire("agent-1");
+    await clock.advance(0);
+    project("t:r2");
+    for (const delay of [FOLD_TIMING.pokeDelay, ...FOLD_TIMING.retryMs.slice(0, 2)]) {
+      const count = beforeReads().length;
+      project("t:r2");
+      runtime.noteRow("agent-1", "t:r3", "completed", 4000);
+      await clock.advance(delay - 1);
+      expect(beforeReads()).toHaveLength(count);
+      await clock.advance(1);
+      expect(beforeReads()).toHaveLength(count + 1);
+    }
+    expect(beforeReads().map((call) => call.cursor)).toEqual(Array(3).fill({ epoch: "e1", seq: 3 }));
+    expect(runtime.debugAgent("agent-1")?.rows[0]?.seq).toBe(1);
+  });
+
+  it("batches late before-only fold updates at auto priority", async () => {
+    const { clock, timeline, runtime, project, nudges } = setup();
+    timeline.setRunning(false);
+    for (let seq = 1; seq <= FOLD_TIMING.tailLimit + FOLD_TIMING.pageLimit + 5; seq++) {
+      timeline.append([1, 2, 10, 11, 246].includes(seq) ? shell(`r${seq}`) : text);
+    }
+    runtime.acquire("agent-1");
+    await clock.advance(0);
+    runtime.scheduleNudge("now");
+    await clock.advance(0);
+    expect(nudges()).toBe(1);
+    expect(Object.values(project("t:r1", "t:r2", "t:r10", "t:r11", "t:r246"))).toEqual(Array(5).fill("show"));
+
+    await clock.advance(FOLD_TIMING.rowDelay);
+    expect(runtime.roleFor("t:r10").kind).toBe("fold");
+    expect(runtime.roleFor("t:r1").kind).toBe("show");
+    await clock.advance(FOLD_TIMING.rowDelay);
+    expect(runtime.roleFor("t:r1").kind).toBe("fold");
+    expect(timeline.calls.map((call) => call.direction)).toEqual(["tail", "before", "before"]);
+    await clock.advance(FOLD_TIMING.minGap.auto - 2 * FOLD_TIMING.rowDelay - 1);
+    expect(nudges()).toBe(1);
+    await clock.advance(1);
+    expect(nudges()).toBe(2);
+  });
+});
 
 describe("fold runtime timings", () => {
   it("estimates when each row ran, keeps unchanged timings stable, and runs on the daemon's clock", async () => {
@@ -268,7 +444,7 @@ describe("fold runtime", () => {
     expect(runtime.roleFor("t:a").kind).toBe("fold");
   });
 
-  it("plans around a key two agents see differently, so neither loses its summary", async () => {
+  it.each([true, false])("protects a contested key shared by two agents (already projected: %s)", async (seen) => {
     const clock = fakeClock();
     const one = fakeTimeline("e1");
     const two = fakeTimeline("e2");
@@ -291,10 +467,11 @@ describe("fold runtime", () => {
     two.append(shell("x"));
     two.append(shell("y"));
     two.append(text);
-    for (const key of ["r:same", "t:a", "t:x", "t:y"]) runtime.markProjected(key, SHOW);
+    if (seen) for (const key of ["r:same", "t:a", "t:x", "t:y"]) runtime.markProjected(key, SHOW);
     runtime.acquire("one");
     runtime.acquire("two");
     await clock.advance(1_000);
+    expect(runtime.debugMemory().contested).toBe(1);
     expect(runtime.roleFor("r:same")).toEqual(SHOW);
     expect(runtime.roleFor("t:a")).toEqual(SHOW);
     expect(runtime.roleFor("t:x").kind).toBe("fold");

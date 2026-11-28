@@ -281,6 +281,80 @@ describe("planFolds: scope, notices, loaded rows and ambiguity", () => {
   });
 });
 
+describe("planFolds: paged history", () => {
+  const unseen = () => false;
+
+  it.each([false, true])("prefolds unseen bounded segments with hasOlder=%s", (hasOlder) => {
+    const rows = [boundary(1), think(2), tool(3), boundary(4), think(5), tool(6, "failed"), boundary(7)];
+    const { roles } = planFolds(rows, options({ hasOlder, present: unseen }));
+    expect(kinds(roles, rows)).toEqual(["|", "fold", "hide", "|", "fold", "show", "|"]);
+    expect(summaryOf(roles, rows[1]!)).toMatchObject({ steps: 2, expanded: false });
+    expect(summaryOf(roles, rows[4]!)).toMatchObject({ steps: 2, failed: 1, expanded: true });
+  });
+
+  it("needs the start of history or a real preceding boundary, and a following boundary", () => {
+    const leading = [think(1), tool(2), boundary(3)];
+    const skipped: IndexRow = { kind: "skip", seq: 0, at: 0 };
+    expect(kinds(planFolds(leading, options({ present: unseen })).roles, leading)).toEqual(["fold", "hide", "|"]);
+    expect(planFolds([skipped, ...leading], options({ hasOlder: true, present: unseen })).roles.size).toBe(0);
+    expect(planFolds([boundary(1), think(2), tool(3)], options({ present: unseen })).roles.size).toBe(0);
+    expect(planFolds([boundary(1), think(2), tool(3, "running"), boundary(4)], options({ present: unseen })).roles.size).toBe(0);
+
+    const newTurn = [tool(1, "completed", "shell", { turn: "previous" }), { ...think(2), turn: "next" }, tool(3), boundary(4)];
+    expect(kinds(planFolds(newTurn, options({ hasOlder: true, present: unseen })).roles, newTurn)).toEqual(["-", "fold", "hide", "|"]);
+    const reasoningOnly = [tool(1), think(2), think(3), boundary(4)];
+    expect(kinds(planFolds(reasoningOnly, options({ hasOlder: true, present: unseen, scope: "reasoning" })).roles, reasoningOnly)).toEqual(["-", "fold", "hide", "|"]);
+  });
+
+  it("still counts the projected part and splits around a foreign tool card", () => {
+    const rows = [tool(1), tool(2), tool(3), tool(4), tool(5), tool(6), boundary(7)];
+    const present = (key: string) => key !== rows[0]!.key && key !== rows[3]!.key;
+    const { roles } = planFolds(rows, options({ hasOlder: true, present }));
+    expect(kinds(roles, rows)).toEqual(["hide", "fold", "hide", "-", "fold", "hide", "|"]);
+    expect(summaryOf(roles, rows[1]!).steps).toBe(2);
+    expect(summaryOf(roles, rows[4]!).steps).toBe(2);
+  });
+
+  it.each([false, true])("inherits expanded=%s from the old anchor after prepending history", (expanded) => {
+    const rows = Array.from({ length: 10 }, (_, index) => tool(index + 1, index === 6 && !expanded ? "failed" : "completed"));
+    const anchored = (key: string) => key === rows[5]!.key;
+    const plan = planFolds([...rows, boundary(11)], options({
+      present: () => true,
+      anchored,
+      expanded: (id) => id === "6" ? expanded : undefined,
+    }));
+    const anchor = rows[expanded ? 0 : 5]!;
+    expect(plan.segments[0]).toMatchObject({ id: "1", anchor: anchor.key });
+    expect(summaryOf(plan.roles, anchor)).toMatchObject({ segment: "1", expanded, steps: 10 });
+    for (const row of rows) {
+      if (row !== anchor) expect(plan.roles.get(row.key!)?.kind).toBe(expanded ? "show" : "hide");
+    }
+  });
+
+  it("keeps the latest visible, uncontested anchor for a running segment", () => {
+    const rows = Array.from({ length: 10 }, (_, index) => tool(index + 1));
+    const plan = planFolds(rows, options({
+      agentRunning: true,
+      present: (key) => key !== rows[0]!.key,
+      anchored: (key) => [5, 6, 7].some((index) => key === rows[index]!.key),
+      contested: (key) => key === rows[7]!.key,
+    }));
+    expect(summaryOf(plan.roles, rows[6]!)).toMatchObject({ mode: "earlier", expanded: false });
+    expect(plan.roles.get(rows[7]!.key!)).toBeUndefined();
+  });
+
+  it("leaves a contested previous anchor visible and uses the first eligible row for a finished segment", () => {
+    const rows = [tool(1), tool(2), tool(3), boundary(4)];
+    const previousAnchor = rows[1]!.key;
+    const { roles } = planFolds(rows, options({
+      present: () => true,
+      anchored: (key) => key === previousAnchor,
+      contested: (key) => key === previousAnchor,
+    }));
+    expect(kinds(roles, rows)).toEqual(["fold", "-", "hide", "|"]);
+  });
+});
+
 describe("planFolds: turns (0.3.0-local.3)", () => {
   const HOUR = 3_600_000;
   const inTurn = (row: IndexRow, turn: string, at = row.at): IndexRow => ({ ...row, turn, at });

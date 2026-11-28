@@ -65,6 +65,32 @@ const call = (callId: string, detail: ToolCallDetail, status: "running" | "compl
 const kindsOf = (result: ReturnType<typeof transformToolCall>) => result?.items.map((item) => item.kind);
 
 describe("timeline transforms with folding", () => {
+  it("projects an indexed history segment as folded on its first pass without a nudge", async () => {
+    const tool = call("history-bash", { type: "shell", command: "npm test" });
+    const thought = { type: "reasoning", text: "Checking the earlier test results" } as const;
+    index.push(
+      { s: 1, at: 1000, k: "b", w: "user_message" },
+      { s: 2, at: 2000, k: "t", key: "t:history-bash", st: "completed", look: "shell" },
+      { s: 3, at: 3000, k: "r", key: reasoningKey(thought.text) },
+      { s: 4, at: 4000, k: "b", w: "assistant_message" },
+    );
+    foldRuntime.acquire("agent-history");
+    try {
+      await advance(0);
+      expect(foldRuntime.hasSeen("t:history-bash")).toBe(false);
+      expect(foldRuntime.hasSeen(reasoningKey(thought.text))).toBe(false);
+      const summary = transformToolCall({ item: tool, phase: "complete" });
+      expect(kindsOf(summary)).toEqual(["vivid-fold"]);
+      expect(summary?.items[0]?.data).toMatchObject({ expanded: false, hidden: 2, steps: 2 });
+      expect(transformReasoning({ item: thought, phase: "complete" })).toEqual({ items: [] });
+      await advance(2_500);
+      expect(nudges).toBe(0);
+    } finally {
+      foldRuntime.release("agent-history");
+      index.length = 0;
+    }
+  });
+
   it("hides folded rows entirely, puts the summary on the first row, and expands on request", async () => {
     const a = call("fold-a", { type: "shell", command: "npm test" });
     const b = call("fold-b", { type: "read", filePath: "src/a.ts" });

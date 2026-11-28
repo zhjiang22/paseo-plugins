@@ -96,8 +96,11 @@ describe("client mobile bundle compatibility", () => {
     // expanded-only ReasoningBody subscriber and ES5 ErrorBoundary (client/activity.tsx, about 2.4 KiB), and the host
     // lifecycle registration in index.client.tsx (about 0.5 KiB). 389 → 390 KiB for Paseo 0.17 (398 293 → 399 059
     // bytes, +766 bytes): the watched pull request's update row as a segment boundary and the labels and icons of the
-    // three new Paseo tools (shared/fold-index.ts, shared/presentation.ts, shared/vivid-model.ts).
-    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(390 * 1024);
+    // three new Paseo tools (shared/fold-index.ts, shared/presentation.ts, shared/vivid-model.ts). 390 → 394 KiB for
+    // history fold stability (399 288 → 402 686 bytes, +3 398 bytes): bounded historical prefolding, anchor stability
+    // and cross-page expansion inheritance (shared/fold.ts, about 1.2 KiB), and proactive `before` prefetching with
+    // segment-ID handoff across prepended pages (client/fold-runtime.ts, about 2.2 KiB).
+    expect(Buffer.byteLength(bundle)).toBeLessThanOrEqual(394 * 1024);
     expect(bundle).toContain("function ChangeStat");
     expect(bundle).toContain("function TurnTokens");
     expect(bundle).not.toMatch(/function (?:RunningLoader|LoaderFrame|FoldChanges|sparkleStops|shiftStops)\b/);

@@ -58,10 +58,14 @@ export interface FoldOptions {
   expanded?: (segment: string) => boolean | undefined;
   /**
    * Keys Paseo has projected (holds in its timeline) at least once. Paseo loads history in pages of 40 entries, so the start
-   * of a segment may not be loaded yet: the summary sits on the first loaded row and counts only loaded rows, so expanding
-   * shows exactly what it says. Absent = all.
+   * of a segment may not be loaded yet. Once any eligible row is projected, the summary counts only projected rows.
+   * A bounded finished segment can be prefolded before its first projection. Absent = all.
    */
   present?: (key: string) => boolean;
+  /** Whether the index leaves older history before its first row. */
+  hasOlder?: boolean;
+  /** Keys currently projected as a summary, kept as anchors while collapsed. */
+  anchored?: (key: string) => boolean;
   /**
    * 0.6.0-local.3: what the client decided for a repeat notice it projected (true: folded into its row, which needs that
    * row's result the index may not have); undefined = the index's `foreground`.
@@ -142,6 +146,8 @@ export interface SegmentInfo {
   running: boolean;
   mode: "done" | "earlier" | "open";
   anchor: string | null;
+  /** Explicit choice inherited from an anchor after the segment start moved. */
+  inheritedExpansion?: boolean;
 }
 
 export interface FoldPlan {
@@ -208,6 +214,8 @@ interface Segment {
   turn: string | undefined;
   /** Estimated start of its first row (shared/timing.ts); null when nothing before it is known. */
   startAt: number | null;
+  /** The start of history or a boundary precedes the segment. */
+  preceded: boolean;
   /** Something follows the segment. */
   followed: boolean;
 }
@@ -289,7 +297,13 @@ function splitAtForeign(segment: Segment, options: FoldOptions, starts: Readonly
       continue;
     }
     if (!current) {
-      current = { steps: [], turn: segment.turn, startAt: index === 0 ? segment.startAt : starts.get(step.row.seq) ?? null, followed: false };
+      current = {
+        steps: [],
+        turn: segment.turn,
+        startAt: index === 0 ? segment.startAt : starts.get(step.row.seq) ?? null,
+        preceded: index > 0 || segment.preceded,
+        followed: false,
+      };
       parts.push(current);
     }
     current.steps.push(step);
@@ -313,9 +327,11 @@ function segmentRows(rows: readonly IndexRow[], options: FoldOptions): Segment[]
   );
   const segments: Segment[] = [];
   let current: Segment | null = null;
+  let preceded = !options.hasOlder;
   for (const row of rows) {
     if (row.kind === "skip") continue;
     if (!isMember(row, options.scope)) {
+      preceded = true;
       if (current) {
         current.followed = true;
         current = null;
@@ -339,9 +355,10 @@ function segmentRows(rows: readonly IndexRow[], options: FoldOptions): Segment[]
     if (current && row.turn !== undefined && current.turn !== undefined && row.turn !== current.turn) {
       current.followed = true;
       current = null;
+      preceded = true;
     }
     if (!current) {
-      current = { steps: [], turn: row.turn, startAt: starts.get(row.seq) ?? null, followed: false };
+      current = { steps: [], turn: row.turn, startAt: starts.get(row.seq) ?? null, preceded, followed: false };
       segments.push(current);
     }
     current.steps.push(step);
@@ -351,6 +368,18 @@ function segmentRows(rows: readonly IndexRow[], options: FoldOptions): Segment[]
 
 function isPresent(step: Step, options: FoldOptions): boolean {
   return !options.present || options.present(step.key);
+}
+
+function findLastStep(steps: readonly Step[], match: (step: Step) => boolean): Step | undefined {
+  for (let index = steps.length - 1; index >= 0; index--) {
+    const step = steps[index]!;
+    if (match(step)) return step;
+  }
+  return undefined;
+}
+
+function findAnchor(steps: readonly Step[], visible: (step: Step) => boolean, anchored?: FoldOptions["anchored"]): Step | undefined {
+  return (anchored && findLastStep(steps, (step) => visible(step) && anchored(step.key))) ?? steps.find(visible);
 }
 
 function isWaiting(step: Step, options: FoldOptions): boolean {
@@ -380,14 +409,23 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
     const info: SegmentInfo = { id, keys: segment.steps.map((step) => step.key), sealed, running, mode: "open", anchor: null };
     infos.push(info);
     if (!options.enabled || foldable.length === 0) continue;
-    const userExpanded = options.expanded?.(id);
+    let userExpanded = options.expanded?.(id);
+    if (userExpanded === undefined && options.anchored && options.expanded) {
+      findLastStep(foldable, (step) => {
+        if (step.ambiguous || !options.anchored!(step.key)) return false;
+        userExpanded = options.expanded!(String(step.row.seq));
+        return userExpanded !== undefined;
+      });
+      if (userExpanded !== undefined) info.inheritedExpansion = userExpanded;
+    }
 
     if (!running) {
+      const anyPresent = Boolean(options.present && foldable.some((step) => !step.ambiguous && options.present!(step.key)));
+      const prefold = Boolean(options.present && !anyPresent && segment.preceded && segment.followed);
       // Rows that stay visible (ambiguous keys) are not part of what the summary stands for.
-      const loaded = countable.filter((step) => !step.ambiguous && isPresent(step, options));
+      const visible = (step: Step) => !step.ambiguous && (prefold || isPresent(step, options));
+      const loaded = countable.filter(visible);
       if (loaded.length < minFold) continue;
-      const anchor = foldable.find((step) => !step.ambiguous && isPresent(step, options));
-      if (!anchor) continue;
       // Parallel calls can finish out of order: the run ends with whichever finished last.
       const end = Math.max(...segment.steps.map((step) => step.row.at));
       let durationMs = segment.startAt !== null && end > 0 && end >= segment.startAt ? end - segment.startAt : null;
@@ -396,11 +434,13 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
         durationMs = null;
       }
       // 0.6.0: a failed notice (a background sub-agent or command that failed) is not a step, but the summary says so in red.
-      const failedNotices = foldable.filter((step) => step.notice && step.status === "failed" && !step.ambiguous && isPresent(step, options)).length;
+      const failedNotices = foldable.filter((step) => step.notice && step.status === "failed" && visible(step)).length;
       const failed = loaded.filter((step) => step.status === "failed").length + failedNotices;
       // 0.11.0:「失败」段自动展开（此前从未手动开合过，reader 返回 undefined）：失败行与失败清单直接可见。
       // 用户显式开合（true/false）优先，收起的失败段保持紧凑。
       const expanded = userExpanded ?? failed > 0;
+      const anchor = findAnchor(foldable, visible, expanded ? undefined : options.anchored);
+      if (!anchor) continue;
       const summary: FoldSummary = {
         segment: id,
         mode: "done",
@@ -440,10 +480,10 @@ export function planFolds(rows: readonly IndexRow[], options: FoldOptions): Fold
     const earlier = foldable.filter((step) => !recent.has(step) && !step.ambiguous && !live(step) && step.status !== "failed");
     const earlierSteps = earlier.filter((step) => !step.notice && isPresent(step, options));
     if (earlierSteps.length < minHidden) continue;
-    const anchor = earlier.find((step) => isPresent(step, options));
-    if (!anchor) continue;
     // 运行中的段头没有失败计数（失败行保持显示，不计入 earlier）：自动展开只看用户显式开合。
     const expanded = userExpanded ?? false;
+    const anchor = findAnchor(earlier, (step) => isPresent(step, options), expanded ? undefined : options.anchored);
+    if (!anchor) continue;
     const summary: FoldSummary = {
       segment: id,
       mode: "earlier",

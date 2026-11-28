@@ -32,8 +32,9 @@ export type NudgePriority = "now" | "soon" | "auto";
 type Cursor = NonNullable<FoldIndexOutput["endCursor"]>;
 
 export const FOLD_TIMING = {
-  tailLimit: 160,
-  pageLimit: 200,
+  tailLimit: 240,
+  pageLimit: 240,
+  beforePrefetchRows: 80,
   maxPages: 5,
   pokeDelay: 2_000,
   rowDelay: 200,
@@ -90,6 +91,7 @@ interface AgentFolds {
   start: Cursor | null;
   end: Cursor | null;
   hasOlder: boolean;
+  prefetchedBeforeSeq: number | null;
   loaded: boolean;
   running: boolean | null;
   want: { tail: boolean; after: boolean; before: boolean };
@@ -150,6 +152,7 @@ function newAgent(agentId: string): AgentFolds {
     start: null,
     end: null,
     hasOlder: false,
+    prefetchedBeforeSeq: null,
     loaded: false,
     running: null,
     want: { tail: true, after: false, before: false },
@@ -306,6 +309,29 @@ export function createFoldRuntime(): FoldRuntime {
     }, Math.max(0, due - now()));
   }
 
+  function requestBeforePrefetch(agent: AgentFolds): void {
+    if (!agent.loaded || !agent.hasOlder || !agent.start || agent.refs === 0 || agent.missing) return;
+    if (agent.prefetchedBeforeSeq === agent.start.seq) return;
+    agent.prefetchedBeforeSeq = agent.start.seq;
+    request(agent, "before", FOLD_TIMING.rowDelay);
+  }
+
+  function maybePrefetchForRow(agent: AgentFolds, row: IndexRow): void {
+    const edge = agent.rows[Math.min(agent.rows.length, FOLD_TIMING.beforePrefetchRows) - 1];
+    if (edge && row.seq <= edge.seq) requestBeforePrefetch(agent);
+  }
+
+  function maybePrefetchBefore(agent: AgentFolds): void {
+    const limit = Math.min(agent.rows.length, FOLD_TIMING.beforePrefetchRows);
+    for (let index = 0; index < limit; index++) {
+      const key = agent.rows[index]!.key;
+      if (key && seen.has(key)) {
+        requestBeforePrefetch(agent);
+        return;
+      }
+    }
+  }
+
   function syncPoll(agent: AgentFolds): void {
     const wanted = agent.refs > 0 && agent.running !== false && !agent.missing;
     if (wanted && agent.poll === null) {
@@ -409,6 +435,7 @@ export function createFoldRuntime(): FoldRuntime {
     agent.start = page.startCursor;
     agent.end = page.endCursor;
     agent.hasOlder = page.hasOlder;
+    agent.prefetchedBeforeSeq = null;
     agent.loaded = true;
     agent.misses.clear();
     if (page.running !== null) agent.running = page.running;
@@ -441,7 +468,7 @@ export function createFoldRuntime(): FoldRuntime {
 
   /**
    * One read cycle. It serves the requests made before it started; requests that arrive while it reads wait for the next
-   * cycle (at most one every `pokeDelay`), so streaming text cannot turn into back-to-back reads.
+   * cycle. While the agent runs, `request` enforces `pokeDelay` between cycles.
    */
   async function run(agent: AgentFolds): Promise<void> {
     if (agent.inflight || agent.missing || !deps) return;
@@ -452,6 +479,8 @@ export function createFoldRuntime(): FoldRuntime {
     agent.want = { tail: false, after: false, before: false };
     let changed = false;
     let firstLoad = false;
+    let checkBeforeEdge = false;
+    let beforeOnly = false;
     const readTail = async () => {
       const page = await rpc({ agentId: agent.agentId, direction: "tail", limit: FOLD_TIMING.tailLimit });
       if (page.status !== "ok") throw new Error(page.status);
@@ -460,6 +489,7 @@ export function createFoldRuntime(): FoldRuntime {
       firstLoad = firstLoad || !agent.loaded;
       replace(agent, page);
       changed = true;
+      checkBeforeEdge = true;
     };
     try {
       if (want.tail || !agent.loaded || !agent.end) {
@@ -487,7 +517,9 @@ export function createFoldRuntime(): FoldRuntime {
           }
         }
         if (!reset && want.before && agent.hasOlder && agent.start) {
-          const page = await rpc({ agentId: agent.agentId, direction: "before", cursor: agent.start, limit: FOLD_TIMING.pageLimit });
+          const start = agent.start;
+          agent.prefetchedBeforeSeq = start.seq;
+          const page = await rpc({ agentId: agent.agentId, direction: "before", cursor: start, limit: FOLD_TIMING.pageLimit });
           if (page.status !== "ok") throw new Error(page.status);
           if (page.reset || (page.epoch && page.epoch !== agent.epoch)) reset = true;
           else {
@@ -496,8 +528,11 @@ export function createFoldRuntime(): FoldRuntime {
             const rows = rowsOf(page);
             witness(agent, rows);
             changed = upsert(agent, rows) || changed;
-            agent.start = page.startCursor ?? agent.start;
+            if (page.startCursor && page.startCursor.seq < start.seq) agent.start = page.startCursor;
+            changed = agent.hasOlder !== page.hasOlder || changed;
             agent.hasOlder = page.hasOlder;
+            checkBeforeEdge = true;
+            beforeOnly = !want.after;
           }
         }
         if (reset) await readTail();
@@ -506,6 +541,7 @@ export function createFoldRuntime(): FoldRuntime {
       agent.retryAt = 0;
     } catch (error) {
       agent.inflight = false;
+      if (want.before) agent.prefetchedBeforeSeq = null;
       if (error instanceof Error && error.message === "missing") {
         // Not an Agent the daemon can read (a provider subagent's own view): leave its rows as they are, stop asking.
         agent.missing = true;
@@ -523,10 +559,11 @@ export function createFoldRuntime(): FoldRuntime {
       }
       return;
     }
+    if (checkBeforeEdge) maybePrefetchBefore(agent);
     agent.inflight = false;
     if (changed) {
       retime(agent);
-      recompute(agent, firstLoad ? "soon" : "auto");
+      recompute(agent, firstLoad ? "soon" : "auto", !beforeOnly);
     }
     if (agent.early.size > 0 && agent.loaded) {
       const early = [...agent.early];
@@ -535,7 +572,8 @@ export function createFoldRuntime(): FoldRuntime {
     }
     const next = agent.want;
     if (agent.refs > 0 && (next.tail || next.after || next.before)) {
-      request(agent, next.tail ? "tail" : next.before ? "before" : "after", FOLD_TIMING.pokeDelay);
+      const delay = next.tail || next.after ? FOLD_TIMING.pokeDelay : FOLD_TIMING.rowDelay;
+      request(agent, next.tail ? "tail" : next.before ? "before" : "after", delay);
     }
   }
 
@@ -617,7 +655,7 @@ export function createFoldRuntime(): FoldRuntime {
   }
 
   /** Plans one agent again and publishes its roles; re-projects when a drawn row's role changed. */
-  function recompute(agent: AgentFolds, priority: NudgePriority): void {
+  function recompute(agent: AgentFolds, priority: NudgePriority, allowUrgent = true): void {
     if (!agent.loaded) return;
     const planScope = scope === "off" ? null : scope;
     const plan: FoldPlan = planScope
@@ -627,14 +665,19 @@ export function createFoldRuntime(): FoldRuntime {
           agentRunning: agent.running ?? true,
           expanded: (segment) => expandedState.get(agent.agentId)?.get(expandKey(agent, segment)),
           present: (key) => seen.has(key),
+          hasOlder: agent.hasOlder,
+          anchored: (key) => Boolean(applied.get(key)?.startsWith("f|")),
           noticeMerged: (key) => noticeMerged.get(key),
           contested: (key) => contested.has(key),
           turnStart: (turn) => agent.turnStarts.get(turn) ?? null,
           witnessed: (key) => agent.witnessed.has(key),
         })
       : { roles: new Map<string, FoldRole>(), segments: [] };
+    for (const segment of plan.segments) {
+      if (segment.inheritedExpansion !== undefined) writeExpanded(agent, segment.id, segment.inheritedExpansion);
+    }
     agent.plan = plan;
-    publishRoles(agent, plan.roles, priority);
+    publishRoles(agent, plan.roles, priority, false, allowUrgent);
     // 0.6.0: the latest question goes above the newest segment's first drawn row; rows hear when it moves.
     const pin = planScope ? promptPin(agent.rows, plan, { drawn: (key) => seen.has(key), hasOlder: agent.hasOlder }) : null;
     if (!samePin(agent.pin, pin)) {
@@ -645,7 +688,7 @@ export function createFoldRuntime(): FoldRuntime {
   }
 
   /** `quiet`: none of the agent's rows is on screen, so a changed role needs no re-projection. */
-  function publishRoles(agent: AgentFolds, roles: Map<string, FoldRole>, priority: NudgePriority, quiet = false): void {
+  function publishRoles(agent: AgentFolds, roles: Map<string, FoldRole>, priority: NudgePriority, quiet = false, allowUrgent = true): void {
     const touched = new Set<string>();
     for (const key of agent.roles.keys()) if (!roles.has(key)) touched.add(key);
     const next = new Map<string, string>();
@@ -686,7 +729,7 @@ export function createFoldRuntime(): FoldRuntime {
         if (agreed?.role.kind === "fold" && agreed.role.summary.mode === "done" && !previous.startsWith("f|")) urgent = true;
       }
     }
-    if (dirty && !quiet) runtime.scheduleNudge(urgent && priority === "auto" ? "soon" : priority);
+    if (dirty && !quiet) runtime.scheduleNudge(allowUrgent && urgent && priority === "auto" ? "soon" : priority);
   }
 
   /**
@@ -761,7 +804,7 @@ export function createFoldRuntime(): FoldRuntime {
     },
     markProjected(key, role) {
       applied.set(key, roleSignature(role));
-      if (seen.has(key)) return;
+      const seenBefore = seen.has(key);
       seen.add(key);
       if (seen.size > FOLD_TIMING.seenLimit) {
         let drop = Math.floor(seen.size / 2);
@@ -774,7 +817,12 @@ export function createFoldRuntime(): FoldRuntime {
         // takes a drawn row for one another plugin drew (shared/fold.ts splitAtForeign).
         runtime.scheduleNudge("auto");
       }
-      for (const agent of agents.values()) if (agent.loaded && agent.byKey.has(key)) queueRecompute(agent);
+      for (const agent of agents.values()) {
+        const known = agent.byKey.get(key);
+        if (!known) continue;
+        if (agent.hasOlder) maybePrefetchForRow(agent, known);
+        if (!seenBefore) queueRecompute(agent);
+      }
     },
     poke() {
       for (const agent of agents.values()) if (agent.refs > 0 && agent.loaded && now() >= agent.retryAt) request(agent, "after", FOLD_TIMING.pokeDelay);
@@ -823,6 +871,7 @@ export function createFoldRuntime(): FoldRuntime {
       }
       const known = agent.byKey.get(key);
       if (known) {
+        maybePrefetchForRow(agent, known);
         if (status && known.kind === "tool" && known.status !== status) request(agent, "after", FOLD_TIMING.rowDelay);
         return;
       }
@@ -851,7 +900,10 @@ export function createFoldRuntime(): FoldRuntime {
       // A summary row keeps its Agent acquired, so the Agent is known; there is nothing to plan without one.
       const agent = agents.get(agentId);
       if (!agent) return;
-      writeExpanded(agent, segment, expanded);
+      // During a batched prepend update the visible summary can still send its previous ID.
+      const prefix = `f|${segment}|`;
+      const target = agent.plan?.segments.find((entry) => entry.keys.some((key) => applied.get(key)?.startsWith(prefix)));
+      writeExpanded(agent, target?.id ?? segment, expanded);
       if (agent.loaded) recompute(agent, "now");
     },
     scheduleNudge(priority) {
